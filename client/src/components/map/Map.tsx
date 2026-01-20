@@ -27,10 +27,20 @@ function MapUpdater() {
 export default function MapComponent() {
   const { companies, selectedCompanyId, selectCompany, updateCompany } = useAppStore();
 
-  // Scale revenue to radius (logarithmic scale usually better for money)
+  // Scale revenue to radius
   const getRadius = (revenue: number) => {
-    // Base size + log scale
-    return Math.max(10, Math.log(revenue) * 2);
+    // 100M revenue (min) -> ~15px
+    // 50B revenue (max) -> ~60px
+    // Using a power scale (0.5 for square root) to make differences more visible than log
+    const minRev = 100000000;
+    const maxRev = 50000000000;
+    const minRadius = 15;
+    const maxRadius = 60;
+
+    // Normalize revenue between 0 and 1 using a power scale to emphasize differences
+    const normalized = Math.pow((revenue - minRev) / (maxRev - minRev), 0.5);
+    
+    return minRadius + (normalized * (maxRadius - minRadius));
   };
 
   return (

@@ -98,7 +98,10 @@ export default function RightPanel() {
              </div>
              
              {isEditing ? (
-                <div onClick={(e) => e.stopPropagation()}>
+                <div onClick={(e) => {
+                  e.stopPropagation();
+                  setScalingMetric('revenue'); // Ensure scaling switches when clicking input area
+                }}>
                   <Input 
                     type="number"
                     value={company.revenue_usd}
@@ -134,7 +137,10 @@ export default function RightPanel() {
              </div>
              
              {isEditing ? (
-               <div onClick={(e) => e.stopPropagation()}>
+               <div onClick={(e) => {
+                 e.stopPropagation();
+                 setScalingMetric('employees'); // Ensure scaling switches when clicking input area
+               }}>
                  <Input 
                     type="number"
                     value={company.employees}

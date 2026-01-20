@@ -87,7 +87,7 @@ export default function RightPanel() {
            <div 
              onClick={() => setScalingMetric('revenue')}
              className={`
-                p-3 rounded border cursor-pointer transition-all duration-200 group
+                p-3 rounded border cursor-pointer transition-all duration-200 group relative
                 ${scalingMetric === 'revenue' 
                   ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
                   : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
@@ -96,10 +96,26 @@ export default function RightPanel() {
              <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'revenue' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                <DollarSign className="w-3 h-3" /> Revenue
              </div>
-             <div className="text-lg font-mono font-medium">
-               ${(company.revenue_usd / 1000000000).toFixed(2)}B
-             </div>
-             {scalingMetric === 'revenue' && (
+             
+             {isEditing ? (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Input 
+                    type="number"
+                    value={company.revenue_usd}
+                    onChange={(e) => updateCompany(company.id, { revenue_usd: Number(e.target.value) })}
+                    className="h-7 text-xs font-mono font-medium mt-1 bg-background"
+                  />
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    ${(company.revenue_usd / 1000000000).toFixed(2)}B
+                  </div>
+                </div>
+             ) : (
+                <div className="text-lg font-mono font-medium">
+                  ${(company.revenue_usd / 1000000000).toFixed(2)}B
+                </div>
+             )}
+
+             {scalingMetric === 'revenue' && !isEditing && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}
            </div>
@@ -107,7 +123,7 @@ export default function RightPanel() {
            <div 
              onClick={() => setScalingMetric('employees')}
              className={`
-                p-3 rounded border cursor-pointer transition-all duration-200 group
+                p-3 rounded border cursor-pointer transition-all duration-200 group relative
                 ${scalingMetric === 'employees' 
                   ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
                   : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
@@ -116,10 +132,23 @@ export default function RightPanel() {
              <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'employees' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                <Users className="w-3 h-3" /> Employees
              </div>
-             <div className="text-lg font-mono font-medium">
-               {company.employees.toLocaleString()}
-             </div>
-             {scalingMetric === 'employees' && (
+             
+             {isEditing ? (
+               <div onClick={(e) => e.stopPropagation()}>
+                 <Input 
+                    type="number"
+                    value={company.employees}
+                    onChange={(e) => updateCompany(company.id, { employees: Number(e.target.value) })}
+                    className="h-7 text-xs font-mono font-medium mt-1 bg-background"
+                  />
+               </div>
+             ) : (
+                <div className="text-lg font-mono font-medium">
+                  {company.employees.toLocaleString()}
+                </div>
+             )}
+
+             {scalingMetric === 'employees' && !isEditing && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}
            </div>

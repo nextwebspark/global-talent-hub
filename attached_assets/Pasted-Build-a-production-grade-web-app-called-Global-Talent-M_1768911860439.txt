@@ -1,0 +1,256 @@
+Build a production-grade web app called Global Talent Map for an executive search firm.
+
+The app performs AI-driven market research from a single natural-language search string, ranks companies primarily by revenue (USD), and visualises them as draggable bubbles on a global map. Clicking a bubble opens a right-hand detail panel. All data must be editable and persist so projects can be reopened later for client presentation.
+
+1. Search & Project Flow (STRICT)
+
+User enters one free-text search string, e.g.
+
+“Top 10 luxury watch distributors globally”
+
+“Top 25 FMCG distributors in GCC by revenue”
+
+Before research runs, ask:
+
+“Do you want to connect your Clockwork database to enrich executive data?”
+
+Yes (ask for API base URL + API key)
+
+No (public data only)
+
+Parse the search string (server-side using OpenAI) to extract:
+
+industry / sector
+
+geography (global / region / country)
+
+number of companies → NO DEFAULT. Must be explicitly present.
+
+whether specific executive roles are explicitly requested (e.g. CEO, MD, CFO)
+
+If company count is missing or ambiguous → ask clarification before research.
+
+Each search creates a Project that can be reopened later with all edits intact.
+
+2. Research Engine (NON-NEGOTIABLE RULES)
+
+Server-side only.
+
+Use:
+
+Web search API (SerpAPI / Bing / equivalent)
+
+OpenAI via env var OPENAI_API_KEY
+
+Identify top companies by revenue (USD).
+
+Secondary metric: employees (if available).
+
+Cross-check data across multiple sources when possible.
+
+Never fabricate data.
+
+Store per field:
+
+value
+
+confidence: High / Medium / Low
+
+source_urls[]
+
+Unknown data must remain Unknown with Low confidence.
+
+3. Executive Selection Logic (EXACT BEHAVIOUR)
+
+When showing executives for a company:
+
+A) If search string explicitly mentions roles
+
+Show ONLY those roles.
+
+If company-level execs not found → fallback to country-level execs for same roles (labelled).
+
+Do NOT invent names.
+
+B) If roles NOT mentioned
+
+Show top executives for the company (CEO / MD / Chair / President).
+
+If unavailable → fallback to top executives in that country (labelled).
+
+C) Clockwork enrichment (conditional)
+
+Only if user opted in and provided API key.
+
+Pull executives linked to:
+
+same company
+
+and/or same project/mandate
+
+Merge with public data:
+
+Prefer Clockwork if duplicate
+
+Keep public links as references
+
+Label every executive: Source = Public / Clockwork / Manual
+
+4. UI LAYOUT (MANDATORY)
+Left Panel
+
+Project list (open previous projects)
+
+Company list (ranked)
+
+Filters (country, revenue range, keyword)
+
+Manual entry
+
+Add company
+
+Add executive (to selected company or unassigned)
+
+Centre
+
+Interactive world map (Mapbox GL JS or Leaflet)
+
+Company bubbles:
+
+positioned by HQ lat/long
+
+size scaled by revenue (min/max radius)
+
+draggable; save offset without changing HQ coords
+
+hover tooltip: name + revenue
+
+Right Panel (opens on bubble click or company select)
+
+Company overview (editable):
+
+name
+
+industry
+
+HQ city/country
+
+revenue_usd
+
+employees
+
+confidence indicators
+
+source links
+
+Executives list (editable add/edit/hide)
+
+Client notes
+
+Data audit (last updated + sources)
+
+All edits must:
+
+Persist immediately
+
+Update bubble size live when revenue changes
+
+5. Persistence (REQUIRED)
+
+User must be able to:
+
+Close app
+
+Reopen later
+
+Load the same project with:
+
+same companies
+
+same rankings
+
+same bubble positions
+
+same executives
+
+same notes
+
+Use a real DB (SQLite OK; Postgres preferred).
+
+6. Data Model (MINIMUM)
+
+projects
+id, name, original_search_string, inferred_industry, inferred_geography, company_count_requested, explicit_roles_requested, requested_roles[], clockwork_enabled, created_at
+
+companies
+id, project_id, name, industry, hq_city, hq_country, lat, lng, revenue_usd, employees, bubble_offset_x, bubble_offset_y, confidence_overall
+
+company_sources
+id, company_id, field_name, source_url, confidence, extracted_value_text
+
+executives
+id, project_id, company_id nullable, name, title, source_type (Public/Clockwork/Manual), confidence, profile_url, hidden, notes
+
+7. Backend API (REQUIRED)
+
+POST /api/projects
+
+GET /api/projects
+
+GET /api/projects/:id
+
+POST /api/search (creates/updates project + runs research)
+
+PATCH /api/companies/:id
+
+PATCH /api/companies/:id/bubble-position
+
+POST /api/companies/:id/executives
+
+POST /api/projects/:id/executives (unassigned)
+
+PATCH /api/executives/:id
+
+8. Security (STRICT)
+
+No secrets in code.
+
+OpenAI key via OPENAI_API_KEY.
+
+Search API key via env var.
+
+Clockwork API key:
+
+server-side only
+
+never logged
+
+never sent to client.
+
+9. Tech Stack (PREFERRED)
+
+Frontend: React + TypeScript + Vite
+
+Backend: Node.js + Express or Fastify
+
+DB: SQLite + Prisma (or Postgres + Prisma)
+
+Map: Mapbox GL JS or Leaflet
+
+Styling: Tailwind (clean, executive-grade)
+
+10. Output Requirements
+
+Fully running Replit app
+
+Clean, modular code
+
+README with:
+
+env vars
+
+DB setup
+
+run instructions
+
+Build exactly as specified. Prioritise correctness, transparency, and client-presentation quality over shortcuts.

@@ -1,6 +1,6 @@
-import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import { useAppStore } from '@/lib/store';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default Leaflet icon issues in React
@@ -10,11 +10,14 @@ import L from 'leaflet';
 function MapUpdater() {
   const companies = useAppStore(state => state.companies);
   const map = useMap();
+  const hasFitBounds = useRef(false);
 
   useEffect(() => {
-    if (companies.length > 0) {
+    // Only fit bounds once when companies are loaded to avoid jumping around during drag
+    if (companies.length > 0 && !hasFitBounds.current) {
       const bounds = L.latLngBounds(companies.map(c => [c.lat, c.lng]));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      hasFitBounds.current = true;
     }
   }, [companies, map]);
 
@@ -22,7 +25,7 @@ function MapUpdater() {
 }
 
 export default function MapComponent() {
-  const { companies, selectedCompanyId, selectCompany } = useAppStore();
+  const { companies, selectedCompanyId, selectCompany, updateCompany } = useAppStore();
 
   // Scale revenue to radius (logarithmic scale usually better for money)
   const getRadius = (revenue: number) => {
@@ -48,23 +51,47 @@ export default function MapComponent() {
 
         {companies.map((company) => {
           const isSelected = selectedCompanyId === company.id;
+          const radius = getRadius(company.revenue_usd);
+          const diameter = radius * 2;
           
+          // Create custom icon for draggable marker
+          const customIcon = L.divIcon({
+            className: 'custom-bubble-icon',
+            html: `
+              <div style="
+                width: ${diameter}px;
+                height: ${diameter}px;
+                background-color: ${isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)'};
+                opacity: ${isSelected ? 0.8 : 0.4};
+                border: ${isSelected ? '2px solid hsl(35 92% 50%)' : '1px solid hsl(222 47% 11%)'};
+                border-radius: 50%;
+                transition: all 0.2s ease;
+                cursor: grab;
+              "></div>
+            `,
+            iconSize: [diameter, diameter],
+            iconAnchor: [radius, radius], // Center the icon
+          });
+
           return (
-            <CircleMarker
+            <Marker
               key={company.id}
-              center={[company.lat, company.lng]}
-              radius={getRadius(company.revenue_usd)}
-              pathOptions={{
-                color: isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)', // Accent or Primary
-                fillColor: isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)',
-                fillOpacity: isSelected ? 0.8 : 0.4,
-                weight: isSelected ? 2 : 1,
-              }}
+              position={[company.lat, company.lng]}
+              icon={customIcon}
+              draggable={true}
               eventHandlers={{
                 click: () => selectCompany(company.id),
+                dragend: (e) => {
+                  const marker = e.target;
+                  const position = marker.getLatLng();
+                  updateCompany(company.id, {
+                    lat: position.lat,
+                    lng: position.lng
+                  });
+                }
               }}
             >
-              <Tooltip direction="top" offset={[0, -10]} opacity={1}>
+              <Tooltip direction="top" offset={[0, -radius]} opacity={1}>
                 <div className="font-sans text-xs font-semibold">
                   {company.name}
                 </div>
@@ -72,7 +99,7 @@ export default function MapComponent() {
                   ${(company.revenue_usd / 1000000).toFixed(0)}M
                 </div>
               </Tooltip>
-            </CircleMarker>
+            </Marker>
           );
         })}
       </MapContainer>

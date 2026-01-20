@@ -17,6 +17,25 @@ export const generateMockData = (query: string): { companies: Company[], executi
   const companies: Company[] = [];
   const executives: Executive[] = [];
   
+  // Basic NLP simulation to detect role intent
+  const queryLower = query.toLowerCase();
+  
+  // Specific role detection
+  let targetRoles: string[] = [];
+  
+  if (queryLower.includes('cfo')) targetRoles.push('CFO');
+  if (queryLower.includes('ceo')) targetRoles.push('CEO');
+  if (queryLower.includes('cto')) targetRoles.push('CTO');
+  if (queryLower.includes('md') || queryLower.includes('managing director')) targetRoles.push('MD');
+  if (queryLower.includes('president')) targetRoles.push('President');
+  if (queryLower.includes('vp') || queryLower.includes('vice president')) targetRoles.push('VP Sales');
+  
+  // If no specific roles requested, default to leadership team
+  const isGeneralLeadershipSearch = targetRoles.length === 0;
+  if (isGeneralLeadershipSearch) {
+    targetRoles = ['CEO', 'MD', 'President', 'CFO']; 
+  }
+
   // Deterministic-ish random based on query length
   const count = 10 + (query.length % 5); 
   
@@ -45,18 +64,27 @@ export const generateMockData = (query: string): { companies: Company[], executi
       color: undefined
     });
 
-    // Generate executives for this company
-    const execCount = 3 + Math.floor(Math.random() * 3);
-    for (let j = 0; j < execCount; j++) {
-      executives.push({
-        id: `exec-${i}-${j}`,
-        company_id: id,
-        name: `Executive Name ${j+1}`,
-        title: TITLES[Math.floor(Math.random() * TITLES.length)],
-        source: Math.random() > 0.8 ? 'Clockwork' : 'Public',
-        confidence: Math.random() > 0.2 ? 'High' : 'Low',
-      });
-    }
+    // Generate executives based on search intent
+    // If specific roles were asked (e.g. "CFO"), ONLY generate/show those.
+    // If general search, show a mix of top leadership.
+    
+    const rolesToGenerate = isGeneralLeadershipSearch 
+      ? targetRoles // Generate a mix of top leadership
+      : targetRoles; // Generate only the requested roles
+
+    rolesToGenerate.forEach((role, idx) => {
+      // Small chance a specific role is missing in public data
+      if (Math.random() > 0.1) {
+        executives.push({
+          id: `exec-${i}-${role}`,
+          company_id: id,
+          name: `Executive ${i}-${idx+1}`,
+          title: role,
+          source: Math.random() > 0.8 ? 'Clockwork' : 'Public',
+          confidence: Math.random() > 0.2 ? 'High' : 'Low',
+        });
+      }
+    });
   }
 
   return { companies, executives };

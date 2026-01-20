@@ -12,6 +12,7 @@ export interface Company {
   employees: number;
   confidence: 'High' | 'Medium' | 'Low';
   description?: string;
+  color?: string;
 }
 
 export interface Executive {
@@ -45,6 +46,7 @@ interface AppState {
   
   setExecutives: (executives: Executive[]) => void;
   addExecutive: (executive: Executive) => void;
+  updateExecutive: (id: string, updates: Partial<Executive>) => void;
   
   selectCompany: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -70,6 +72,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   setExecutives: (executives) => set({ executives }),
   addExecutive: (executive) => set((state) => ({ executives: [...state.executives, executive] })),
+  updateExecutive: (id, updates) => set((state) => ({
+    executives: state.executives.map((e) => e.id === id ? { ...e, ...updates } : e)
+  })),
 
   selectCompany: (id) => set({ selectedCompanyId: id }),
   setSearchQuery: (query) => set({ searchQuery: query }),

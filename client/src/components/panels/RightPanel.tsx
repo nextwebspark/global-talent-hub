@@ -4,19 +4,90 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { ExternalLink, MapPin, DollarSign, Users, X } from 'lucide-react';
+import { ExternalLink, MapPin, DollarSign, Users, X, Edit2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-export default function RightPanel() {
-  const { selectedCompanyId, companies, executives, selectCompany, updateCompany, addExecutive, scalingMetric, setScalingMetric } = useAppStore();
+// Reusable editable component for double-click editing
+const EditableField = ({ 
+  value, 
+  onSave, 
+  className = "", 
+  inputClassName = "",
+  type = "text",
+  displayFormatter
+}: { 
+  value: string | number, 
+  onSave: (val: string | number) => void, 
+  className?: string,
+  inputClassName?: string,
+  type?: string,
+  displayFormatter?: (val: string | number) => React.ReactNode
+}) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [tempValue, setTempValue] = useState(value);
+
+  // Sync temp value when prop changes (if not editing)
+  useEffect(() => {
+    if (!isEditing) setTempValue(value);
+  }, [value, isEditing]);
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditing(true);
+  };
+
+  const handleBlur = () => {
+    setIsEditing(false);
+    onSave(tempValue);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleBlur();
+    }
+    if (e.key === 'Escape') {
+      setIsEditing(false);
+      setTempValue(value); // Revert
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <Input
+        autoFocus
+        type={type}
+        value={tempValue}
+        onChange={(e) => setTempValue(type === 'number' ? Number(e.target.value) : e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        className={`h-auto py-1 px-2 -ml-2 border-primary/50 ${inputClassName}`}
+        onClick={(e) => e.stopPropagation()} 
+      />
+    );
+  }
+
+  return (
+    <div 
+      onDoubleClick={handleDoubleClick} 
+      className={`cursor-text hover:bg-muted/30 rounded px-1 -mx-1 transition-colors relative group ${className}`}
+      title="Double click to edit"
+    >
+      {displayFormatter ? displayFormatter(value) : value}
+      <Edit2 className="w-3 h-3 absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-20 pointer-events-none" />
+    </div>
+  );
+};
+
+export default function RightPanel() {
+  const { selectedCompanyId, companies, executives, selectCompany, updateCompany, addExecutive, updateExecutive, scalingMetric, setScalingMetric } = useAppStore();
+  const [isGlobalEditing, setIsGlobalEditing] = useState(false);
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
 
   // Reset editing state when selection changes
   useEffect(() => {
-    setIsEditing(false);
+    setIsGlobalEditing(false);
   }, [selectedCompanyId]);
 
   if (!company) {
@@ -44,12 +115,12 @@ export default function RightPanel() {
         </Button>
         <div className="flex gap-2">
              <Button 
-                variant={isEditing ? "default" : "outline"} 
+                variant={isGlobalEditing ? "default" : "outline"} 
                 size="sm" 
-                onClick={() => setIsEditing(!isEditing)}
+                onClick={() => setIsGlobalEditing(!isGlobalEditing)}
                 className="text-xs h-8"
               >
-                {isEditing ? 'Done' : 'Edit Data'}
+                {isGlobalEditing ? 'Done' : 'Edit Data'}
               </Button>
         </div>
       </div>
@@ -66,15 +137,12 @@ export default function RightPanel() {
              </Badge>
           </div>
           
-          {isEditing ? (
-             <Input 
-                value={company.name} 
-                onChange={(e) => updateCompany(company.id, { name: e.target.value })}
-                className="text-2xl font-serif font-bold mb-2 h-auto py-1 px-2 -ml-2 border-dashed border-primary/50" 
-             />
-          ) : (
-             <h1 className="text-2xl font-serif font-bold text-foreground mb-1">{company.name}</h1>
-          )}
+          <EditableField
+            value={company.name}
+            onSave={(val) => updateCompany(company.id, { name: String(val) })}
+            className="text-2xl font-serif font-bold mb-1 block"
+            inputClassName="text-2xl font-serif font-bold mb-1 h-10"
+          />
 
           <div className="flex items-center text-sm text-muted-foreground gap-1">
             <MapPin className="w-3 h-3" />
@@ -97,28 +165,21 @@ export default function RightPanel() {
                <DollarSign className="w-3 h-3" /> Revenue
              </div>
              
-             {isEditing ? (
-                <div onClick={(e) => {
+             <div onClick={(e) => {
                   e.stopPropagation();
-                  setScalingMetric('revenue'); // Ensure scaling switches when clicking input area
-                }}>
-                  <Input 
-                    type="number"
-                    value={company.revenue_usd}
-                    onChange={(e) => updateCompany(company.id, { revenue_usd: Number(e.target.value) })}
-                    className="h-7 text-xs font-mono font-medium mt-1 bg-background"
-                  />
-                  <div className="text-[10px] text-muted-foreground mt-1">
-                    ${(company.revenue_usd / 1000000000).toFixed(2)}B
-                  </div>
-                </div>
-             ) : (
-                <div className="text-lg font-mono font-medium">
-                  ${(company.revenue_usd / 1000000000).toFixed(2)}B
-                </div>
-             )}
+                  setScalingMetric('revenue');
+             }}>
+                <EditableField
+                  type="number"
+                  value={company.revenue_usd}
+                  onSave={(val) => updateCompany(company.id, { revenue_usd: Number(val) })}
+                  className="text-lg font-mono font-medium block mt-1"
+                  inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
+                  displayFormatter={(val) => `$${(Number(val) / 1000000000).toFixed(2)}B`}
+                />
+             </div>
 
-             {scalingMetric === 'revenue' && !isEditing && (
+             {scalingMetric === 'revenue' && !isGlobalEditing && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}
            </div>
@@ -136,25 +197,21 @@ export default function RightPanel() {
                <Users className="w-3 h-3" /> Employees
              </div>
              
-             {isEditing ? (
-               <div onClick={(e) => {
+             <div onClick={(e) => {
                  e.stopPropagation();
-                 setScalingMetric('employees'); // Ensure scaling switches when clicking input area
-               }}>
-                 <Input 
-                    type="number"
-                    value={company.employees}
-                    onChange={(e) => updateCompany(company.id, { employees: Number(e.target.value) })}
-                    className="h-7 text-xs font-mono font-medium mt-1 bg-background"
-                  />
-               </div>
-             ) : (
-                <div className="text-lg font-mono font-medium">
-                  {company.employees.toLocaleString()}
-                </div>
-             )}
+                 setScalingMetric('employees');
+             }}>
+                <EditableField
+                  type="number"
+                  value={company.employees}
+                  onSave={(val) => updateCompany(company.id, { employees: Number(val) })}
+                  className="text-lg font-mono font-medium block mt-1"
+                  inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
+                  displayFormatter={(val) => Number(val).toLocaleString()}
+                />
+             </div>
 
-             {scalingMetric === 'employees' && !isEditing && (
+             {scalingMetric === 'employees' && !isGlobalEditing && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}
            </div>
@@ -180,12 +237,22 @@ export default function RightPanel() {
             {companyExecutives.map(exec => (
               <div key={exec.id} className="group p-3 rounded border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card shadow-sm">
                 <div className="flex justify-between items-start mb-1">
-                  <span className="font-semibold text-sm">{exec.name}</span>
+                  <div className="font-semibold text-sm">
+                    <EditableField
+                      value={exec.name}
+                      onSave={(val) => updateExecutive(exec.id, { name: String(val) })}
+                    />
+                  </div>
                   <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-normal bg-background">
                     {exec.source}
                   </Badge>
                 </div>
-                <div className="text-xs text-muted-foreground font-medium mb-2">{exec.title}</div>
+                <div className="text-xs text-muted-foreground font-medium mb-2">
+                    <EditableField
+                      value={exec.title}
+                      onSave={(val) => updateExecutive(exec.id, { title: String(val) })}
+                    />
+                </div>
                 
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                    <Button variant="ghost" size="icon" className="h-6 w-6"><ExternalLink className="h-3 w-3" /></Button>

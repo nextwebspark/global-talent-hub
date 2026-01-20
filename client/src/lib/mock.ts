@@ -41,7 +41,8 @@ export const generateMockData = (query: string): { companies: Company[], executi
       revenue_usd: revenue,
       employees: Math.floor(revenue / 500000),
       confidence: Math.random() > 0.3 ? 'High' : 'Medium',
-      description: `Leading ${industry} distributor in the ${city.country} region.`
+      description: `Leading ${industry} distributor in the ${city.country} region.`,
+      color: undefined
     });
 
     // Generate executives for this company

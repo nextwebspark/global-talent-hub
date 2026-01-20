@@ -1,7 +1,9 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import { useAppStore } from '@/lib/store';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
 
 // Fix for default Leaflet icon issues in React
 import L from 'leaflet';
@@ -24,19 +26,29 @@ function MapUpdater() {
   return null;
 }
 
+const EXECUTIVE_COLORS = [
+  'hsl(35 92% 50%)', // Gold (Default Accent)
+  'hsl(222 47% 11%)', // Navy (Default Primary)
+  'hsl(0 84% 60%)', // Red
+  'hsl(142 71% 45%)', // Green
+  'hsl(262 83% 58%)', // Purple
+  'hsl(316 73% 52%)', // Pink
+  'hsl(25 95% 53%)', // Orange
+  'hsl(199 89% 48%)', // Blue
+];
+
 export default function MapComponent() {
   const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric } = useAppStore();
+  const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
   // Scale revenue/employees to radius
   const getRadius = (value: number) => {
     let minVal, maxVal;
     
     if (scalingMetric === 'revenue') {
-      // 100M to 50B
       minVal = 100000000;
       maxVal = 50000000000;
     } else {
-      // Employees: ~200 to ~100k
       minVal = 200;
       maxVal = 100000;
     }
@@ -44,15 +56,19 @@ export default function MapComponent() {
     const minRadius = 15;
     const maxRadius = 60;
 
-    // Safety check for 0 or undefined
     if (!value) return minRadius;
 
-    // Normalize value between 0 and 1 using a power scale (0.5) to emphasize differences
-    // Clamp value between min and max to avoid negative roots or explosion
     const clampedVal = Math.max(minVal, Math.min(value, maxVal));
     const normalized = Math.pow((clampedVal - minVal) / (maxVal - minVal), 0.5);
     
     return minRadius + (normalized * (maxRadius - minRadius));
+  };
+
+  const handleColorSelect = (color: string) => {
+    if (colorPickerTarget) {
+      updateCompany(colorPickerTarget.id, { color });
+      setColorPickerTarget(null);
+    }
   };
 
   return (
@@ -73,12 +89,13 @@ export default function MapComponent() {
 
         {companies.map((company) => {
           const isSelected = selectedCompanyId === company.id;
-          
-          // Choose value based on metric
           const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const radius = getRadius(value);
           const diameter = radius * 2;
           
+          const fillColor = company.color || (isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)');
+          const borderColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
+
           // Create custom icon for draggable marker
           const customIcon = L.divIcon({
             className: 'custom-bubble-icon',
@@ -86,9 +103,9 @@ export default function MapComponent() {
               <div style="
                 width: ${diameter}px;
                 height: ${diameter}px;
-                background-color: ${isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)'};
+                background-color: ${fillColor};
                 opacity: ${isSelected ? 0.8 : 0.4};
-                border: ${isSelected ? '2px solid hsl(35 92% 50%)' : '1px solid hsl(222 47% 11%)'};
+                border: ${isSelected ? '2px solid ' + borderColor : '1px solid ' + borderColor};
                 border-radius: 50%;
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 cursor: grab;
@@ -116,6 +133,24 @@ export default function MapComponent() {
                     lat: position.lat,
                     lng: position.lng
                   });
+                },
+                dblclick: (e) => {
+                  // Prevent map zoom on double click
+                  e.originalEvent.stopPropagation();
+                  e.originalEvent.preventDefault();
+                  
+                  // Open color picker
+                  const mapContainer = e.target._map.getContainer();
+                  const point = e.containerPoint; // Pixel coordinates relative to map container
+                  
+                  // We need absolute coordinates for the fixed overlay
+                  const rect = mapContainer.getBoundingClientRect();
+                  
+                  setColorPickerTarget({
+                    id: company.id,
+                    x: rect.left + point.x,
+                    y: rect.top + point.y
+                  });
                 }
               }}
             >
@@ -134,6 +169,34 @@ export default function MapComponent() {
           );
         })}
       </MapContainer>
+
+      {/* Color Picker Overlay */}
+      {colorPickerTarget && (
+        <div 
+          className="fixed z-[500] bg-background/95 backdrop-blur border border-border p-2 rounded shadow-xl flex gap-1 flex-wrap w-32 animate-in fade-in zoom-in-95 duration-200"
+          style={{ 
+            left: colorPickerTarget.x, 
+            top: colorPickerTarget.y,
+            transform: 'translate(-50%, -100%) translateY(-10px)' 
+          }}
+        >
+          {EXECUTIVE_COLORS.map((color) => (
+            <button
+              key={color}
+              onClick={() => handleColorSelect(color)}
+              className="w-6 h-6 rounded-full border border-border/50 hover:scale-110 transition-transform shadow-sm"
+              style={{ backgroundColor: color }}
+              title={color}
+            />
+          ))}
+          <button 
+             onClick={() => setColorPickerTarget(null)}
+             className="w-full text-[10px] text-muted-foreground hover:text-foreground mt-1 text-center"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }

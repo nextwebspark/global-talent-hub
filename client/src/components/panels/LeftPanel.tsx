@@ -7,7 +7,7 @@ import { Search, Plus, Filter, Briefcase, ChevronLeft, ChevronRight } from 'luci
 import { useState } from 'react';
 
 export default function LeftPanel() {
-  const { companies, selectCompany, selectedCompanyId, addCompany } = useAppStore();
+  const { companies, selectCompany, selectedCompanyId, addCompany, revenueFilter, setRevenueFilter } = useAppStore();
   const [isOpen, setIsOpen] = useState(false); // Default to retracted as requested
 
   const handleAddCompany = () => {
@@ -26,7 +26,14 @@ export default function LeftPanel() {
     });
   };
 
-  const sortedCompanies = [...companies].sort((a, b) => b.revenue_usd - a.revenue_usd);
+  // Filter companies based on revenue range slider (percentage of max revenue in set)
+  // Or simpler: filter by > $X amount. Let's make slider 0-100 represent $100M to $50B
+  const maxRevenue = 50000000000;
+  const filterThreshold = (revenueFilter / 100) * maxRevenue;
+
+  const filteredCompanies = companies
+    .filter(c => c.revenue_usd >= filterThreshold)
+    .sort((a, b) => b.revenue_usd - a.revenue_usd);
 
   return (
     <div 
@@ -52,16 +59,13 @@ export default function LeftPanel() {
         <div className="p-4 border-b border-border min-w-[320px]">
           <h2 className="text-lg font-serif font-bold text-foreground">Talent Map</h2>
           <div className="flex gap-2 mt-2 w-full pr-8">
-             <Button variant="outline" size="sm" className="flex-1 text-xs font-medium">
-               <Briefcase className="w-3 h-3 mr-2" /> Projects
-             </Button>
              <Button 
                variant="default" 
                size="sm" 
                onClick={handleAddCompany}
-               className="flex-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+               className="w-full text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
              >
-               <Plus className="w-3 h-3 mr-2" /> New
+               <Plus className="w-3 h-3 mr-2" /> Add Company
              </Button>
           </div>
         </div>
@@ -75,17 +79,25 @@ export default function LeftPanel() {
           
           <div className="space-y-3 w-full pr-8">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Revenue Range</label>
-              <Filter className="h-3 w-3 text-muted-foreground" />
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Min Revenue</label>
+              <span className="text-xs font-mono text-primary font-medium">
+                 ${(filterThreshold / 1000000000).toFixed(1)}B+
+              </span>
             </div>
-            <Slider defaultValue={[20]} max={100} step={1} className="py-2" />
+            <Slider 
+              value={[revenueFilter]} 
+              onValueChange={(vals) => setRevenueFilter(vals[0])}
+              max={100} 
+              step={1} 
+              className="py-2" 
+            />
           </div>
         </div>
 
         {/* Company List */}
         <ScrollArea className="flex-1 w-full">
           <div className="p-2 space-y-1 min-w-[320px]">
-            {sortedCompanies.map((company) => (
+            {filteredCompanies.map((company) => (
               <div
                 key={company.id}
                 onClick={() => selectCompany(company.id)}
@@ -123,7 +135,7 @@ export default function LeftPanel() {
         
         {/* Footer Status */}
         <div className="p-2 border-t border-border bg-muted/20 text-[10px] text-center text-muted-foreground min-w-[320px]">
-          {companies.length} Companies Identified • {new Date().toLocaleDateString()}
+          {filteredCompanies.length} Companies • {new Date().toLocaleDateString()}
         </div>
       </div>
     </div>

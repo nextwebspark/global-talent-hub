@@ -38,6 +38,7 @@ interface AppState {
   selectedCompanyId: string | null;
   searchQuery: string;
   scalingMetric: 'revenue' | 'employees';
+  revenueFilter: number;
   
   setProject: (project: Project) => void;
   setCompanies: (companies: Company[]) => void;
@@ -51,6 +52,7 @@ interface AppState {
   selectCompany: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
+  setRevenueFilter: (value: number) => void;
   
   reset: () => void;
 }
@@ -62,6 +64,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedCompanyId: null,
   searchQuery: '',
   scalingMetric: 'revenue',
+  revenueFilter: 0, // 0 to 100 percentage range on slider
 
   setProject: (project) => set({ currentProject: project }),
   setCompanies: (companies) => set({ companies }),
@@ -79,6 +82,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectCompany: (id) => set({ selectedCompanyId: id }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
+  setRevenueFilter: (value) => set({ revenueFilter: value }),
 
   reset: () => set({
     currentProject: null,
@@ -86,6 +90,7 @@ export const useAppStore = create<AppState>((set) => ({
     executives: [],
     selectedCompanyId: null,
     searchQuery: '',
-    scalingMetric: 'revenue'
+    scalingMetric: 'revenue',
+    revenueFilter: 0
   })
 }));

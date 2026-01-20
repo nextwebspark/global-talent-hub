@@ -38,8 +38,14 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric } = useAppStore();
+  const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
+
+  // Filter companies based on revenue slider
+  const maxRevenue = 50000000000;
+  const filterThreshold = (revenueFilter / 100) * maxRevenue;
+  
+  const filteredCompanies = companies.filter(c => c.revenue_usd >= filterThreshold);
 
   // Scale revenue/employees to radius
   const getRadius = (value: number) => {
@@ -87,7 +93,7 @@ export default function MapComponent() {
         
         <MapUpdater />
 
-        {companies.map((company) => {
+        {filteredCompanies.map((company) => {
           const isSelected = selectedCompanyId === company.id;
           const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const radius = getRadius(value);

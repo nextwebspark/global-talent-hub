@@ -1,6 +1,6 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import { useAppStore } from '@/lib/store';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 
 // Fix for default Leaflet icon issues in React
@@ -25,20 +25,32 @@ function MapUpdater() {
 }
 
 export default function MapComponent() {
-  const { companies, selectedCompanyId, selectCompany, updateCompany } = useAppStore();
+  const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric } = useAppStore();
 
-  // Scale revenue to radius
-  const getRadius = (revenue: number) => {
-    // 100M revenue (min) -> ~15px
-    // 50B revenue (max) -> ~60px
-    // Using a power scale (0.5 for square root) to make differences more visible than log
-    const minRev = 100000000;
-    const maxRev = 50000000000;
+  // Scale revenue/employees to radius
+  const getRadius = (value: number) => {
+    let minVal, maxVal;
+    
+    if (scalingMetric === 'revenue') {
+      // 100M to 50B
+      minVal = 100000000;
+      maxVal = 50000000000;
+    } else {
+      // Employees: ~200 to ~100k
+      minVal = 200;
+      maxVal = 100000;
+    }
+    
     const minRadius = 15;
     const maxRadius = 60;
 
-    // Normalize revenue between 0 and 1 using a power scale to emphasize differences
-    const normalized = Math.pow((revenue - minRev) / (maxRev - minRev), 0.5);
+    // Safety check for 0 or undefined
+    if (!value) return minRadius;
+
+    // Normalize value between 0 and 1 using a power scale (0.5) to emphasize differences
+    // Clamp value between min and max to avoid negative roots or explosion
+    const clampedVal = Math.max(minVal, Math.min(value, maxVal));
+    const normalized = Math.pow((clampedVal - minVal) / (maxVal - minVal), 0.5);
     
     return minRadius + (normalized * (maxRadius - minRadius));
   };
@@ -61,7 +73,10 @@ export default function MapComponent() {
 
         {companies.map((company) => {
           const isSelected = selectedCompanyId === company.id;
-          const radius = getRadius(company.revenue_usd);
+          
+          // Choose value based on metric
+          const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+          const radius = getRadius(value);
           const diameter = radius * 2;
           
           // Create custom icon for draggable marker
@@ -75,8 +90,11 @@ export default function MapComponent() {
                 opacity: ${isSelected ? 0.8 : 0.4};
                 border: ${isSelected ? '2px solid hsl(35 92% 50%)' : '1px solid hsl(222 47% 11%)'};
                 border-radius: 50%;
-                transition: all 0.2s ease;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 cursor: grab;
+                display: flex;
+                align-items: center;
+                justify-content: center;
               "></div>
             `,
             iconSize: [diameter, diameter],
@@ -106,7 +124,10 @@ export default function MapComponent() {
                   {company.name}
                 </div>
                 <div className="font-sans text-xs text-muted-foreground">
-                  ${(company.revenue_usd / 1000000).toFixed(0)}M
+                  {scalingMetric === 'revenue' 
+                    ? `$${(company.revenue_usd / 1000000).toFixed(0)}M`
+                    : `${company.employees.toLocaleString()} Empl.`
+                  }
                 </div>
               </Tooltip>
             </Marker>

@@ -8,7 +8,7 @@ import { ExternalLink, MapPin, DollarSign, Users, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 export default function RightPanel() {
-  const { selectedCompanyId, companies, executives, selectCompany, updateCompany, addExecutive } = useAppStore();
+  const { selectedCompanyId, companies, executives, selectCompany, updateCompany, addExecutive, scalingMetric, setScalingMetric } = useAppStore();
   const [isEditing, setIsEditing] = useState(false);
 
   const company = companies.find(c => c.id === selectedCompanyId);
@@ -82,22 +82,46 @@ export default function RightPanel() {
           </div>
         </div>
 
+        {/* Interactive Metric Cards */}
         <div className="grid grid-cols-2 gap-4 mb-6">
-           <div className="p-3 bg-muted/30 rounded border border-border/50">
-             <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
+           <div 
+             onClick={() => setScalingMetric('revenue')}
+             className={`
+                p-3 rounded border cursor-pointer transition-all duration-200 group
+                ${scalingMetric === 'revenue' 
+                  ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
+                  : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
+             `}
+           >
+             <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'revenue' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                <DollarSign className="w-3 h-3" /> Revenue
              </div>
              <div className="text-lg font-mono font-medium">
                ${(company.revenue_usd / 1000000000).toFixed(2)}B
              </div>
+             {scalingMetric === 'revenue' && (
+                <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+             )}
            </div>
-           <div className="p-3 bg-muted/30 rounded border border-border/50">
-             <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1 flex items-center gap-1">
+
+           <div 
+             onClick={() => setScalingMetric('employees')}
+             className={`
+                p-3 rounded border cursor-pointer transition-all duration-200 group
+                ${scalingMetric === 'employees' 
+                  ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
+                  : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
+             `}
+           >
+             <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'employees' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                <Users className="w-3 h-3" /> Employees
              </div>
              <div className="text-lg font-mono font-medium">
                {company.employees.toLocaleString()}
              </div>
+             {scalingMetric === 'employees' && (
+                <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+             )}
            </div>
         </div>
 

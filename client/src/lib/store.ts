@@ -36,6 +36,7 @@ interface AppState {
   executives: Executive[];
   selectedCompanyId: string | null;
   searchQuery: string;
+  scalingMetric: 'revenue' | 'employees';
   
   setProject: (project: Project) => void;
   setCompanies: (companies: Company[]) => void;
@@ -47,6 +48,7 @@ interface AppState {
   
   selectCompany: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
+  setScalingMetric: (metric: 'revenue' | 'employees') => void;
   
   reset: () => void;
 }
@@ -57,6 +59,7 @@ export const useAppStore = create<AppState>((set) => ({
   executives: [],
   selectedCompanyId: null,
   searchQuery: '',
+  scalingMetric: 'revenue',
 
   setProject: (project) => set({ currentProject: project }),
   setCompanies: (companies) => set({ companies }),
@@ -70,12 +73,14 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectCompany: (id) => set({ selectedCompanyId: id }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  setScalingMetric: (metric) => set({ scalingMetric: metric }),
 
   reset: () => set({
     currentProject: null,
     companies: [],
     executives: [],
     selectedCompanyId: null,
-    searchQuery: ''
+    searchQuery: '',
+    scalingMetric: 'revenue'
   })
 }));

@@ -282,11 +282,16 @@ export default function RightPanel() {
           <div className="space-y-3">
             {companyExecutives.map(exec => (
               <div key={exec.id} className="group p-3 rounded border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card shadow-sm" data-testid={`card-executive-${exec.id}`}>
-                <div className="font-semibold text-sm mb-1">
-                  <EditableField
-                    value={exec.name}
-                    onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
-                  />
+                <div className="flex justify-between items-start mb-1">
+                  <div className="font-semibold text-sm">
+                    <EditableField
+                      value={exec.name}
+                      onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
+                    />
+                  </div>
+                  <span className={`text-[9px] font-medium ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
+                    {exec.confidence}/10
+                  </span>
                 </div>
                 <div className="text-xs text-muted-foreground font-medium mb-1">
                   <EditableField

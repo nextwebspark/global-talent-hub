@@ -211,9 +211,9 @@ async function generateSearchResults(criteria: any, searchQueryId: number) {
     messages: [
       {
         role: "system",
-        content: `You are an expert market research analyst with deep knowledge of global companies and their executives. Your task is to provide information about REAL, EXISTING companies based on the search criteria.
+        content: `You are an expert executive search analyst and market researcher with deep knowledge of global companies, their leadership teams, and organizational structures. Your task is to identify REAL companies and their TOP EXECUTIVES.
 
-IMPORTANT: Only return REAL companies that actually exist. Use your knowledge from training data about actual companies, their real headquarters locations, approximate revenue figures, employee counts, and known executives.
+IMPORTANT: Only return REAL companies and REAL executives that actually exist.
 
 Return a JSON object with this EXACT structure:
 {
@@ -221,8 +221,9 @@ Return a JSON object with this EXACT structure:
     {
       "name": "Actual Company Name",
       "sector": "Industry Sector",
-      "region": "Geographic Region",
+      "region": "Geographic Region", 
       "country": "Country Name",
+      "city": "Headquarters City",
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 5000000000,
@@ -233,37 +234,58 @@ Return a JSON object with this EXACT structure:
       "executives": [
         {
           "name": "Real Executive Name",
-          "title": "Their Actual Title",
-          "source": "Company Website"
+          "title": "CEO/CFO/COO/Chairman etc.",
+          "source": "LinkedIn",
+          "confidence": 9
         }
       ]
     }
   ]
 }
 
-DATA SOURCES (in order of priority):
-1. Annual Reports - Official company financial statements
+DATA SOURCES FOR EXECUTIVES (in order of priority):
+1. LinkedIn - Professional profiles with current positions
+2. Company Websites - Official leadership/about pages
+3. Bloomberg Executive Profiles
+4. Reuters, Crunchbase leadership data
+5. Business News (Forbes, Financial Times, WSJ)
+6. Annual Reports - Executive compensation sections
+
+DATA SOURCES FOR COMPANY DATA:
+1. Annual Reports - Official financial statements
 2. Company Websites - Official corporate information
-3. Aggregators - Bloomberg, Reuters, Crunchbase, etc.
-4. News Sources - Business news coverage
-5. General Search - Public domain information
+3. Bloomberg, Reuters, Crunchbase
+4. News Sources - Business coverage
+5. General Search - Public domain
 
 STRICT REQUIREMENTS:
-1. Return ONLY real, existing companies - NO fictional or made-up companies
-2. Use ACCURATE headquarters coordinates for each company
-3. For each data point, provide a source and confidence score (1-10)
-4. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or null
-5. Cross-reference multiple sources when possible
-6. Include REAL executives with their actual titles
+1. Return ONLY real, existing companies - NO fictional companies
+2. ALWAYS include TOP EXECUTIVES for EVERY company:
+   - CEO/Managing Director/President
+   - CFO/Chief Financial Officer  
+   - COO/Chief Operating Officer
+   - Chairman/Chairperson (if different from CEO)
+   - Other C-suite as relevant (CTO, CMO, etc.)
+3. Use the MAIN OFFICE/HEADQUARTERS ADDRESS coordinates - this should be the actual street address location of their head office in that country
+4. For each data point, provide a source and confidence score (1-10)
+5. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or "Unknown"
+6. Cross-reference multiple sources when possible
 7. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
 8. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
 9. Generate exactly ${limit} companies
 
-For each company, include:
-- "revenueSource": source of revenue data (e.g., "Annual Report 2024", "Bloomberg", or "Unknown")
-- "employeesSource": source of employee count
-- "confidence": overall confidence score 1-10 based on source quality
-- If data is unknown, set value to 0 and source to "Unknown"`
+CONFIDENCE SCORING:
+- 9-10: Data from multiple verified sources (LinkedIn + Company Website + Annual Report)
+- 7-8: Data from one authoritative source (Company Website or Annual Report)
+- 5-6: Data from aggregators (Bloomberg, Reuters, Crunchbase)
+- 3-4: Data from news sources only
+- 1-2: Data from general search, uncertain
+
+For executives, include:
+- Full legal name as appears on LinkedIn/official records
+- Exact current title
+- Source where you found this information
+- Confidence score (1-10) for this specific executive`
       },
       {
         role: "user",
@@ -308,7 +330,8 @@ Remember: Only return actual, existing companies with accurate information.`
         title: execData.title,
         email: execData.email,
         linkedin: execData.linkedin,
-        source: execData.source || 'Unknown'
+        source: execData.source || 'Unknown',
+        confidence: execData.confidence || 5
       });
       executives.push(executive);
     }

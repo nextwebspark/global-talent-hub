@@ -10,8 +10,10 @@ export interface Company {
   lat: number;
   lng: number;
   revenue_usd: number;
+  revenueSource?: string;
   employees: number;
-  confidence: 'High' | 'Medium' | 'Low';
+  employeesSource?: string;
+  confidence: number;
   description?: string;
   color?: string;
   source?: string;
@@ -22,8 +24,8 @@ export interface Executive {
   company_id: string;
   name: string;
   title: string;
-  source: 'Public' | 'Clockwork' | 'Manual';
-  confidence: 'High' | 'Medium' | 'Low';
+  source: string;
+  confidence: number;
 }
 
 export interface Project {
@@ -70,8 +72,10 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     lat: parseFloat(apiCompany.latitude),
     lng: parseFloat(apiCompany.longitude),
     revenue_usd: parseFloat(apiCompany.revenue || '0'),
+    revenueSource: (apiCompany as any).revenueSource || 'ChatGPT Knowledge Base',
     employees: apiCompany.employees || 0,
-    confidence: 'High',
+    employeesSource: (apiCompany as any).employeesSource || 'ChatGPT Knowledge Base',
+    confidence: (apiCompany as any).confidence || 5,
     color: apiCompany.color || '#1e3a8a',
     source: 'ChatGPT Knowledge Base',
   };
@@ -83,8 +87,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     company_id: companyId,
     name: apiExec.name,
     title: apiExec.title,
-    source: 'Public',
-    confidence: 'High',
+    source: (apiExec as any).source || 'ChatGPT Knowledge Base',
+    confidence: (apiExec as any).confidence || 5,
   };
 }
 

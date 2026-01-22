@@ -133,8 +133,8 @@ export default function RightPanel() {
       company_id: company.id,
       name: 'New Executive',
       title: 'Position TBD',
-      source: 'Manual' as const,
-      confidence: 'Medium' as const
+      source: 'Manual Entry',
+      confidence: 3
     };
     
     addExecutiveLocal(newExec);
@@ -167,8 +167,8 @@ export default function RightPanel() {
              <Badge variant="outline" className="rounded-sm font-normal text-xs uppercase tracking-wide text-muted-foreground border-muted-foreground/30" data-testid="badge-industry">
                {company.industry}
              </Badge>
-             <Badge variant="secondary" className={`rounded-sm font-normal text-xs uppercase tracking-wide ${company.confidence === 'High' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`} data-testid="badge-confidence">
-               {company.confidence} Confidence
+             <Badge variant="secondary" className={`rounded-sm font-normal text-xs uppercase tracking-wide ${company.confidence >= 7 ? 'bg-green-100 text-green-800' : company.confidence >= 4 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`} data-testid="badge-confidence">
+               Confidence: {company.confidence}/10
              </Badge>
           </div>
           
@@ -218,6 +218,9 @@ export default function RightPanel() {
                 />
              </div>
 
+             {company.revenueSource && (
+                <div className="text-[9px] text-muted-foreground mt-1 italic">Source: {company.revenueSource}</div>
+             )}
              {scalingMetric === 'revenue' && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}
@@ -248,6 +251,9 @@ export default function RightPanel() {
                 />
              </div>
 
+             {company.employeesSource && (
+                <div className="text-[9px] text-muted-foreground mt-1 italic">Source: {company.employeesSource}</div>
+             )}
              {scalingMetric === 'employees' && (
                 <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
              )}

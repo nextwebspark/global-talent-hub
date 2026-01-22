@@ -34,6 +34,8 @@ export default function Dashboard() {
     e.preventDefault();
     if (!searchInput.trim()) return;
 
+    reset();
+    
     try {
       const result = await searchMutation.mutateAsync(searchInput);
       
@@ -45,7 +47,6 @@ export default function Dashboard() {
       });
       
       loadFromAPI(result.results);
-      refetch();
       
       toast.success(`Found ${result.results.length} companies matching your criteria`);
       setSearchInput('');

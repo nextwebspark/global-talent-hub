@@ -226,32 +226,44 @@ Return a JSON object with this EXACT structure:
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 5000000000,
+      "revenueSource": "Annual Report 2024",
       "employees": 2500,
+      "employeesSource": "Company Website",
+      "confidence": 8,
       "executives": [
         {
           "name": "Real Executive Name",
           "title": "Their Actual Title",
-          "email": "firstname.lastname@company.com",
-          "linkedin": "https://linkedin.com/in/firstname-lastname"
+          "source": "Company Website"
         }
       ]
     }
   ]
 }
 
+DATA SOURCES (in order of priority):
+1. Annual Reports - Official company financial statements
+2. Company Websites - Official corporate information
+3. Aggregators - Bloomberg, Reuters, Crunchbase, etc.
+4. News Sources - Business news coverage
+5. General Search - Public domain information
+
 STRICT REQUIREMENTS:
 1. Return ONLY real, existing companies - NO fictional or made-up companies
 2. Use ACCURATE headquarters coordinates for each company
-3. For revenue and employees: ONLY use values you are confident about from public sources. If unknown, use 0
-4. Include REAL executives with their actual titles (CEO, CFO, Chairman, etc.)
-5. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
-6. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
-7. If specific executive roles are requested, find companies with those roles filled
-8. Generate exactly ${limit} companies
-9. For family businesses, include prominent family-owned conglomerates and enterprises
-10. Prioritize well-known, established companies in the region
-11. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or leave empty
-12. Each company should include a "source" field with value "ChatGPT Knowledge Base"`
+3. For each data point, provide a source and confidence score (1-10)
+4. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or null
+5. Cross-reference multiple sources when possible
+6. Include REAL executives with their actual titles
+7. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
+8. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
+9. Generate exactly ${limit} companies
+
+For each company, include:
+- "revenueSource": source of revenue data (e.g., "Annual Report 2024", "Bloomberg", or "Unknown")
+- "employeesSource": source of employee count
+- "confidence": overall confidence score 1-10 based on source quality
+- If data is unknown, set value to 0 and source to "Unknown"`
       },
       {
         role: "user",

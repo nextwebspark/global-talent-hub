@@ -21,8 +21,9 @@ export default function LeftPanel() {
       lng: -0.1278,
       revenue_usd: 100000000,
       employees: 50,
-      confidence: 'Low',
-      description: 'Manually added company.'
+      confidence: 3,
+      description: 'Manually added company.',
+      source: 'Manual Entry'
     });
   };
 
@@ -127,8 +128,8 @@ export default function LeftPanel() {
                     <span className="text-xs font-mono text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
                       ${(company.revenue_usd / 1000000000).toFixed(1)}B
                     </span>
-                    <span className={`text-[10px] uppercase font-bold tracking-wider ${company.confidence === 'High' ? 'text-green-600' : 'text-amber-600'}`}>
-                      {company.confidence}
+                    <span className={`text-[10px] uppercase font-bold tracking-wider ${company.confidence >= 7 ? 'text-green-600' : company.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
+                      {company.confidence}/10
                     </span>
                   </div>
                 </div>

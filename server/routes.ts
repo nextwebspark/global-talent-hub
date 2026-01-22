@@ -204,52 +204,63 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
 }
 
 async function generateSearchResults(criteria: any, searchQueryId: number) {
+  const limit = criteria.limit || 10;
+  
   const response = await openai.chat.completions.create({
     model: "gpt-5.1",
     messages: [
       {
         role: "system",
-        content: `You are generating realistic company and executive data for an executive search platform. Based on the search criteria, generate companies that EXACTLY match ALL specified criteria. Return ONLY valid JSON array with this structure:
-[
-  {
-    "name": "Company Name",
-    "sector": "Industry Sector",
-    "region": "Geographic Region",
-    "country": "Country Name",
-    "latitude": number,
-    "longitude": number,
-    "revenue": number (in USD),
-    "employees": number,
-    "executives": [
-      {
-        "name": "Full Name",
-        "title": "Executive Title",
-        "email": "email@company.com",
-        "linkedin": "https://linkedin.com/in/profile"
-      }
-    ]
-  }
-]
+        content: `You are generating realistic company and executive data for an executive search platform. Generate ${limit} companies matching the search criteria.
 
-STRICT RULES:
-1. Generate ONLY companies matching ALL criteria (revenue range, sector, region, roles)
-2. Use accurate coordinates for company locations
-3. Revenue in USD, employees as integers
-4. Include 1-3 executives per company matching requested roles
-5. Make data realistic and diverse
-6. Respect the limit if specified`
+Return a JSON object with this EXACT structure:
+{
+  "companies": [
+    {
+      "name": "Company Name",
+      "sector": "Industry Sector",
+      "region": "Geographic Region (e.g., Europe, Asia, Middle East)",
+      "country": "Country Name",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "revenue": 5000000000,
+      "employees": 2500,
+      "executives": [
+        {
+          "name": "Full Name",
+          "title": "Executive Title (CEO, CFO, etc.)",
+          "email": "email@company.com",
+          "linkedin": "https://linkedin.com/in/profile"
+        }
+      ]
+    }
+  ]
+}
+
+RULES:
+1. Generate exactly ${limit} companies matching the criteria
+2. Use REAL geographic coordinates for company headquarters
+3. Revenue in USD (number, not string)
+4. Include 1-3 executives per company
+5. Make company names and data realistic
+6. Sectors should match: ${criteria.sectors?.join(', ') || 'any sector'}
+7. Regions should match: ${criteria.regions?.join(', ') || 'any region'}
+8. If specific roles requested, include executives with those titles`
       },
       {
         role: "user",
-        content: `Generate companies matching: ${JSON.stringify(criteria)}`
+        content: `Generate ${limit} companies for: ${JSON.stringify(criteria)}`
       }
     ],
     response_format: { type: "json_object" },
-    max_completion_tokens: 4000
+    max_completion_tokens: 8000
   });
 
-  const data = JSON.parse(response.choices[0]?.message?.content || "{}");
-  const companiesData = data.companies || [];
+  const content = response.choices[0]?.message?.content || "{}";
+  console.log("OpenAI response:", content.substring(0, 500));
+  
+  const data = JSON.parse(content);
+  const companiesData = Array.isArray(data) ? data : (data.companies || []);
 
   const companies = [];
   for (const companyData of companiesData) {

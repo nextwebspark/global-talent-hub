@@ -68,52 +68,57 @@ export default function Landing() {
           Identify top companies and leaders in seconds.
         </p>
 
-        <form onSubmit={handleSearch} className="relative max-w-5xl mx-auto group">
-          <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-          
-          <div className="relative flex items-center gap-2">
-            <div className="flex-1 flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
-              <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
-              <Input 
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
-                className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 min-w-[400px]"
-                disabled={searchMutation.isPending}
-                data-testid="input-search-query"
-                title={input}
-              />
+        <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto">
+          <div className="flex flex-col gap-4">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="relative flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
+                <Input 
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
+                  className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 flex-1"
+                  disabled={searchMutation.isPending}
+                  data-testid="input-search-query"
+                  title={input}
+                />
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-center gap-3">
+              <Select value={selectedModel} onValueChange={setSelectedModel}>
+                <SelectTrigger className="w-[280px] h-12 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer px-4" data-testid="select-model">
+                  <div className="flex items-center gap-2 w-full overflow-hidden">
+                    <Bot className="h-4 w-4 text-primary shrink-0" />
+                    <span className="truncate flex-1 text-left">
+                      {models?.find(m => m.id === selectedModel)?.name || "Select model..."}
+                    </span>
+                  </div>
+                </SelectTrigger>
+                <SelectContent className="max-h-80 max-w-[350px]">
+                  {models?.map((model) => (
+                    <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-sm truncate">{model.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{model.provider}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
               <Button 
                 type="submit" 
                 size="lg" 
                 disabled={searchMutation.isPending}
-                className="h-10 mr-2 rounded-full px-6 font-semibold shadow-none shrink-0"
+                className="h-12 rounded-full px-8 font-semibold shadow-lg"
                 data-testid="button-submit-search"
               >
-                {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : 'Deep Search'}
+                {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
+                {searchMutation.isPending ? 'Searching...' : 'Run Search'}
               </Button>
             </div>
-            
-            <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="min-w-[200px] max-w-[280px] h-14 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer px-4" data-testid="select-model">
-                <div className="flex items-center gap-2 w-full overflow-hidden">
-                  <Bot className="h-4 w-4 text-primary shrink-0" />
-                  <span className="truncate flex-1 text-left">
-                    {models?.find(m => m.id === selectedModel)?.name || "Select model..."}
-                  </span>
-                </div>
-              </SelectTrigger>
-              <SelectContent className="max-h-80 max-w-[350px]">
-                {models?.map((model) => (
-                  <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-sm truncate">{model.name}</span>
-                      <span className="text-[10px] text-muted-foreground">{model.provider}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </form>
       </motion.div>

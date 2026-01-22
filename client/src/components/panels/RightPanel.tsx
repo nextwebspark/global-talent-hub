@@ -183,6 +183,13 @@ export default function RightPanel() {
             <MapPin className="w-3 h-3" />
             {company.hq_city}, {company.hq_country}
           </div>
+          
+          {company.source && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-md" data-testid="text-source">
+              <span className="font-medium">Source:</span>
+              <span>{company.source}</span>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-6">

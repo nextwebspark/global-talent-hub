@@ -14,6 +14,7 @@ export interface Company {
   confidence: 'High' | 'Medium' | 'Low';
   description?: string;
   color?: string;
+  source?: string;
 }
 
 export interface Executive {
@@ -72,6 +73,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     employees: apiCompany.employees || 0,
     confidence: 'High',
     color: apiCompany.color || '#1e3a8a',
+    source: 'ChatGPT Knowledge Base',
   };
 }
 

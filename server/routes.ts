@@ -242,14 +242,16 @@ Return a JSON object with this EXACT structure:
 STRICT REQUIREMENTS:
 1. Return ONLY real, existing companies - NO fictional or made-up companies
 2. Use ACCURATE headquarters coordinates for each company
-3. Provide realistic revenue estimates in USD based on publicly available information
+3. For revenue and employees: ONLY use values you are confident about from public sources. If unknown, use 0
 4. Include REAL executives with their actual titles (CEO, CFO, Chairman, etc.)
 5. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
 6. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
 7. If specific executive roles are requested, find companies with those roles filled
 8. Generate exactly ${limit} companies
 9. For family businesses, include prominent family-owned conglomerates and enterprises
-10. Prioritize well-known, established companies in the region`
+10. Prioritize well-known, established companies in the region
+11. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or leave empty
+12. Each company should include a "source" field with value "ChatGPT Knowledge Base"`
       },
       {
         role: "user",

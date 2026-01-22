@@ -211,45 +211,51 @@ async function generateSearchResults(criteria: any, searchQueryId: number) {
     messages: [
       {
         role: "system",
-        content: `You are generating realistic company and executive data for an executive search platform. Generate ${limit} companies matching the search criteria.
+        content: `You are an expert market research analyst with deep knowledge of global companies and their executives. Your task is to provide information about REAL, EXISTING companies based on the search criteria.
+
+IMPORTANT: Only return REAL companies that actually exist. Use your knowledge from training data about actual companies, their real headquarters locations, approximate revenue figures, employee counts, and known executives.
 
 Return a JSON object with this EXACT structure:
 {
   "companies": [
     {
-      "name": "Company Name",
+      "name": "Actual Company Name",
       "sector": "Industry Sector",
-      "region": "Geographic Region (e.g., Europe, Asia, Middle East)",
+      "region": "Geographic Region",
       "country": "Country Name",
-      "latitude": 48.8566,
-      "longitude": 2.3522,
+      "latitude": 25.2048,
+      "longitude": 55.2708,
       "revenue": 5000000000,
       "employees": 2500,
       "executives": [
         {
-          "name": "Full Name",
-          "title": "Executive Title (CEO, CFO, etc.)",
-          "email": "email@company.com",
-          "linkedin": "https://linkedin.com/in/profile"
+          "name": "Real Executive Name",
+          "title": "Their Actual Title",
+          "email": "firstname.lastname@company.com",
+          "linkedin": "https://linkedin.com/in/firstname-lastname"
         }
       ]
     }
   ]
 }
 
-RULES:
-1. Generate exactly ${limit} companies matching the criteria
-2. Use REAL geographic coordinates for company headquarters
-3. Revenue in USD (number, not string)
-4. Include 1-3 executives per company
-5. Make company names and data realistic
-6. Sectors should match: ${criteria.sectors?.join(', ') || 'any sector'}
-7. Regions should match: ${criteria.regions?.join(', ') || 'any region'}
-8. If specific roles requested, include executives with those titles`
+STRICT REQUIREMENTS:
+1. Return ONLY real, existing companies - NO fictional or made-up companies
+2. Use ACCURATE headquarters coordinates for each company
+3. Provide realistic revenue estimates in USD based on publicly available information
+4. Include REAL executives with their actual titles (CEO, CFO, Chairman, etc.)
+5. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
+6. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
+7. If specific executive roles are requested, find companies with those roles filled
+8. Generate exactly ${limit} companies
+9. For family businesses, include prominent family-owned conglomerates and enterprises
+10. Prioritize well-known, established companies in the region`
       },
       {
         role: "user",
-        content: `Generate ${limit} companies for: ${JSON.stringify(criteria)}`
+        content: `Find ${limit} REAL companies matching these criteria: ${JSON.stringify(criteria)}
+
+Remember: Only return actual, existing companies with accurate information.`
       }
     ],
     response_format: { type: "json_object" },

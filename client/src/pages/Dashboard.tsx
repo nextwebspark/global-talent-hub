@@ -31,8 +31,6 @@ export default function Dashboard() {
   const handleNewSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchInput.trim()) return;
-
-    reset();
     
     try {
       const result = await searchMutation.mutateAsync({ query: searchInput, model: selectedModel });
@@ -72,30 +70,34 @@ export default function Dashboard() {
       <LeftPanel />
       
       <div className="flex-1 relative z-0">
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-3xl px-4">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-5xl px-4">
           <div className="flex items-center gap-2">
             <form onSubmit={handleNewSearch} className="flex-1 flex items-center bg-background/95 backdrop-blur-sm shadow-lg rounded-full border border-border overflow-hidden">
-              <div className="flex items-center gap-2 px-4">
-                <Globe className="h-4 w-4 text-primary" />
-                <span className="text-xs font-medium text-muted-foreground hidden sm:inline">
-                  {currentProject.name.substring(0, 25)}{currentProject.name.length > 25 ? '...' : ''}
+              <div className="flex items-center gap-2 px-4 group relative" title={currentProject.name}>
+                <Globe className="h-4 w-4 text-primary shrink-0" />
+                <span className="text-xs font-medium text-muted-foreground hidden sm:inline max-w-[200px] truncate">
+                  {currentProject.name}
                 </span>
+                <div className="absolute left-0 top-full mt-1 bg-popover text-popover-foreground text-xs p-2 rounded shadow-lg border border-border opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
+                  {currentProject.name}
+                </div>
               </div>
-              <div className="h-6 w-px bg-border" />
+              <div className="h-6 w-px bg-border shrink-0" />
               <Search className="ml-3 h-4 w-4 text-muted-foreground shrink-0" />
               <Input 
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="New search..." 
-                className="border-0 shadow-none focus-visible:ring-0 h-12 text-sm bg-transparent px-3 flex-1"
+                placeholder="Enter new search query..." 
+                className="border-0 shadow-none focus-visible:ring-0 h-12 text-sm bg-transparent px-3 flex-1 min-w-[300px]"
                 disabled={searchMutation.isPending}
                 data-testid="input-new-search"
+                title={searchInput}
               />
               <Button 
                 type="submit" 
                 size="sm" 
                 disabled={searchMutation.isPending}
-                className="h-8 mr-2 rounded-full px-4 text-xs font-semibold"
+                className="h-8 mr-2 rounded-full px-4 text-xs font-semibold shrink-0"
                 data-testid="button-new-search"
               >
                 {searchMutation.isPending ? <Loader2 className="animate-spin h-3 w-3" /> : 'Search'}

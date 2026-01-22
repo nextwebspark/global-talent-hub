@@ -68,7 +68,7 @@ export default function Landing() {
           Identify top companies and leaders in seconds.
         </p>
 
-        <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto group">
+        <form onSubmit={handleSearch} className="relative max-w-5xl mx-auto group">
           <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           
           <div className="relative flex items-center gap-2">
@@ -78,15 +78,16 @@ export default function Landing() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
-                className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4"
+                className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 min-w-[400px]"
                 disabled={searchMutation.isPending}
                 data-testid="input-search-query"
+                title={input}
               />
               <Button 
                 type="submit" 
                 size="lg" 
                 disabled={searchMutation.isPending}
-                className="h-10 mr-2 rounded-full px-6 font-semibold shadow-none"
+                className="h-10 mr-2 rounded-full px-6 font-semibold shadow-none shrink-0"
                 data-testid="button-submit-search"
               >
                 {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : 'Deep Search'}

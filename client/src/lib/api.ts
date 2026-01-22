@@ -150,14 +150,31 @@ export function useDeleteExecutive() {
   });
 }
 
+export interface LLMModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export function useModels() {
+  return useQuery<LLMModel[]>({
+    queryKey: ['models'],
+    queryFn: async () => {
+      const response = await fetch('/api/models');
+      if (!response.ok) throw new Error('Failed to fetch models');
+      return response.json();
+    },
+  });
+}
+
 export function useSearch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (query: string) => {
+    mutationFn: async ({ query, model }: { query: string; model?: string }) => {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, model }),
       });
       if (!response.ok) throw new Error('Failed to execute search');
       return response.json() as Promise<SearchResult>;

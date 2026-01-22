@@ -9,6 +9,22 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+const openrouter = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
+
+const AVAILABLE_MODELS = [
+  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
+  { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+  { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
+  { id: "anthropic/claude-3-opus", name: "Claude 3 Opus", provider: "Anthropic" },
+  { id: "google/gemini-pro-1.5", name: "Gemini Pro 1.5", provider: "Google" },
+  { id: "meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", provider: "Meta" },
+  { id: "mistralai/mixtral-8x22b-instruct", name: "Mixtral 8x22B", provider: "Mistral" },
+  { id: "replit", name: "Replit AI (Default)", provider: "Replit" },
+];
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -122,16 +138,25 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/models", async (req, res) => {
+    res.json(AVAILABLE_MODELS);
+  });
+
   app.post("/api/search", async (req, res) => {
     try {
-      const { query } = req.body;
+      const { query, model } = req.body;
       
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.1",
+      const selectedModel = model || "replit";
+      const isOpenRouter = selectedModel !== "replit";
+      const client = isOpenRouter ? openrouter : openai;
+      const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+
+      const response = await client.chat.completions.create({
+        model: modelName,
         messages: [
           {
             role: "system",
@@ -169,7 +194,7 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
         resultCount: 0
       });
 
-      const companies = await generateSearchResults(parsed.criteria, searchQuery.id);
+      const companies = await generateSearchResults(parsed.criteria, searchQuery.id, selectedModel);
 
       await storage.createSearchQuery({
         query,
@@ -203,11 +228,15 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
   return httpServer;
 }
 
-async function generateSearchResults(criteria: any, searchQueryId: number) {
+async function generateSearchResults(criteria: any, searchQueryId: number, selectedModel: string = "replit") {
   const limit = criteria.limit || 10;
   
-  const response = await openai.chat.completions.create({
-    model: "gpt-5.1",
+  const isOpenRouter = selectedModel !== "replit";
+  const client = isOpenRouter ? openrouter : openai;
+  const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+  
+  const response = await client.chat.completions.create({
+    model: modelName,
     messages: [
       {
         role: "system",

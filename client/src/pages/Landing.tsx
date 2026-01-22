@@ -1,26 +1,29 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
-import { useSearch } from '@/lib/api';
+import { useSearch, useModels } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Loader2, Globe } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, Loader2, Globe, Bot } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 export default function Landing() {
   const [input, setInput] = useState('');
+  const [selectedModel, setSelectedModel] = useState('replit');
   const [, setLocation] = useLocation();
   
   const { setProject, loadFromAPI } = useAppStore();
   const searchMutation = useSearch();
+  const { data: models } = useModels();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
     try {
-      const result = await searchMutation.mutateAsync(input);
+      const result = await searchMutation.mutateAsync({ query: input, model: selectedModel });
       
       setProject({
         id: String(result.searchQueryId),
@@ -89,12 +92,26 @@ export default function Landing() {
             </Button>
           </div>
           
-          <div className="mt-4 flex justify-center gap-4 text-xs text-muted-foreground">
-             <span>Powered by OpenAI</span>
-             <span>•</span>
-             <span className="flex items-center gap-1">
-               Real-time AI Analysis
-             </span>
+          <div className="mt-6 flex flex-col items-center gap-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Bot className="h-4 w-4" />
+              <span>Select AI Model:</span>
+            </div>
+            <Select value={selectedModel} onValueChange={setSelectedModel}>
+              <SelectTrigger className="w-64 h-9 text-sm bg-card border-border/50" data-testid="select-model">
+                <SelectValue placeholder="Choose model..." />
+              </SelectTrigger>
+              <SelectContent>
+                {models?.map((model) => (
+                  <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">{model.name}</span>
+                      <span className="text-xs text-muted-foreground">({model.provider})</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </form>
       </motion.div>

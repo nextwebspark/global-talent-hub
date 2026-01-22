@@ -32,7 +32,7 @@ export default function Dashboard() {
     reset();
     
     try {
-      const result = await searchMutation.mutateAsync(searchInput);
+      const result = await searchMutation.mutateAsync({ query: searchInput });
       
       setProject({
         id: String(result.searchQueryId),

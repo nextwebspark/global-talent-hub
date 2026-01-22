@@ -68,45 +68,44 @@ export default function Landing() {
           Identify top companies and leaders in seconds.
         </p>
 
-        <form onSubmit={handleSearch} className="relative max-w-xl mx-auto group">
+        <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto group">
           <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           
-          <div className="relative flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
-            <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
-            <Input 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
-              className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4"
-              disabled={searchMutation.isPending}
-              data-testid="input-search-query"
-            />
-            <Button 
-              type="submit" 
-              size="lg" 
-              disabled={searchMutation.isPending}
-              className="h-10 mr-2 rounded-full px-6 font-semibold shadow-none"
-              data-testid="button-submit-search"
-            >
-              {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : 'Deep Search'}
-            </Button>
-          </div>
-          
-          <div className="mt-6 flex flex-col items-center gap-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Bot className="h-4 w-4" />
-              <span>Select AI Model:</span>
+          <div className="relative flex items-center gap-2">
+            <div className="flex-1 flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
+              <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
+              <Input 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
+                className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4"
+                disabled={searchMutation.isPending}
+                data-testid="input-search-query"
+              />
+              <Button 
+                type="submit" 
+                size="lg" 
+                disabled={searchMutation.isPending}
+                className="h-10 mr-2 rounded-full px-6 font-semibold shadow-none"
+                data-testid="button-submit-search"
+              >
+                {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : 'Deep Search'}
+              </Button>
             </div>
+            
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-64 h-9 text-sm bg-card border-border/50" data-testid="select-model">
-                <SelectValue placeholder="Choose model..." />
+              <SelectTrigger className="w-48 h-14 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer [&>span]:flex-1 [&>span]:text-left" data-testid="select-model">
+                <div className="flex items-center gap-2 px-2">
+                  <Bot className="h-4 w-4 text-primary shrink-0" />
+                  <SelectValue placeholder="Select model..." />
+                </div>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-80">
                 {models?.map((model) => (
                   <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
                     <span className="flex items-center gap-2">
-                      <span className="font-medium">{model.name}</span>
-                      <span className="text-xs text-muted-foreground">({model.provider})</span>
+                      <span className="font-medium text-sm">{model.name}</span>
+                      <span className="text-[10px] text-muted-foreground">({model.provider})</span>
                     </span>
                   </SelectItem>
                 ))}

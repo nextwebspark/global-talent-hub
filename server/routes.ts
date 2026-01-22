@@ -139,7 +139,34 @@ export async function registerRoutes(
   });
 
   app.get("/api/models", async (req, res) => {
-    res.json(AVAILABLE_MODELS);
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/models", {
+        headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        },
+      });
+      
+      if (!response.ok) {
+        console.error("Failed to fetch OpenRouter models");
+        return res.json(AVAILABLE_MODELS);
+      }
+      
+      const data = await response.json();
+      const models = data.data?.map((model: any) => ({
+        id: model.id,
+        name: model.name || model.id.split('/').pop(),
+        provider: model.id.split('/')[0] || 'Unknown',
+        contextLength: model.context_length,
+        pricing: model.pricing,
+      })) || [];
+      
+      models.unshift({ id: "replit", name: "Replit AI (Default)", provider: "Replit" });
+      
+      res.json(models);
+    } catch (error) {
+      console.error("Error fetching models:", error);
+      res.json(AVAILABLE_MODELS);
+    }
   });
 
   app.post("/api/search", async (req, res) => {

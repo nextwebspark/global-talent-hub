@@ -103,19 +103,21 @@ export default function Dashboard() {
             </form>
             
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-44 h-12 text-xs bg-background/95 backdrop-blur-sm border-border rounded-full shadow-lg cursor-pointer [&>span]:flex-1 [&>span]:text-left" data-testid="select-model-dashboard">
-                <div className="flex items-center gap-2 px-2">
+              <SelectTrigger className="min-w-[160px] max-w-[220px] h-12 text-xs bg-background/95 backdrop-blur-sm border-border rounded-full shadow-lg cursor-pointer px-3" data-testid="select-model-dashboard">
+                <div className="flex items-center gap-2 w-full overflow-hidden">
                   <Bot className="h-3 w-3 text-primary shrink-0" />
-                  <SelectValue placeholder="Model..." />
+                  <span className="truncate flex-1 text-left text-xs">
+                    {models?.find(m => m.id === selectedModel)?.name || "Model..."}
+                  </span>
                 </div>
               </SelectTrigger>
-              <SelectContent className="max-h-80">
+              <SelectContent className="max-h-80 max-w-[320px]">
                 {models?.map((model) => (
                   <SelectItem key={model.id} value={model.id}>
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium text-xs">{model.name}</span>
-                      <span className="text-[9px] text-muted-foreground">({model.provider})</span>
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-xs truncate">{model.name}</span>
+                      <span className="text-[9px] text-muted-foreground">{model.provider}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

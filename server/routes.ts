@@ -152,13 +152,23 @@ export async function registerRoutes(
       }
       
       const data = await response.json();
-      const models = data.data?.map((model: any) => ({
-        id: model.id,
-        name: model.name || model.id.split('/').pop(),
-        provider: model.id.split('/')[0] || 'Unknown',
-        contextLength: model.context_length,
-        pricing: model.pricing,
-      })) || [];
+      const models = data.data
+        ?.filter((model: any) => {
+          const id = model.id.toLowerCase();
+          const isAudioOnly = id.includes('audio-preview') || 
+                              id.includes('tts') || 
+                              id.includes('whisper') ||
+                              id.includes('speech');
+          const isImageOnly = id.includes('dall-e') || id.includes('image');
+          return !isAudioOnly && !isImageOnly;
+        })
+        .map((model: any) => ({
+          id: model.id,
+          name: model.name || model.id.split('/').pop(),
+          provider: model.id.split('/')[0] || 'Unknown',
+          contextLength: model.context_length,
+          pricing: model.pricing,
+        })) || [];
       
       models.unshift({ id: "replit", name: "Replit AI (Default)", provider: "Replit" });
       
@@ -182,12 +192,10 @@ export async function registerRoutes(
       const client = isOpenRouter ? openrouter : openai;
       const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
 
-      const response = await client.chat.completions.create({
-        model: modelName,
-        messages: [
-          {
-            role: "system",
-            content: `You are an AI assistant for an executive search platform. Parse the user's search query and extract structured criteria. Return ONLY valid JSON with this exact structure:
+      const messages = [
+        {
+          role: "system" as const,
+          content: `You are an AI assistant for an executive search platform. Parse the user's search query and extract structured criteria. Return ONLY valid JSON with this exact structure (no additional text):
 {
   "criteria": {
     "roles": ["array of executive role titles"],
@@ -202,18 +210,31 @@ export async function registerRoutes(
   "interpretation": "brief summary of what you understood"
 }
 
-Revenue should be in USD (convert if needed). Extract ONLY explicit criteria from the query.`
-          },
-          {
-            role: "user",
-            content: query
-          }
-        ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 1000
-      });
+Revenue should be in USD (convert if needed). Extract ONLY explicit criteria from the query. IMPORTANT: Return ONLY the JSON object, no markdown, no explanation.`
+        },
+        {
+          role: "user" as const,
+          content: query
+        }
+      ];
 
-      const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+      const requestOptions: any = {
+        model: modelName,
+        messages,
+        max_tokens: 1000
+      };
+      
+      if (!isOpenRouter) {
+        requestOptions.response_format = { type: "json_object" };
+        requestOptions.max_completion_tokens = 1000;
+        delete requestOptions.max_tokens;
+      }
+
+      const response = await client.chat.completions.create(requestOptions);
+
+      let content = response.choices[0]?.message?.content || "{}";
+      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(content);
       
       const searchQuery = await storage.createSearchQuery({
         query,
@@ -262,12 +283,10 @@ async function generateSearchResults(criteria: any, searchQueryId: number, selec
   const client = isOpenRouter ? openrouter : openai;
   const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
   
-  const response = await client.chat.completions.create({
-    model: modelName,
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert executive search analyst and market researcher with deep knowledge of global companies, their leadership teams, and organizational structures. Your task is to identify REAL companies and their TOP EXECUTIVES.
+  const messages = [
+    {
+      role: "system" as const,
+      content: `You are an expert executive search analyst and market researcher with deep knowledge of global companies, their leadership teams, and organizational structures. Your task is to identify REAL companies and their TOP EXECUTIVES.
 
 IMPORTANT: Only return REAL companies and REAL executives that actually exist.
 
@@ -348,17 +367,29 @@ For executives, include:
 - Confidence score (1-10) for this specific executive`
       },
       {
-        role: "user",
+        role: "user" as const,
         content: `Find ${limit} REAL companies matching these criteria: ${JSON.stringify(criteria)}
 
-Remember: Only return actual, existing companies with accurate information.`
+Remember: Only return actual, existing companies with accurate information. Return ONLY the JSON object.`
       }
-    ],
-    response_format: { type: "json_object" },
-    max_completion_tokens: 8000
-  });
+    ];
 
-  const content = response.choices[0]?.message?.content || "{}";
+  const requestOptions: any = {
+    model: modelName,
+    messages,
+    max_tokens: 8000
+  };
+  
+  if (!isOpenRouter) {
+    requestOptions.response_format = { type: "json_object" };
+    requestOptions.max_completion_tokens = 8000;
+    delete requestOptions.max_tokens;
+  }
+
+  const response = await client.chat.completions.create(requestOptions);
+
+  let content = response.choices[0]?.message?.content || "{}";
+  content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   console.log("OpenAI response:", content.substring(0, 500));
   
   const data = JSON.parse(content);

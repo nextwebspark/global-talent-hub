@@ -94,19 +94,21 @@ export default function Landing() {
             </div>
             
             <Select value={selectedModel} onValueChange={setSelectedModel}>
-              <SelectTrigger className="w-48 h-14 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer [&>span]:flex-1 [&>span]:text-left" data-testid="select-model">
-                <div className="flex items-center gap-2 px-2">
+              <SelectTrigger className="min-w-[200px] max-w-[280px] h-14 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer px-4" data-testid="select-model">
+                <div className="flex items-center gap-2 w-full overflow-hidden">
                   <Bot className="h-4 w-4 text-primary shrink-0" />
-                  <SelectValue placeholder="Select model..." />
+                  <span className="truncate flex-1 text-left">
+                    {models?.find(m => m.id === selectedModel)?.name || "Select model..."}
+                  </span>
                 </div>
               </SelectTrigger>
-              <SelectContent className="max-h-80">
+              <SelectContent className="max-h-80 max-w-[350px]">
                 {models?.map((model) => (
                   <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{model.name}</span>
-                      <span className="text-[10px] text-muted-foreground">({model.provider})</span>
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-sm truncate">{model.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{model.provider}</span>
+                    </div>
                   </SelectItem>
                 ))}
               </SelectContent>

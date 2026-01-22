@@ -1,0 +1,180 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+export interface Company {
+  id: number;
+  name: string;
+  sector: string | null;
+  region: string | null;
+  country: string | null;
+  latitude: string;
+  longitude: string;
+  revenue: string | null;
+  employees: number | null;
+  color: string | null;
+  searchQueryId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  executives?: Executive[];
+}
+
+export interface Executive {
+  id: number;
+  companyId: number;
+  name: string;
+  title: string;
+  email: string | null;
+  phone: string | null;
+  linkedin: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SearchResult {
+  searchQueryId: number;
+  query: string;
+  interpretation: string;
+  criteria: any;
+  results: Company[];
+}
+
+export function useCompanies() {
+  return useQuery<Company[]>({
+    queryKey: ['companies'],
+    queryFn: async () => {
+      const response = await fetch('/api/companies');
+      if (!response.ok) throw new Error('Failed to fetch companies');
+      return response.json();
+    },
+  });
+}
+
+export function useCreateCompany() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (company: Partial<Company>) => {
+      const response = await fetch('/api/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(company),
+      });
+      if (!response.ok) throw new Error('Failed to create company');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useUpdateCompany() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<Company> }) => {
+      const response = await fetch(`/api/companies/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update company');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useDeleteCompany() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/companies/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete company');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useCreateExecutive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (executive: Partial<Executive>) => {
+      const response = await fetch('/api/executives', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(executive),
+      });
+      if (!response.ok) throw new Error('Failed to create executive');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useUpdateExecutive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<Executive> }) => {
+      const response = await fetch(`/api/executives/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error('Failed to update executive');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useDeleteExecutive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/executives/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete executive');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useSearch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (query: string) => {
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      if (!response.ok) throw new Error('Failed to execute search');
+      return response.json() as Promise<SearchResult>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
+    },
+  });
+}
+
+export function useSearchHistory() {
+  return useQuery({
+    queryKey: ['search-history'],
+    queryFn: async () => {
+      const response = await fetch('/api/search-history');
+      if (!response.ok) throw new Error('Failed to fetch search history');
+      return response.json();
+    },
+  });
+}

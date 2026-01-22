@@ -1,38 +1,130 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import { 
+  companies, 
+  executives, 
+  searchQueries, 
+  users,
+  type InsertUser,
+  type User,
+  type Company,
+  type InsertCompany,
+  type Executive,
+  type InsertExecutive,
+  type SearchQuery,
+  type InsertSearchQuery
+} from "@shared/schema";
+import { eq, desc, and, gte, lte, ilike, or, sql } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  
+  getAllCompanies(): Promise<Company[]>;
+  getCompany(id: number): Promise<Company | undefined>;
+  getCompaniesBySearchQuery(searchQueryId: number): Promise<Company[]>;
+  createCompany(company: InsertCompany): Promise<Company>;
+  updateCompany(id: number, data: Partial<InsertCompany>): Promise<Company>;
+  deleteCompany(id: number): Promise<void>;
+  
+  getExecutivesByCompany(companyId: number): Promise<Executive[]>;
+  getExecutive(id: number): Promise<Executive | undefined>;
+  createExecutive(executive: InsertExecutive): Promise<Executive>;
+  updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
+  deleteExecutive(id: number): Promise<void>;
+  
+  getAllSearchQueries(): Promise<SearchQuery[]>;
+  getSearchQuery(id: number): Promise<SearchQuery | undefined>;
+  createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
-  }
-
+export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async getAllCompanies(): Promise<Company[]> {
+    return db.select().from(companies).orderBy(desc(companies.createdAt));
+  }
+
+  async getCompany(id: number): Promise<Company | undefined> {
+    const [company] = await db.select().from(companies).where(eq(companies.id, id));
+    return company;
+  }
+
+  async getCompaniesBySearchQuery(searchQueryId: number): Promise<Company[]> {
+    return db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
+  }
+
+  async createCompany(company: InsertCompany): Promise<Company> {
+    const [newCompany] = await db.insert(companies).values(company).returning();
+    return newCompany;
+  }
+
+  async updateCompany(id: number, data: Partial<InsertCompany>): Promise<Company> {
+    const [updated] = await db
+      .update(companies)
+      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(companies.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCompany(id: number): Promise<void> {
+    await db.delete(companies).where(eq(companies.id, id));
+  }
+
+  async getExecutivesByCompany(companyId: number): Promise<Executive[]> {
+    return db.select().from(executives).where(eq(executives.companyId, companyId));
+  }
+
+  async getExecutive(id: number): Promise<Executive | undefined> {
+    const [executive] = await db.select().from(executives).where(eq(executives.id, id));
+    return executive;
+  }
+
+  async createExecutive(executive: InsertExecutive): Promise<Executive> {
+    const [newExecutive] = await db.insert(executives).values(executive).returning();
+    return newExecutive;
+  }
+
+  async updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
+    const [updated] = await db
+      .update(executives)
+      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(executives.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteExecutive(id: number): Promise<void> {
+    await db.delete(executives).where(eq(executives.id, id));
+  }
+
+  async getAllSearchQueries(): Promise<SearchQuery[]> {
+    return db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+  }
+
+  async getSearchQuery(id: number): Promise<SearchQuery | undefined> {
+    const [query] = await db.select().from(searchQueries).where(eq(searchQueries.id, id));
+    return query;
+  }
+
+  async createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
+    const [newQuery] = await db.insert(searchQueries).values(query).returning();
+    return newQuery;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

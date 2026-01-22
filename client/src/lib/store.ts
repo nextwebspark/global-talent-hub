@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Company as APICompany, Executive as APIExecutive } from './api';
 
 export interface Company {
   id: string;
@@ -54,7 +55,35 @@ interface AppState {
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
   setRevenueFilter: (value: number) => void;
   
+  loadFromAPI: (apiCompanies: APICompany[]) => void;
   reset: () => void;
+}
+
+export function transformAPICompany(apiCompany: APICompany): Company {
+  return {
+    id: String(apiCompany.id),
+    name: apiCompany.name,
+    industry: apiCompany.sector || 'Unknown',
+    hq_city: apiCompany.region || 'Unknown',
+    hq_country: apiCompany.country || 'Unknown',
+    lat: parseFloat(apiCompany.latitude),
+    lng: parseFloat(apiCompany.longitude),
+    revenue_usd: parseFloat(apiCompany.revenue || '0'),
+    employees: apiCompany.employees || 0,
+    confidence: 'High',
+    color: apiCompany.color || '#1e3a8a',
+  };
+}
+
+export function transformAPIExecutive(apiExec: APIExecutive, companyId: string): Executive {
+  return {
+    id: String(apiExec.id),
+    company_id: companyId,
+    name: apiExec.name,
+    title: apiExec.title,
+    source: 'Public',
+    confidence: 'High',
+  };
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -64,7 +93,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedCompanyId: null,
   searchQuery: '',
   scalingMetric: 'revenue',
-  revenueFilter: 0, // 0 to 100 percentage range on slider
+  revenueFilter: 0,
 
   setProject: (project) => set({ currentProject: project }),
   setCompanies: (companies) => set({ companies }),
@@ -83,6 +112,24 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
   setRevenueFilter: (value) => set({ revenueFilter: value }),
+
+  loadFromAPI: (apiCompanies: APICompany[]) => {
+    const companies: Company[] = [];
+    const executives: Executive[] = [];
+
+    apiCompanies.forEach((apiCompany) => {
+      const company = transformAPICompany(apiCompany);
+      companies.push(company);
+
+      if (apiCompany.executives) {
+        apiCompany.executives.forEach((apiExec) => {
+          executives.push(transformAPIExecutive(apiExec, String(apiCompany.id)));
+        });
+      }
+    });
+
+    set({ companies, executives });
+  },
 
   reset: () => set({
     currentProject: null,

@@ -18,7 +18,10 @@ export const companies = pgTable("companies", {
   latitude: numeric("latitude", { precision: 10, scale: 7 }).notNull(),
   longitude: numeric("longitude", { precision: 10, scale: 7 }).notNull(),
   revenue: numeric("revenue", { precision: 15, scale: 2 }),
+  revenueSource: text("revenue_source"),
   employees: integer("employees"),
+  employeesSource: text("employees_source"),
+  confidence: integer("confidence").default(5),
   color: text("color").default("#1e3a8a"),
   searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -33,6 +36,7 @@ export const executives = pgTable("executives", {
   email: text("email"),
   phone: text("phone"),
   linkedin: text("linkedin"),
+  source: text("source"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

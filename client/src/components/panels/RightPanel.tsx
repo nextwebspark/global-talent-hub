@@ -185,77 +185,80 @@ export default function RightPanel() {
           </div>
           
           {company.source && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-md" data-testid="text-source">
-              <span className="font-medium">Source:</span>
-              <span>{company.source}</span>
-            </div>
+            <p className="mt-2 text-[10px] italic text-muted-foreground" data-testid="text-source">
+              Source: {company.source}
+            </p>
           )}
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-6">
-           <div 
-             onClick={() => setScalingMetric('revenue')}
-             className={`
-                p-3 rounded border cursor-pointer transition-all duration-200 group relative
-                ${scalingMetric === 'revenue' 
-                  ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
-                  : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
-             `}
-             data-testid="card-revenue"
-           >
-             <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'revenue' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-               <DollarSign className="w-3 h-3" /> Revenue
-             </div>
-             
-             <div onClick={(e) => e.stopPropagation()}>
-                <EditableField
-                  type="number"
-                  value={company.revenue_usd}
-                  onSave={(val) => handleUpdateCompany('revenue_usd', Number(val))}
-                  className="text-lg font-mono font-medium block mt-1"
-                  inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
-                  displayFormatter={(val) => `$${(Number(val) / 1000000000).toFixed(2)}B`}
-                />
-             </div>
+           <div>
+             <div 
+               onClick={() => setScalingMetric('revenue')}
+               className={`
+                  p-3 rounded border cursor-pointer transition-all duration-200 group relative
+                  ${scalingMetric === 'revenue' 
+                    ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
+                    : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
+               `}
+               data-testid="card-revenue"
+             >
+               <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'revenue' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+                 <DollarSign className="w-3 h-3" /> Revenue
+               </div>
+               
+               <div onClick={(e) => e.stopPropagation()}>
+                  <EditableField
+                    type="number"
+                    value={company.revenue_usd}
+                    onSave={(val) => handleUpdateCompany('revenue_usd', Number(val))}
+                    className="text-lg font-mono font-medium block mt-1"
+                    inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
+                    displayFormatter={(val) => `$${(Number(val) / 1000000000).toFixed(2)}B`}
+                  />
+               </div>
 
+               {scalingMetric === 'revenue' && (
+                  <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+               )}
+             </div>
              {company.revenueSource && (
-                <div className="text-[9px] text-muted-foreground mt-1 italic">Source: {company.revenueSource}</div>
-             )}
-             {scalingMetric === 'revenue' && (
-                <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+               <p className="text-[9px] italic text-muted-foreground mt-1">Source: {company.revenueSource}</p>
              )}
            </div>
 
-           <div 
-             onClick={() => setScalingMetric('employees')}
-             className={`
-                p-3 rounded border cursor-pointer transition-all duration-200 group relative
-                ${scalingMetric === 'employees' 
-                  ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
-                  : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
-             `}
-             data-testid="card-employees"
-           >
-             <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'employees' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-               <Users className="w-3 h-3" /> Employees
-             </div>
-             
-             <div onClick={(e) => e.stopPropagation()}>
-                <EditableField
-                  type="number"
-                  value={company.employees}
-                  onSave={(val) => handleUpdateCompany('employees', Number(val))}
-                  className="text-lg font-mono font-medium block mt-1"
-                  inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
-                  displayFormatter={(val) => Number(val).toLocaleString()}
-                />
-             </div>
+           <div>
+             <div 
+               onClick={() => setScalingMetric('employees')}
+               className={`
+                  p-3 rounded border cursor-pointer transition-all duration-200 group relative
+                  ${scalingMetric === 'employees' 
+                    ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
+                    : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}
+               `}
+               data-testid="card-employees"
+             >
+               <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'employees' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+                 <Users className="w-3 h-3" /> Employees
+               </div>
+               
+               <div onClick={(e) => e.stopPropagation()}>
+                  <EditableField
+                    type="number"
+                    value={company.employees}
+                    onSave={(val) => handleUpdateCompany('employees', Number(val))}
+                    className="text-lg font-mono font-medium block mt-1"
+                    inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
+                    displayFormatter={(val) => Number(val).toLocaleString()}
+                  />
+               </div>
 
+               {scalingMetric === 'employees' && (
+                  <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+               )}
+             </div>
              {company.employeesSource && (
-                <div className="text-[9px] text-muted-foreground mt-1 italic">Source: {company.employeesSource}</div>
-             )}
-             {scalingMetric === 'employees' && (
-                <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
+               <p className="text-[9px] italic text-muted-foreground mt-1">Source: {company.employeesSource}</p>
              )}
            </div>
         </div>
@@ -279,23 +282,21 @@ export default function RightPanel() {
           <div className="space-y-3">
             {companyExecutives.map(exec => (
               <div key={exec.id} className="group p-3 rounded border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card shadow-sm" data-testid={`card-executive-${exec.id}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <div className="font-semibold text-sm">
-                    <EditableField
-                      value={exec.name}
-                      onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
-                    />
-                  </div>
-                  <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-normal bg-background">
-                    {exec.source}
-                  </Badge>
+                <div className="font-semibold text-sm mb-1">
+                  <EditableField
+                    value={exec.name}
+                    onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
+                  />
                 </div>
-                <div className="text-xs text-muted-foreground font-medium mb-2">
+                <div className="text-xs text-muted-foreground font-medium mb-1">
                   <EditableField
                     value={exec.title}
                     onSave={(val) => handleUpdateExecutive(exec.id, 'title', String(val))}
                   />
                 </div>
+                {exec.source && (
+                  <p className="text-[9px] italic text-muted-foreground">Source: {exec.source}</p>
+                )}
               </div>
             ))}
           </div>

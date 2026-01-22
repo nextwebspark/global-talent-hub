@@ -14,7 +14,7 @@ import { toast } from 'sonner';
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { currentProject, loadFromAPI, setProject, reset } = useAppStore();
-  const { data: companies, isLoading, refetch } = useCompanies();
+  const { isLoading } = useCompanies();
   const searchMutation = useSearch();
   const [searchInput, setSearchInput] = useState('');
 
@@ -24,11 +24,6 @@ export default function Dashboard() {
     }
   }, [currentProject, setLocation]);
 
-  useEffect(() => {
-    if (companies && companies.length > 0) {
-      loadFromAPI(companies);
-    }
-  }, [companies, loadFromAPI]);
 
   const handleNewSearch = async (e: React.FormEvent) => {
     e.preventDefault();

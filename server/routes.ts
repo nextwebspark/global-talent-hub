@@ -291,8 +291,11 @@ Remember: Only return actual, existing companies with accurate information.`
       country: companyData.country,
       latitude: String(companyData.latitude),
       longitude: String(companyData.longitude),
-      revenue: String(companyData.revenue),
-      employees: companyData.employees,
+      revenue: String(companyData.revenue || 0),
+      revenueSource: companyData.revenueSource || 'Unknown',
+      employees: companyData.employees || 0,
+      employeesSource: companyData.employeesSource || 'Unknown',
+      confidence: companyData.confidence || 5,
       color: "#1e3a8a",
       searchQueryId
     });
@@ -304,7 +307,8 @@ Remember: Only return actual, existing companies with accurate information.`
         name: execData.name,
         title: execData.title,
         email: execData.email,
-        linkedin: execData.linkedin
+        linkedin: execData.linkedin,
+        source: execData.source || 'Unknown'
       });
       executives.push(executive);
     }

@@ -72,12 +72,12 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     lat: parseFloat(apiCompany.latitude),
     lng: parseFloat(apiCompany.longitude),
     revenue_usd: parseFloat(apiCompany.revenue || '0'),
-    revenueSource: (apiCompany as any).revenueSource || 'ChatGPT Knowledge Base',
+    revenueSource: (apiCompany as any).revenueSource || 'Unknown',
     employees: apiCompany.employees || 0,
-    employeesSource: (apiCompany as any).employeesSource || 'ChatGPT Knowledge Base',
+    employeesSource: (apiCompany as any).employeesSource || 'Unknown',
     confidence: (apiCompany as any).confidence || 5,
     color: apiCompany.color || '#1e3a8a',
-    source: 'ChatGPT Knowledge Base',
+    source: (apiCompany as any).source || 'Unknown',
   };
 }
 
@@ -87,7 +87,7 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     company_id: companyId,
     name: apiExec.name,
     title: apiExec.title,
-    source: (apiExec as any).source || 'ChatGPT Knowledge Base',
+    source: (apiExec as any).source || 'Unknown',
     confidence: (apiExec as any).confidence || 5,
   };
 }

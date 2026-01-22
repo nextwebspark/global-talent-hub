@@ -40,19 +40,35 @@ export const generateMockData = (query: string): { companies: Company[], executi
   const targetRegion = regions.find(r => queryLower.includes(r.name.toLowerCase()));
   if (targetRegion) region = targetRegion.name;
 
-  // Detect Sector/Industry
+  // Detect Sector/Industry (Dynamic Fallback)
   let sector = 'General';
-  const industries = ['FMCG', 'Luxury Goods', 'Automotive', 'Pharmaceuticals', 'Technology', 'Finance'];
+  const industries = ['FMCG', 'Luxury Goods', 'Automotive', 'Pharmaceuticals', 'Technology', 'Finance', 'Energy', 'Retail', 'Logistics'];
   const targetIndustry = industries.find(i => queryLower.includes(i.toLowerCase()));
-  if (targetIndustry) sector = targetIndustry;
+  
+  if (targetIndustry) {
+    sector = targetIndustry;
+  } else {
+    // Attempt to extract a custom sector from the query
+    // Look for words before "companies", "distributors", "manufacturers", "brands"
+    const industryMatch = queryLower.match(/([\w\s]+?)\s+(?:companies|distributors|manufacturers|brands|providers|firms)/);
+    if (industryMatch && industryMatch[1]) {
+      // Capitalize first letter of each word
+      sector = industryMatch[1].replace(/\b\w/g, l => l.toUpperCase());
+    }
+  }
 
-  // Detect Specific Roles
+  // Detect Specific Roles (Dynamic)
   let targetRoles: string[] = [];
-  if (queryLower.includes('cfo')) targetRoles.push('CFO');
-  if (queryLower.includes('ceo')) targetRoles.push('CEO');
-  if (queryLower.includes('cto')) targetRoles.push('CTO');
-  if (queryLower.includes('md') || queryLower.includes('managing director')) targetRoles.push('MD');
-  if (queryLower.includes('president')) targetRoles.push('President');
+  const knownRoles = ['cfo', 'ceo', 'cto', 'md', 'managing director', 'president', 'vp', 'vice president', 'coo', 'cmo', 'cio'];
+  
+  knownRoles.forEach(role => {
+    if (queryLower.includes(role)) {
+       // Normalize role names
+       if (role === 'managing director') targetRoles.push('MD');
+       else if (role === 'vice president') targetRoles.push('VP');
+       else targetRoles.push(role.toUpperCase());
+    }
+  });
   
   const isGeneralLeadershipSearch = targetRoles.length === 0;
   if (isGeneralLeadershipSearch) {
@@ -62,7 +78,14 @@ export const generateMockData = (query: string): { companies: Company[], executi
   // --- 2. GENERATE COMPLIANT DATA ---
 
   // Generate appropriate number of results
-  const count = queryLower.includes('top 20') ? 20 : (10 + (query.length % 5)); 
+  // Parse explicit counts like "top 50", "15 companies"
+  let count = 10 + (query.length % 5);
+  const countMatch = queryLower.match(/top\s+(\d+)|(\d+)\s+companies/);
+  if (countMatch) {
+    count = parseInt(countMatch[1] || countMatch[2], 10);
+    // Cap at reasonable mock limit
+    if (count > 50) count = 50;
+  }
   
   for (let i = 0; i < count; i++) {
     // Select city based on Region
@@ -71,7 +94,7 @@ export const generateMockData = (query: string): { companies: Company[], executi
       cityPool = CITIES.filter(c => targetRegion.cities.includes(c.name));
       // Fallback if no specific cities mapped in simple mock, create generic one
       if (cityPool.length === 0) {
-        cityPool = [{ name: `${targetRegion.name} HQ`, country: targetRegion.name, lat: 48.0, lng: 10.0 }];
+        cityPool = [{ name: `${targetRegion.name} City ${i+1}`, country: targetRegion.name, lat: 48.0 + (Math.random() * 10), lng: 10.0 + (Math.random() * 10) }];
       }
     }
     const city = cityPool[Math.floor(Math.random() * cityPool.length)];
@@ -80,7 +103,9 @@ export const generateMockData = (query: string): { companies: Company[], executi
     // If user asked for >$10B, generate between $10B and $50B
     const revenueFloor = minRevenue || 100000000;
     const revenueCeiling = 50000000000;
-    const revenue = Math.floor(Math.random() * (revenueCeiling - revenueFloor)) + revenueFloor;
+    // Ensure ceiling is above floor
+    const effectiveCeiling = Math.max(revenueCeiling, revenueFloor * 2);
+    const revenue = Math.floor(Math.random() * (effectiveCeiling - revenueFloor)) + revenueFloor;
 
     const id = `comp-${i}`;
     
@@ -88,14 +113,14 @@ export const generateMockData = (query: string): { companies: Company[], executi
     const latJitter = (Math.random() - 0.5) * 5;
     const lngJitter = (Math.random() - 0.5) * 5;
 
-    const companyName = targetIndustry 
-      ? `${targetIndustry} ${['Group', 'Holdings', 'International', 'Corp'][i % 4]} ${i + 1}`
-      : `${sector} Global ${i + 1}`;
+    // More dynamic naming
+    const suffixes = ['Group', 'Holdings', 'International', 'Corp', 'Systems', 'Global', 'Labs', 'Partners'];
+    const companyName = `${sector} ${suffixes[i % suffixes.length]} ${i + 1}`;
 
     companies.push({
       id,
       name: companyName,
-      industry: sector === 'General' ? INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)] : sector,
+      industry: sector,
       hq_city: city.name,
       hq_country: city.country,
       lat: city.lat + latJitter,
@@ -103,7 +128,7 @@ export const generateMockData = (query: string): { companies: Company[], executi
       revenue_usd: revenue,
       employees: Math.floor(revenue / 500000),
       confidence: Math.random() > 0.3 ? 'High' : 'Medium',
-      description: `Leading ${sector} player in ${region}.`,
+      description: `Leading ${sector} player in ${city.country}.`,
       color: undefined
     });
 

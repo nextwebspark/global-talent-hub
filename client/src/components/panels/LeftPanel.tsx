@@ -91,6 +91,10 @@ export default function LeftPanel() {
               step={1} 
               className="py-2" 
             />
+            <div className="flex justify-between text-[10px] text-muted-foreground px-1">
+              <span>$100M</span>
+              <span>$50B</span>
+            </div>
           </div>
         </div>
 

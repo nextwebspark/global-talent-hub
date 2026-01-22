@@ -25,6 +25,8 @@ export interface Executive {
   name: string;
   title: string;
   source: string;
+  profileUrl?: string;
+  imageUrl?: string;
   confidence: number;
 }
 
@@ -88,6 +90,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     name: apiExec.name,
     title: apiExec.title,
     source: (apiExec as any).source || 'Unknown',
+    profileUrl: (apiExec as any).profileUrl || (apiExec as any).linkedin,
+    imageUrl: (apiExec as any).imageUrl,
     confidence: (apiExec as any).confidence || 5,
   };
 }

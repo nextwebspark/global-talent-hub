@@ -282,26 +282,63 @@ export default function RightPanel() {
           <div className="space-y-3">
             {companyExecutives.map(exec => (
               <div key={exec.id} className="group p-3 rounded border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card shadow-sm" data-testid={`card-executive-${exec.id}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <div className="font-semibold text-sm">
-                    <EditableField
-                      value={exec.name}
-                      onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
-                    />
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0">
+                    {exec.imageUrl ? (
+                      <img 
+                        src={exec.imageUrl} 
+                        alt={exec.name}
+                        className="w-10 h-10 rounded-full object-cover border border-border"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm ${exec.imageUrl ? 'hidden' : ''}`}>
+                      {exec.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                    </div>
                   </div>
-                  <span className={`text-[9px] font-medium ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
-                    {exec.confidence}/10
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="font-semibold text-sm">
+                        {exec.profileUrl ? (
+                          <a 
+                            href={exec.profileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline"
+                          >
+                            {exec.name}
+                          </a>
+                        ) : (
+                          <EditableField
+                            value={exec.name}
+                            onSave={(val) => handleUpdateExecutive(exec.id, 'name', String(val))}
+                          />
+                        )}
+                      </div>
+                      <span className={`text-[9px] font-medium ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
+                        {exec.confidence}/10
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground font-medium mb-1">
+                      <EditableField
+                        value={exec.title}
+                        onSave={(val) => handleUpdateExecutive(exec.id, 'title', String(val))}
+                      />
+                    </div>
+                    {exec.source && (
+                      <p className="text-[9px] italic text-muted-foreground">
+                        Source: {exec.profileUrl ? (
+                          <a href={exec.profileUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-primary">
+                            {exec.source}
+                          </a>
+                        ) : exec.source}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground font-medium mb-1">
-                  <EditableField
-                    value={exec.title}
-                    onSave={(val) => handleUpdateExecutive(exec.id, 'title', String(val))}
-                  />
-                </div>
-                {exec.source && (
-                  <p className="text-[9px] italic text-muted-foreground">Source: {exec.source}</p>
-                )}
               </div>
             ))}
           </div>

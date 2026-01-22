@@ -236,6 +236,8 @@ Return a JSON object with this EXACT structure:
           "name": "Real Executive Name",
           "title": "CEO/CFO/COO/Chairman etc.",
           "source": "LinkedIn",
+          "profileUrl": "https://linkedin.com/in/executive-name",
+          "imageUrl": "https://example.com/photo.jpg",
           "confidence": 9
         }
       ]
@@ -284,7 +286,9 @@ CONFIDENCE SCORING:
 For executives, include:
 - Full legal name as appears on LinkedIn/official records
 - Exact current title
-- Source where you found this information
+- Source where you found this information (LinkedIn, Company Website, Bloomberg, etc.)
+- profileUrl: Direct link to their LinkedIn profile OR company leadership page
+- imageUrl: URL to their professional headshot photo (from LinkedIn, company website, or press photos) - use actual URLs you know exist
 - Confidence score (1-10) for this specific executive`
       },
       {
@@ -329,7 +333,9 @@ Remember: Only return actual, existing companies with accurate information.`
         name: execData.name,
         title: execData.title,
         email: execData.email,
-        linkedin: execData.linkedin,
+        linkedin: execData.linkedin || execData.profileUrl,
+        profileUrl: execData.profileUrl,
+        imageUrl: execData.imageUrl,
         source: execData.source || 'Unknown',
         confidence: execData.confidence || 5
       });

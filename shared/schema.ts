@@ -36,6 +36,8 @@ export const executives = pgTable("executives", {
   email: text("email"),
   phone: text("phone"),
   linkedin: text("linkedin"),
+  profileUrl: text("profile_url"),
+  imageUrl: text("image_url"),
   source: text("source"),
   confidence: integer("confidence").default(5),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),

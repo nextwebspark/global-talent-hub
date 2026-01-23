@@ -1,22 +1,42 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
-import { useSearch, useModels } from '@/lib/api';
+import { useSearch, useModels, useSearchHistory } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, Globe, Bot } from 'lucide-react';
+import { Search, Loader2, Globe, Bot, ChevronDown, History } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 export default function Landing() {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('replit');
+  const [showHistory, setShowHistory] = useState(false);
   const [, setLocation] = useLocation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
   
   const { setProject, loadFromAPI } = useAppStore();
   const searchMutation = useSearch();
   const { data: models } = useModels();
+  const { data: searchHistory } = useSearchHistory();
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectHistoryItem = (query: string) => {
+    setInput(query);
+    setShowHistory(false);
+    inputRef.current?.focus();
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,20 +90,54 @@ export default function Landing() {
 
         <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto">
           <div className="flex flex-col gap-4">
-            <div className="relative group">
-              <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-              <div className="relative flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
-                <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
-                <Input 
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
-                  className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 flex-1"
-                  disabled={searchMutation.isPending}
-                  data-testid="input-search-query"
-                  title={input}
-                />
+            <div className="relative" ref={historyRef}>
+              <div className="relative group">
+                <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="relative flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                  <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
+                  <Input 
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => setShowHistory(true)}
+                    placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
+                    className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 flex-1"
+                    disabled={searchMutation.isPending}
+                    data-testid="input-search-query"
+                    title={input}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="p-2 mr-3 hover:bg-muted rounded-full transition-colors"
+                  >
+                    <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
               </div>
+              
+              {showHistory && searchHistory && searchHistory.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto z-50">
+                  <div className="p-3 border-b border-border">
+                    <span className="text-sm text-muted-foreground flex items-center gap-2">
+                      <History className="h-4 w-4" /> Previous Searches
+                    </span>
+                  </div>
+                  {searchHistory.slice(0, 10).map((item: any) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => selectHistoryItem(item.query)}
+                      className="w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border/50 last:border-0"
+                    >
+                      <div className="font-medium truncate">{item.query}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {new Date(item.createdAt).toLocaleDateString()}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="flex items-center justify-center gap-3">

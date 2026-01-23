@@ -192,6 +192,8 @@ export async function registerRoutes(
       const client = isOpenRouter ? openrouter : openai;
       const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
 
+      console.log(`Processing search: "${query}" with model: ${modelName}`);
+
       const messages = [
         {
           role: "system" as const,
@@ -201,11 +203,11 @@ export async function registerRoutes(
     "roles": ["array of executive role titles"],
     "sectors": ["array of industry sectors"],
     "regions": ["array of geographic regions"],
-    "minRevenue": number or null,
-    "maxRevenue": number or null,
-    "minEmployees": number or null,
-    "maxEmployees": number or null,
-    "limit": number (default 20)
+    "minRevenue": null,
+    "maxRevenue": null,
+    "minEmployees": null,
+    "maxEmployees": null,
+    "limit": 20
   },
   "interpretation": "brief summary of what you understood"
 }
@@ -221,7 +223,8 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
       const requestOptions: any = {
         model: modelName,
         messages,
-        max_tokens: 1000
+        max_tokens: 1000,
+        temperature: 0.3
       };
       
       if (!isOpenRouter) {
@@ -230,43 +233,82 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
         delete requestOptions.max_tokens;
       }
 
-      const response = await client.chat.completions.create(requestOptions);
-
-      let content = response.choices[0]?.message?.content || "{}";
-      content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(content);
+      let parsed: any = null;
+      let parseError: Error | null = null;
       
+      try {
+        const response = await client.chat.completions.create(requestOptions);
+        console.log("LLM response received:", JSON.stringify(response.choices?.[0]?.message || {}));
+        
+        let content = response.choices?.[0]?.message?.content;
+        if (content) {
+          content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          if (content.startsWith('{')) {
+            parsed = JSON.parse(content);
+          }
+        }
+        
+        if (!parsed || !parsed.criteria) {
+          throw new Error("Invalid response format from LLM");
+        }
+      } catch (error: any) {
+        console.error("Error parsing LLM response:", error);
+        parseError = error;
+      }
+
+      if (parseError || !parsed) {
+        parsed = {
+          criteria: {
+            roles: [],
+            sectors: [],
+            regions: [],
+            limit: 20
+          },
+          interpretation: `Searching for: ${query}`
+        };
+        console.log("Using fallback criteria due to parse error");
+      }
+
+      const criteria = {
+        roles: Array.isArray(parsed.criteria?.roles) ? parsed.criteria.roles : [],
+        sectors: Array.isArray(parsed.criteria?.sectors) ? parsed.criteria.sectors : [],
+        regions: Array.isArray(parsed.criteria?.regions) ? parsed.criteria.regions : [],
+        minRevenue: typeof parsed.criteria?.minRevenue === 'number' ? parsed.criteria.minRevenue : null,
+        maxRevenue: typeof parsed.criteria?.maxRevenue === 'number' ? parsed.criteria.maxRevenue : null,
+        minEmployees: typeof parsed.criteria?.minEmployees === 'number' ? parsed.criteria.minEmployees : null,
+        maxEmployees: typeof parsed.criteria?.maxEmployees === 'number' ? parsed.criteria.maxEmployees : null,
+        limit: typeof parsed.criteria?.limit === 'number' ? parsed.criteria.limit : 20
+      };
+
       const searchQuery = await storage.createSearchQuery({
         query,
-        parsedCriteria: JSON.stringify(parsed.criteria),
+        parsedCriteria: JSON.stringify(criteria),
         resultCount: 0
       });
 
-      const companies = await generateSearchResults(parsed.criteria, searchQuery.id, selectedModel);
+      console.log("Generating search results with criteria:", JSON.stringify(criteria));
+      const companies = await generateSearchResults(criteria, searchQuery.id, selectedModel);
+      console.log(`Generated ${companies.length} companies`);
 
-      await storage.createSearchQuery({
-        query,
-        parsedCriteria: JSON.stringify(parsed.criteria),
-        resultCount: companies.length
-      });
+      await storage.updateSearchQueryResultCount(searchQuery.id, companies.length);
 
       res.json({
         searchQueryId: searchQuery.id,
         query,
-        interpretation: parsed.interpretation,
-        criteria: parsed.criteria,
+        interpretation: parsed.interpretation || query,
+        criteria,
         results: companies
       });
     } catch (error) {
       console.error("Error processing search:", error);
-      res.status(500).json({ error: "Failed to process search" });
+      res.status(500).json({ error: "Failed to process search. Please try again." });
     }
   });
 
   app.get("/api/search-history", async (req, res) => {
     try {
-      const history = await storage.getAllSearchQueries();
-      res.json(history);
+      const history = await storage.getUniqueSearchQueries();
+      res.json(history.slice(0, 20));
     } catch (error) {
       console.error("Error fetching search history:", error);
       res.status(500).json({ error: "Failed to fetch search history" });

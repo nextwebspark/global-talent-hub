@@ -40,10 +40,22 @@ export default function Landing() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim()) {
+      toast.error('Please enter a search query');
+      return;
+    }
 
+    setShowHistory(false);
+    
     try {
+      toast.loading('Searching for companies and executives...', { id: 'search' });
       const result = await searchMutation.mutateAsync({ query: input, model: selectedModel });
+      toast.dismiss('search');
+      
+      if (!result.results || result.results.length === 0) {
+        toast.error('No results found. Try a different search query.');
+        return;
+      }
       
       setProject({
         id: String(result.searchQueryId),
@@ -56,8 +68,10 @@ export default function Landing() {
       
       toast.success(`Found ${result.results.length} companies matching your criteria`);
       setLocation('/dashboard');
-    } catch (error) {
-      toast.error('Search failed. Please try again.');
+    } catch (error: any) {
+      toast.dismiss('search');
+      const message = error?.message || 'Search failed. Please try again.';
+      toast.error(message);
       console.error('Search error:', error);
     }
   };
@@ -116,26 +130,44 @@ export default function Landing() {
                 </div>
               </div>
               
-              {showHistory && searchHistory && searchHistory.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto z-50">
-                  <div className="p-3 border-b border-border">
-                    <span className="text-sm text-muted-foreground flex items-center gap-2">
-                      <History className="h-4 w-4" /> Previous Searches
+              {showHistory && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">
+                  <div className="p-3 border-b border-border bg-muted/30">
+                    <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <History className="h-4 w-4" /> Recent Searches
                     </span>
                   </div>
-                  {searchHistory.slice(0, 10).map((item: any) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => selectHistoryItem(item.query)}
-                      className="w-full text-left px-4 py-3 hover:bg-muted transition-colors border-b border-border/50 last:border-0"
-                    >
-                      <div className="font-medium truncate">{item.query}</div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {new Date(item.createdAt).toLocaleDateString()}
-                      </div>
-                    </button>
-                  ))}
+                  {searchHistory && searchHistory.length > 0 ? (
+                    <div className="overflow-y-auto max-h-56">
+                      {searchHistory.slice(0, 10).map((item: any, index: number) => (
+                        <button
+                          key={`${item.id}-${index}`}
+                          type="button"
+                          onClick={() => selectHistoryItem(item.query)}
+                          className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group"
+                          data-testid={`button-history-item-${index}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Search className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
+                              <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                                <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                                {item.resultCount > 0 && (
+                                  <span className="text-primary/70">{item.resultCount} results</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-muted-foreground">
+                      <p className="text-sm">No previous searches yet</p>
+                      <p className="text-xs mt-1">Your search history will appear here</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

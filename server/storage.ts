@@ -34,8 +34,10 @@ export interface IStorage {
   deleteExecutive(id: number): Promise<void>;
   
   getAllSearchQueries(): Promise<SearchQuery[]>;
+  getUniqueSearchQueries(): Promise<SearchQuery[]>;
   getSearchQuery(id: number): Promise<SearchQuery | undefined>;
   createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
+  updateSearchQueryResultCount(id: number, count: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -116,6 +118,20 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
   }
 
+  async getUniqueSearchQueries(): Promise<SearchQuery[]> {
+    const allQueries = await db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+    const seen = new Set<string>();
+    const unique: SearchQuery[] = [];
+    for (const q of allQueries) {
+      const key = q.query.toLowerCase().trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(q);
+      }
+    }
+    return unique;
+  }
+
   async getSearchQuery(id: number): Promise<SearchQuery | undefined> {
     const [query] = await db.select().from(searchQueries).where(eq(searchQueries.id, id));
     return query;
@@ -124,6 +140,10 @@ export class DatabaseStorage implements IStorage {
   async createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
     const [newQuery] = await db.insert(searchQueries).values(query).returning();
     return newQuery;
+  }
+
+  async updateSearchQueryResultCount(id: number, count: number): Promise<void> {
+    await db.update(searchQueries).set({ resultCount: count }).where(eq(searchQueries.id, id));
   }
 }
 

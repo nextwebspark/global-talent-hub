@@ -1,0 +1,89 @@
+# Global Talent Map
+
+## Overview
+
+Global Talent Map is an AI-driven market research web application for executive search firms. Users enter natural-language search queries (e.g., "Top 10 luxury watch distributors globally") and the system uses AI to identify and rank companies by revenue, then visualizes them as interactive bubbles on a global map. Clicking on companies reveals executive details. Each search creates a persistent project that can be reopened with all edits intact.
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+- **Framework**: React 18 with TypeScript
+- **Routing**: Wouter (lightweight client-side routing)
+- **State Management**: Zustand for global app state
+- **Data Fetching**: TanStack React Query for server state management
+- **UI Components**: shadcn/ui component library built on Radix UI primitives
+- **Styling**: Tailwind CSS v4 with CSS variables for theming
+- **Map Visualization**: Leaflet with React-Leaflet for interactive global maps
+- **Build Tool**: Vite with custom plugins for Replit integration
+
+### Backend Architecture
+- **Runtime**: Node.js with Express.js
+- **Language**: TypeScript compiled with tsx for development, esbuild for production
+- **API Pattern**: RESTful JSON API under `/api/*` routes
+- **AI Integration**: OpenAI API (via Replit AI Integrations) and OpenRouter for multi-model support
+- **Session Management**: Express sessions with PostgreSQL session store (connect-pg-simple)
+
+### Data Storage
+- **Database**: PostgreSQL
+- **ORM**: Drizzle ORM with drizzle-zod for schema validation
+- **Schema Location**: `shared/schema.ts` contains all table definitions
+- **Key Tables**:
+  - `users` - User accounts
+  - `companies` - Research results with geo-coordinates, revenue, employees
+  - `executives` - Company leadership data linked to companies
+  - `searchQueries` - Search history and parsed criteria
+  - `conversations` / `messages` - Chat functionality for AI interactions
+
+### Project Structure
+```
+├── client/           # React frontend
+│   ├── src/
+│   │   ├── components/  # UI components (shadcn + custom)
+│   │   ├── pages/       # Route pages (Landing, Dashboard)
+│   │   ├── lib/         # API hooks, store, utilities
+│   │   └── hooks/       # Custom React hooks
+├── server/           # Express backend
+│   ├── routes.ts     # API route definitions
+│   ├── storage.ts    # Database access layer
+│   └── db.ts         # Database connection
+├── shared/           # Shared code between client/server
+│   └── schema.ts     # Drizzle database schema
+└── migrations/       # Database migrations (drizzle-kit)
+```
+
+### AI Research Engine
+- Server-side AI processing using OpenAI for natural language parsing
+- Multi-model support via OpenRouter (GPT-4, Claude, Gemini, Llama, Mixtral)
+- Search string parsing extracts: industry, geography, company count, executive roles
+- Results ranked primarily by revenue (USD), secondarily by employee count
+
+### Audio/Voice Integration
+- Replit AI Integrations provide voice chat capabilities
+- AudioWorklet-based streaming audio playback
+- Speech-to-text and text-to-speech functionality
+- WebM/Opus recording with ffmpeg conversion support
+
+## External Dependencies
+
+### AI Services
+- **OpenAI API**: Primary AI model access via Replit AI Integrations (`AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`)
+- **OpenRouter**: Multi-model routing for alternative LLMs (`OPENROUTER_API_KEY`)
+
+### Database
+- **PostgreSQL**: Primary data store (`DATABASE_URL` environment variable required)
+- **connect-pg-simple**: Session storage in PostgreSQL
+
+### Third-Party Libraries
+- **Leaflet**: Interactive map rendering
+- **Framer Motion**: Page animations
+- **Sonner**: Toast notifications
+- **date-fns**: Date formatting
+
+### Development Tools
+- **Vite**: Development server with HMR
+- **Replit Vite Plugins**: Cartographer, dev banner, runtime error overlay
+- **drizzle-kit**: Database migrations (`npm run db:push`)

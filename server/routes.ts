@@ -548,10 +548,13 @@ Remember: Only return actual, existing companies with accurate information. Retu
 function filterExecutivesByRole(executives: any[], criteria: any): any[] {
   const specificRoles = Array.isArray(criteria.roles) && criteria.roles.length > 0 ? criteria.roles : [];
   const roleFunction = criteria.roleFunction || 'all';
-  const roleLevel = criteria.roleLevel || 'c-suite';
+  const roleLevel = criteria.roleLevel || 'all';
   
   if (specificRoles.length === 0 && (roleFunction === 'all' || roleFunction === 'general')) {
-    if (roleLevel === 'c-suite' || roleLevel === 'all') {
+    if (roleLevel === 'all') {
+      return executives;
+    }
+    if (roleLevel === 'c-suite') {
       return executives.filter(exec => isCsuiteLevel(exec.title));
     }
     return executives.filter(exec => matchesLevel(exec.title, roleLevel));
@@ -633,7 +636,7 @@ function isCsuiteLevel(title: string): boolean {
 function matchesLevel(title: string, level: string): boolean {
   const t = (title || '').toLowerCase();
   
-  const excludePatterns = ['chief of staff', 'assistant to', 'deputy to', 'intern', 'analyst', 'associate', 'coordinator'];
+  const excludePatterns = ['chief of staff', 'assistant to', 'deputy to', 'intern'];
   if (excludePatterns.some(p => t.includes(p))) return false;
   
   switch (level) {

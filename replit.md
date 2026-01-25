@@ -61,6 +61,14 @@ Preferred communication style: Simple, everyday language.
 - Search string parsing extracts: industry, geography, company count, executive roles
 - Results ranked primarily by revenue (USD), secondarily by employee count
 
+### Executive Filtering (CRITICAL - Do Not Change Default Behavior)
+- `filterExecutivesByRole()` in `server/routes.ts` filters executives based on search criteria
+- **Default roleLevel is 'all'** - when no specific role level is requested, ALL executives are returned
+- Only filter executives when explicit role criteria are specified in the search query
+- Revenue, employees, and executives must always be displayed in both LeftPanel and RightPanel
+- The `transformAPICompany()` and `transformAPIExecutive()` in `client/src/lib/store.ts` handle data transformation
+- Never add overly aggressive exclude patterns that filter out valid executive titles
+
 ### Audio/Voice Integration
 - Replit AI Integrations provide voice chat capabilities
 - AudioWorklet-based streaming audio playback

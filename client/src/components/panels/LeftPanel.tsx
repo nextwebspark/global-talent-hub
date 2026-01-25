@@ -25,9 +25,14 @@ interface CountryData {
   }[];
 }
 
-export default function LeftPanel() {
+interface LeftPanelProps {
+  width?: number;
+  isOpen?: boolean;
+  onToggle?: () => void;
+}
+
+export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
   const { companies, executives, selectCompany, selectedCompanyId } = useAppStore();
-  const [isOpen, setIsOpen] = useState(true);
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
@@ -183,14 +188,15 @@ export default function LeftPanel() {
   return (
     <div 
       className={`
-        h-full bg-background/95 backdrop-blur-sm border-r border-border flex flex-col shadow-xl z-10 transition-all duration-300 relative
-        ${isOpen ? 'w-80' : 'w-0 border-r-0'}
+        h-full bg-background/95 backdrop-blur-sm border-r border-border flex flex-col shadow-xl z-10 transition-all duration-300 relative shrink-0
+        ${!isOpen ? 'w-0 border-r-0' : ''}
       `}
+      style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
     >
       <Button
         variant="secondary"
         size="icon"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={onToggle}
         className="absolute -right-8 top-4 h-8 w-8 rounded-l-none rounded-r-md border border-l-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
         aria-label={isOpen ? "Collapse panel" : "Expand panel"}
         data-testid="button-toggle-left-panel"
@@ -199,7 +205,7 @@ export default function LeftPanel() {
       </Button>
 
       <div className={`flex flex-col h-full overflow-hidden ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="p-4 border-b border-border min-w-[320px]">
+        <div className="p-4 border-b border-border min-w-[280px]">
           <div className="flex items-center gap-2 mb-3">
             <Globe className="h-5 w-5 text-primary" />
             <h2 className="text-lg font-serif font-bold text-foreground">Results by Region</h2>
@@ -217,7 +223,7 @@ export default function LeftPanel() {
           </div>
         </div>
 
-        <div className="p-3 border-b border-border bg-muted/30 min-w-[320px]">
+        <div className="p-3 border-b border-border bg-muted/30 min-w-[280px]">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
@@ -236,7 +242,7 @@ export default function LeftPanel() {
         </div>
 
         <ScrollArea className="flex-1 w-full">
-          <div className="p-2 space-y-1 min-w-[320px]">
+          <div className="p-2 space-y-1 min-w-[280px]">
             {displayedCountries.map((country) => {
               const isCountryExpanded = expandedCountries.has(country.name);
               const isCountrySelected = selectedCountries.has(country.name);
@@ -381,7 +387,7 @@ export default function LeftPanel() {
           </div>
         </ScrollArea>
         
-        <div className="p-2 border-t border-border bg-muted/20 text-[10px] text-center text-muted-foreground min-w-[320px]">
+        <div className="p-2 border-t border-border bg-muted/20 text-[10px] text-center text-muted-foreground min-w-[280px]">
           {displayedCountries.reduce((sum, c) => sum + c.companies.length, 0)} Companies in {displayedCountries.length} Countries
         </div>
       </div>

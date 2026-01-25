@@ -78,7 +78,11 @@ const EditableField = ({
   );
 };
 
-export default function RightPanel() {
+interface RightPanelProps {
+  width?: number;
+}
+
+export default function RightPanel({ width = 384 }: RightPanelProps) {
   const { selectedCompanyId, companies, executives, selectCompany, updateCompany: updateCompanyLocal, addExecutive: addExecutiveLocal, updateExecutive: updateExecutiveLocal, scalingMetric, setScalingMetric } = useAppStore();
   const updateCompanyMutation = useUpdateCompany();
   const updateExecutiveMutation = useUpdateExecutive();
@@ -153,7 +157,10 @@ export default function RightPanel() {
   };
 
   return (
-    <div className="h-full w-96 bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300">
+    <div 
+      className="h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0"
+      style={{ width }}
+    >
       
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/10">
         <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" data-testid="button-close-panel">

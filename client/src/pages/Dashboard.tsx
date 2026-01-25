@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCompanies, useSearch, useModels, useSearchHistory } from '@/lib/api';
 import LeftPanel from '@/components/panels/LeftPanel';
@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { currentProject, loadFromAPI, setProject, reset } = useAppStore();
+  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId } = useAppStore();
   const { isLoading } = useCompanies();
   const searchMutation = useSearch();
   const { data: models } = useModels();
@@ -23,6 +23,43 @@ export default function Dashboard() {
   const [showHistory, setShowHistory] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  
+  const [leftPanelWidth, setLeftPanelWidth] = useState(360);
+  const [rightPanelWidth, setRightPanelWidth] = useState(384);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizingLeft) {
+      const newWidth = Math.max(280, Math.min(600, e.clientX));
+      setLeftPanelWidth(newWidth);
+    }
+    if (isResizingRight) {
+      const newWidth = Math.max(320, Math.min(700, window.innerWidth - e.clientX));
+      setRightPanelWidth(newWidth);
+    }
+  }, [isResizingLeft, isResizingRight]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizingLeft(false);
+    setIsResizingRight(false);
+  }, []);
+
+  useEffect(() => {
+    if (isResizingLeft || isResizingRight) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingLeft, isResizingRight, handleMouseMove, handleMouseUp]);
 
   useEffect(() => {
     if (!currentProject) {
@@ -100,7 +137,20 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen w-screen bg-background overflow-hidden font-sans text-foreground">
-      <LeftPanel />
+      <LeftPanel 
+        width={leftPanelWidth} 
+        isOpen={isLeftPanelOpen} 
+        onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)} 
+      />
+      {isLeftPanelOpen && (
+        <div 
+          className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
+          onMouseDown={() => setIsResizingLeft(true)}
+          data-testid="resize-handle-left"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+      )}
       
       <div className="flex-1 relative z-0">
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-3xl px-4">
@@ -218,7 +268,18 @@ export default function Dashboard() {
         <MapComponent />
       </div>
       
-      <RightPanel />
+      {selectedCompanyId && (
+        <>
+          <div 
+            className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
+            onMouseDown={() => setIsResizingRight(true)}
+            data-testid="resize-handle-right"
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+          </div>
+          <RightPanel width={rightPanelWidth} />
+        </>
+      )}
     </div>
   );
 }

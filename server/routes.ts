@@ -25,6 +25,167 @@ const AVAILABLE_MODELS = [
   { id: "replit", name: "Replit AI (Default)", provider: "Replit" },
 ];
 
+// Default coordinates by region for fallback
+const REGION_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  'north america': { lat: 40.7128, lng: -74.0060 },
+  'united states': { lat: 40.7128, lng: -74.0060 },
+  'usa': { lat: 40.7128, lng: -74.0060 },
+  'europe': { lat: 51.5074, lng: -0.1278 },
+  'asia': { lat: 35.6762, lng: 139.6503 },
+  'middle east': { lat: 25.2048, lng: 55.2708 },
+  'uae': { lat: 25.2048, lng: 55.2708 },
+  'united arab emirates': { lat: 25.2048, lng: 55.2708 },
+  'saudi arabia': { lat: 24.7136, lng: 46.6753 },
+  'africa': { lat: -1.2921, lng: 36.8219 },
+  'south america': { lat: -23.5505, lng: -46.6333 },
+  'latin america': { lat: -23.5505, lng: -46.6333 },
+  'australia': { lat: -33.8688, lng: 151.2093 },
+  'oceania': { lat: -33.8688, lng: 151.2093 },
+  'china': { lat: 31.2304, lng: 121.4737 },
+  'india': { lat: 19.0760, lng: 72.8777 },
+  'japan': { lat: 35.6762, lng: 139.6503 },
+  'germany': { lat: 52.5200, lng: 13.4050 },
+  'uk': { lat: 51.5074, lng: -0.1278 },
+  'united kingdom': { lat: 51.5074, lng: -0.1278 },
+  'france': { lat: 48.8566, lng: 2.3522 },
+  'default': { lat: 0, lng: 0 }
+};
+
+// Robust number parsing
+function parseNumber(value: any, defaultValue: number = 0): number {
+  if (typeof value === 'number' && !isNaN(value) && isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[,$\s]/g, '').replace(/[BbMmKk]$/, (m) => {
+      const multipliers: Record<string, string> = { 'B': '000000000', 'b': '000000000', 'M': '000000', 'm': '000000', 'K': '000', 'k': '000' };
+      return multipliers[m] || '';
+    });
+    const parsed = parseFloat(cleaned);
+    if (!isNaN(parsed) && isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return defaultValue;
+}
+
+// Validate and fix coordinates
+function validateCoordinates(lat: any, lng: any, region?: string, country?: string): { lat: number; lng: number } {
+  const parsedLat = parseNumber(lat);
+  const parsedLng = parseNumber(lng);
+  
+  // Valid latitude range: -90 to 90, longitude: -180 to 180
+  if (parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180 && 
+      (parsedLat !== 0 || parsedLng !== 0)) {
+    return { lat: parsedLat, lng: parsedLng };
+  }
+  
+  // Fallback to region-based coordinates
+  const lookupKey = (country || region || 'default').toLowerCase().trim();
+  const fallback = REGION_COORDINATES[lookupKey] || REGION_COORDINATES['default'];
+  
+  // Add small random offset to prevent overlapping markers
+  const offset = () => (Math.random() - 0.5) * 0.1;
+  return { lat: fallback.lat + offset(), lng: fallback.lng + offset() };
+}
+
+// Validate company data from LLM response
+function validateCompanyData(data: any): any {
+  const name = String(data.name || data.companyName || 'Unknown Company').trim();
+  const sector = String(data.sector || data.industry || 'Unknown').trim();
+  const region = String(data.region || data.area || 'Unknown').trim();
+  const country = String(data.country || data.location || region).trim();
+  
+  const coords = validateCoordinates(data.latitude || data.lat, data.longitude || data.lng || data.lon, region, country);
+  
+  const revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
+  const employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
+  
+  let confidence = parseNumber(data.confidence || data.score, 5);
+  confidence = Math.max(1, Math.min(10, confidence));
+  
+  const rawExecutives = Array.isArray(data.executives) ? data.executives : [];
+  const executives = rawExecutives.map(validateExecutiveData).filter((e: any) => e !== null);
+  
+  return {
+    name,
+    sector,
+    region,
+    country,
+    city: String(data.city || data.headquarters || data.hq || '').trim(),
+    latitude: coords.lat,
+    longitude: coords.lng,
+    revenue,
+    revenueSource: String(data.revenueSource || data.revenue_source || 'Unknown').trim(),
+    employees,
+    employeesSource: String(data.employeesSource || data.employees_source || 'Unknown').trim(),
+    confidence,
+    executives
+  };
+}
+
+// Validate executive data from LLM response
+function validateExecutiveData(data: any): any {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  
+  const name = String(data.name || data.fullName || data.executive_name || '').trim();
+  const title = String(data.title || data.position || data.role || '').trim();
+  
+  if (!name || name === 'Unknown' || !title) {
+    return null;
+  }
+  
+  let confidence = parseNumber(data.confidence || data.score, 5);
+  confidence = Math.max(1, Math.min(10, confidence));
+  
+  return {
+    name,
+    title,
+    email: data.email || null,
+    linkedin: data.linkedin || data.linkedIn || data.profileUrl || null,
+    profileUrl: data.profileUrl || data.profile_url || data.linkedin || null,
+    imageUrl: data.imageUrl || data.image_url || data.photo || null,
+    source: String(data.source || 'Unknown').trim(),
+    confidence
+  };
+}
+
+// Extract JSON from LLM response with multiple strategies
+function extractJSON(content: string): any {
+  if (!content) return null;
+  
+  // Strategy 1: Clean markdown and parse directly
+  let cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  
+  // Strategy 2: Find JSON object boundaries
+  const jsonStart = cleaned.indexOf('{');
+  const jsonEnd = cleaned.lastIndexOf('}');
+  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+    cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+  }
+  
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Strategy 3: Try to fix common JSON issues
+    const fixed = cleaned
+      .replace(/,\s*}/g, '}')  // trailing commas
+      .replace(/,\s*]/g, ']')  // trailing commas in arrays
+      .replace(/'/g, '"')       // single quotes
+      .replace(/\n/g, ' ')      // newlines
+      .replace(/\t/g, ' ');     // tabs
+    
+    try {
+      return JSON.parse(fixed);
+    } catch (e2) {
+      console.error("Failed to parse JSON after cleanup:", e2);
+      return null;
+    }
+  }
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -217,8 +378,8 @@ export async function registerRoutes(
 EXECUTIVE ROLE PARSING RULES:
 1. If user mentions SPECIFIC roles (e.g., "CFO", "Chief Financial Officer", "CEO"), add them to "roles" array and set roleFunction/roleLevel accordingly
 2. If user mentions a FUNCTION broadly (e.g., "senior finance leaders", "tech executives"), leave roles empty but set roleFunction (e.g., "finance", "technology") and roleLevel (e.g., "senior", "c-suite")
-3. If user says "all senior leaders" or similar general request, set roleLevel to "c-suite" and roleFunction to "all"
-4. If NO executive criteria specified, set roleLevel to "c-suite" and roleFunction to "all" (return all C-suite)
+3. If user says "all senior leaders" or similar general request, set roleLevel to "senior" and roleFunction to "all"
+4. If NO executive criteria specified, set roleLevel to "all" and roleFunction to "all" (return all executives)
 
 ROLE FUNCTION MAPPINGS:
 - finance: CFO, VP Finance, Treasurer, Controller, Chief Accounting Officer
@@ -258,12 +419,9 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
         const response = await client.chat.completions.create(requestOptions);
         console.log("LLM response received:", JSON.stringify(response.choices?.[0]?.message || {}));
         
-        let content = response.choices?.[0]?.message?.content;
+        const content = response.choices?.[0]?.message?.content;
         if (content) {
-          content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-          if (content.startsWith('{')) {
-            parsed = JSON.parse(content);
-          }
+          parsed = extractJSON(content);
         }
         
         if (!parsed || !parsed.criteria) {
@@ -290,7 +448,7 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
       const criteria = {
         roles: Array.isArray(parsed.criteria?.roles) ? parsed.criteria.roles : [],
         roleFunction: typeof parsed.criteria?.roleFunction === 'string' ? parsed.criteria.roleFunction : 'all',
-        roleLevel: typeof parsed.criteria?.roleLevel === 'string' ? parsed.criteria.roleLevel : 'c-suite',
+        roleLevel: typeof parsed.criteria?.roleLevel === 'string' ? parsed.criteria.roleLevel : 'all',
         sectors: Array.isArray(parsed.criteria?.sectors) ? parsed.criteria.sectors : [],
         regions: Array.isArray(parsed.criteria?.regions) ? parsed.criteria.regions : [],
         minRevenue: typeof parsed.criteria?.minRevenue === 'number' ? parsed.criteria.minRevenue : null,
@@ -341,7 +499,7 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
 function buildExecutiveRoleInstructions(criteria: any): string {
   const specificRoles = Array.isArray(criteria.roles) && criteria.roles.length > 0 ? criteria.roles : [];
   const roleFunction = criteria.roleFunction || 'all';
-  const roleLevel = criteria.roleLevel || 'c-suite';
+  const roleLevel = criteria.roleLevel || 'all';
   
   if (specificRoles.length > 0) {
     return `EXECUTIVE FILTERING RULES (CRITICAL - FOLLOW EXACTLY):
@@ -494,54 +652,110 @@ Remember: Only return actual, existing companies with accurate information. Retu
     delete requestOptions.max_tokens;
   }
 
-  const response = await client.chat.completions.create(requestOptions);
-
-  let content = response.choices[0]?.message?.content || "{}";
-  content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  console.log("OpenAI response:", content.substring(0, 500));
-  
-  const data = JSON.parse(content);
-  const companiesData = Array.isArray(data) ? data : (data.companies || []);
-
-  const companies = [];
-  for (const companyData of companiesData) {
-    const company = await storage.createCompany({
-      name: companyData.name,
-      sector: companyData.sector,
-      region: companyData.region,
-      country: companyData.country,
-      latitude: String(companyData.latitude),
-      longitude: String(companyData.longitude),
-      revenue: String(companyData.revenue || 0),
-      revenueSource: companyData.revenueSource || 'Unknown',
-      employees: companyData.employees || 0,
-      employeesSource: companyData.employeesSource || 'Unknown',
-      confidence: companyData.confidence || 5,
-      color: "#1e3a8a",
-      searchQueryId
-    });
-
-    const filteredExecs = filterExecutivesByRole(companyData.executives || [], criteria);
-    
-    const executives = [];
-    for (const execData of filteredExecs) {
-      const executive = await storage.createExecutive({
-        companyId: company.id,
-        name: execData.name,
-        title: execData.title,
-        email: execData.email,
-        linkedin: execData.linkedin || execData.profileUrl,
-        profileUrl: execData.profileUrl,
-        imageUrl: execData.imageUrl,
-        source: execData.source || 'Unknown',
-        confidence: execData.confidence || 5
-      });
-      executives.push(executive);
-    }
-
-    companies.push({ ...company, executives });
+  let response;
+  try {
+    response = await client.chat.completions.create(requestOptions);
+  } catch (apiError: any) {
+    console.error("LLM API error:", apiError.message);
+    throw new Error(`Failed to get response from AI model: ${apiError.message}`);
   }
 
+  const content = response.choices[0]?.message?.content || "{}";
+  console.log("LLM response length:", content.length, "First 500 chars:", content.substring(0, 500));
+  
+  // Use robust JSON extraction
+  const data = extractJSON(content);
+  if (!data) {
+    console.error("Failed to parse LLM response as JSON");
+    throw new Error("Failed to parse AI response. Please try again.");
+  }
+  
+  // Handle various response formats from different LLMs
+  let companiesData: any[] = [];
+  if (Array.isArray(data)) {
+    companiesData = data;
+  } else if (data.companies && Array.isArray(data.companies)) {
+    companiesData = data.companies;
+  } else if (data.results && Array.isArray(data.results)) {
+    companiesData = data.results;
+  } else if (data.data && Array.isArray(data.data)) {
+    companiesData = data.data;
+  } else {
+    // Try to find any array property
+    const arrayProp = Object.values(data).find(v => Array.isArray(v));
+    if (arrayProp) {
+      companiesData = arrayProp as any[];
+    }
+  }
+  
+  if (companiesData.length === 0) {
+    console.warn("No companies found in LLM response");
+    return [];
+  }
+
+  console.log(`Processing ${companiesData.length} companies from LLM response`);
+  const companies = [];
+  
+  for (const rawCompanyData of companiesData) {
+    try {
+      // Validate and sanitize company data
+      const validatedData = validateCompanyData(rawCompanyData);
+      
+      if (!validatedData.name || validatedData.name === 'Unknown Company') {
+        console.warn("Skipping company with invalid name");
+        continue;
+      }
+      
+      const company = await storage.createCompany({
+        name: validatedData.name,
+        sector: validatedData.sector,
+        region: validatedData.region,
+        country: validatedData.country,
+        latitude: String(validatedData.latitude),
+        longitude: String(validatedData.longitude),
+        revenue: String(validatedData.revenue),
+        revenueSource: validatedData.revenueSource,
+        employees: validatedData.employees,
+        employeesSource: validatedData.employeesSource,
+        confidence: validatedData.confidence,
+        color: "#1e3a8a",
+        searchQueryId
+      });
+
+      // Use validated executives and filter based on criteria
+      const validatedExecs = validatedData.executives.filter((e: any) => e !== null);
+      const filteredExecs = filterExecutivesByRole(validatedExecs, criteria);
+      
+      const executives = [];
+      for (const rawExec of filteredExecs) {
+        try {
+          const validatedExec = validateExecutiveData(rawExec);
+          if (!validatedExec) continue;
+          
+          const executive = await storage.createExecutive({
+            companyId: company.id,
+            name: validatedExec.name,
+            title: validatedExec.title,
+            email: validatedExec.email,
+            linkedin: validatedExec.linkedin,
+            profileUrl: validatedExec.profileUrl,
+            imageUrl: validatedExec.imageUrl,
+            source: validatedExec.source,
+            confidence: validatedExec.confidence
+          });
+          executives.push(executive);
+        } catch (execError: any) {
+          console.warn("Failed to create executive:", execError.message);
+        }
+      }
+
+      companies.push({ ...company, executives });
+    } catch (companyError: any) {
+      console.warn("Failed to create company:", companyError.message);
+    }
+  }
+
+  console.log(`Successfully created ${companies.length} companies with executives`);
   return companies;
 }
 

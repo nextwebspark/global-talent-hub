@@ -8,6 +8,17 @@ import { Button } from '@/components/ui/button';
 // Fix for default Leaflet icon issues in React
 import L from 'leaflet';
 
+// Helper to check if coordinates are valid
+function isValidCoordinate(lat: number, lng: number): boolean {
+  return (
+    !isNaN(lat) && !isNaN(lng) &&
+    isFinite(lat) && isFinite(lng) &&
+    lat >= -90 && lat <= 90 &&
+    lng >= -180 && lng <= 180 &&
+    (lat !== 0 || lng !== 0)
+  );
+}
+
 // Component to handle map bounds updates
 function MapUpdater() {
   const companies = useAppStore(state => state.companies);
@@ -16,8 +27,9 @@ function MapUpdater() {
 
   useEffect(() => {
     // Only fit bounds once when companies are loaded to avoid jumping around during drag
-    if (companies.length > 0 && !hasFitBounds.current) {
-      const bounds = L.latLngBounds(companies.map(c => [c.lat, c.lng]));
+    const validCompanies = companies.filter(c => isValidCoordinate(c.lat, c.lng));
+    if (validCompanies.length > 0 && !hasFitBounds.current) {
+      const bounds = L.latLngBounds(validCompanies.map(c => [c.lat, c.lng]));
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
       hasFitBounds.current = true;
     }
@@ -41,11 +53,16 @@ export default function MapComponent() {
   const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
-  // Filter companies based on revenue slider
+  // Filter companies based on revenue slider and valid coordinates
   const maxRevenue = 50000000000;
   const filterThreshold = (revenueFilter / 100) * maxRevenue;
   
-  const filteredCompanies = companies.filter(c => c.revenue_usd >= filterThreshold);
+  const filteredCompanies = companies.filter(c => {
+    // Ensure revenue meets threshold
+    if (c.revenue_usd < filterThreshold) return false;
+    // Ensure valid coordinates (not 0,0 and within valid ranges)
+    return isValidCoordinate(c.lat, c.lng);
+  });
 
   // Scale revenue/employees to radius
   const getRadius = (value: number) => {

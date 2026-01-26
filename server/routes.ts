@@ -709,11 +709,12 @@ STRICT REQUIREMENTS:
    - latitude/longitude: The PRECISE GPS coordinates of the street address (not city center)
    - Example: "One Apple Park Way, Cupertino" with lat: 37.3346, lng: -122.0090 (exact building location)
 4. For each data point, provide a source and confidence score (1-10)
-5. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or "Unknown"
-6. Cross-reference multiple sources when possible
-7. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
-8. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
-9. Generate exactly ${limit} companies
+5. REVENUE IS REQUIRED: Every company MUST have revenue data in USD. Use annual revenue from most recent fiscal year. If exact revenue unknown, provide best estimate based on company size/industry/public data and set confidence lower. NEVER return 0 for revenue unless it's a startup with no revenue.
+6. EMPLOYEES IS REQUIRED: Every company MUST have employee count. If exact unknown, estimate and set confidence lower.
+7. Cross-reference multiple sources when possible
+8. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
+9. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
+10. Generate exactly ${limit} companies
 
 CONFIDENCE SCORING:
 - 9-10: Data verified from Company Website + Annual Report (multiple primary sources)

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import logoImage from '@/assets/images/logo.png';
 
 // Fix for default Leaflet icon issues in React
 import L from 'leaflet';
@@ -192,6 +193,11 @@ export default function MapComponent() {
           );
         })}
       </MapContainer>
+
+      {/* Logo in top right */}
+      <div className="absolute top-4 right-4 z-[400]">
+        <img src={logoImage} alt="ALAC Partners" className="h-10 w-auto opacity-90" />
+      </div>
 
       {/* Color Picker Overlay */}
       {colorPickerTarget && (

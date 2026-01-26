@@ -227,7 +227,7 @@ export default function Dashboard() {
       )}
       
       <div className="flex-1 relative z-0">
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-3xl px-4">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-5xl px-4">
           <form onSubmit={handleNewSearch} className="flex flex-col gap-3">
             <div className="relative" ref={historyRef}>
               <div className="flex items-center bg-background/95 backdrop-blur-sm shadow-lg rounded-full border border-border overflow-hidden">

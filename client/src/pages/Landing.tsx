@@ -5,7 +5,8 @@ import { useSearch, useModels, useSearchHistory } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, Globe, Bot, ChevronDown, History } from 'lucide-react';
+import { Search, Loader2, Bot, ChevronDown, History } from 'lucide-react';
+import logoImage from '@/assets/images/logo.png';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
@@ -132,9 +133,7 @@ export default function Landing() {
         className="z-10 w-full max-w-2xl px-6 text-center"
       >
         <div className="mb-8 flex justify-center">
-           <div className="h-16 w-16 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-2xl">
-              <Globe className="h-8 w-8" />
-           </div>
+          <img src={logoImage} alt="ALAC Partners" className="h-16 w-auto" />
         </div>
         
         <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-foreground mb-4">

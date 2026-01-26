@@ -1,6 +1,66 @@
 import { create } from 'zustand';
 import type { Company as APICompany, Executive as APIExecutive } from './api';
 
+// Helper to persist company updates to the database
+async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<void> {
+  try {
+    const dbUpdates: Record<string, any> = {};
+    if (updates.revenue_usd !== undefined) dbUpdates.revenue = String(updates.revenue_usd);
+    if (updates.employees !== undefined) dbUpdates.employees = updates.employees;
+    if (updates.lat !== undefined) dbUpdates.latitude = String(updates.lat);
+    if (updates.lng !== undefined) dbUpdates.longitude = String(updates.lng);
+    if (updates.color !== undefined) dbUpdates.color = updates.color;
+    if (updates.streetAddress !== undefined) dbUpdates.streetAddress = updates.streetAddress;
+    
+    if (Object.keys(dbUpdates).length > 0) {
+      await fetch(`/api/companies/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbUpdates),
+      });
+    }
+  } catch (error) {
+    console.error('Failed to persist company update:', error);
+  }
+}
+
+// Helper to persist executive updates to the database
+async function persistExecutiveUpdate(id: string, updates: Partial<any>): Promise<void> {
+  try {
+    const dbUpdates: Record<string, any> = {};
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    
+    if (Object.keys(dbUpdates).length > 0) {
+      await fetch(`/api/executives/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbUpdates),
+      });
+    }
+  } catch (error) {
+    console.error('Failed to persist executive update:', error);
+  }
+}
+
+// Helper to delete executive from the database
+async function persistExecutiveDelete(id: string): Promise<void> {
+  try {
+    await fetch(`/api/executives/${id}`, { method: 'DELETE' });
+  } catch (error) {
+    console.error('Failed to delete executive:', error);
+  }
+}
+
+// Helper to delete company from the database
+async function persistCompanyDelete(id: string): Promise<void> {
+  try {
+    await fetch(`/api/companies/${id}`, { method: 'DELETE' });
+  } catch (error) {
+    console.error('Failed to delete company:', error);
+  }
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -55,6 +115,8 @@ interface AppState {
   setExecutives: (executives: Executive[]) => void;
   addExecutive: (executive: Executive) => void;
   updateExecutive: (id: string, updates: Partial<Executive>) => void;
+  deleteExecutive: (id: string) => void;
+  deleteCompany: (id: string) => void;
   
   selectCompany: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
@@ -144,15 +206,34 @@ export const useAppStore = create<AppState>((set) => ({
   setProject: (project) => set({ currentProject: project }),
   setCompanies: (companies) => set({ companies }),
   addCompany: (company) => set((state) => ({ companies: [...state.companies, company] })),
-  updateCompany: (id, updates) => set((state) => ({
-    companies: state.companies.map((c) => c.id === id ? { ...c, ...updates } : c)
-  })),
+  updateCompany: (id, updates) => {
+    set((state) => ({
+      companies: state.companies.map((c) => c.id === id ? { ...c, ...updates } : c)
+    }));
+    persistCompanyUpdate(id, updates);
+  },
 
   setExecutives: (executives) => set({ executives }),
   addExecutive: (executive) => set((state) => ({ executives: [...state.executives, executive] })),
-  updateExecutive: (id, updates) => set((state) => ({
-    executives: state.executives.map((e) => e.id === id ? { ...e, ...updates } : e)
-  })),
+  updateExecutive: (id, updates) => {
+    set((state) => ({
+      executives: state.executives.map((e) => e.id === id ? { ...e, ...updates } : e)
+    }));
+    persistExecutiveUpdate(id, updates);
+  },
+  deleteExecutive: (id) => {
+    set((state) => ({
+      executives: state.executives.filter((e) => e.id !== id)
+    }));
+    persistExecutiveDelete(id);
+  },
+  deleteCompany: (id) => {
+    set((state) => ({
+      companies: state.companies.filter((c) => c.id !== id),
+      executives: state.executives.filter((e) => e.company_id !== id)
+    }));
+    persistCompanyDelete(id);
+  },
 
   selectCompany: (id) => set({ selectedCompanyId: id }),
   setSearchQuery: (query) => set({ searchQuery: query }),

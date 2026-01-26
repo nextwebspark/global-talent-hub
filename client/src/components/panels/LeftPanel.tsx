@@ -2,8 +2,7 @@ import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Building2, User, MapPin, Globe } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Globe } from 'lucide-react';
 import { useState, useMemo } from 'react';
 
 interface CountryData {
@@ -36,8 +35,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
-  const [selectedCountries, setSelectedCountries] = useState<Set<string>>(new Set());
-  const [selectedCompanies, setSelectedCompanies] = useState<Set<string>>(new Set());
 
   const countriesData = useMemo(() => {
     const countryMap = new Map<string, CountryData>();
@@ -106,20 +103,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     return result;
   }, [countriesData, searchFilter]);
 
-  const displayedCountries = useMemo(() => {
-    if (selectedCountries.size === 0) return filteredCountries;
-    
-    return filteredCountries
-      .filter(country => selectedCountries.has(country.name))
-      .map(country => ({
-        ...country,
-        companies: selectedCompanies.size > 0 
-          ? country.companies.filter(c => selectedCompanies.has(c.id))
-          : country.companies
-      }))
-      .filter(country => country.companies.length > 0);
-  }, [filteredCountries, selectedCountries, selectedCompanies]);
-
   const toggleCountry = (countryName: string) => {
     setExpandedCountries(prev => {
       const next = new Set(prev);
@@ -144,46 +127,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     });
   };
 
-  const toggleCountrySelection = (countryName: string) => {
-    setSelectedCountries(prev => {
-      const next = new Set(prev);
-      if (next.has(countryName)) {
-        next.delete(countryName);
-        const country = countriesData.find(c => c.name === countryName);
-        if (country) {
-          country.companies.forEach(comp => {
-            setSelectedCompanies(p => {
-              const n = new Set(p);
-              n.delete(comp.id);
-              return n;
-            });
-          });
-        }
-      } else {
-        next.add(countryName);
-        setExpandedCountries(p => new Set(Array.from(p).concat(countryName)));
-      }
-      return next;
-    });
-  };
-
-  const toggleCompanySelection = (companyId: string, countryName: string) => {
-    setSelectedCompanies(prev => {
-      const next = new Set(prev);
-      if (next.has(companyId)) {
-        next.delete(companyId);
-      } else {
-        next.add(companyId);
-        setExpandedCompanies(p => new Set(Array.from(p).concat(companyId)));
-        setSelectedCountries(p => new Set(Array.from(p).concat(countryName)));
-      }
-      return next;
-    });
-  };
-
   const totalCompanies = companies.length;
   const totalExecutives = executives.length;
-  const selectedCount = selectedCompanies.size;
 
   return (
     <div 
@@ -212,7 +157,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           </div>
           <div className="flex gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" /> {displayedCountries.length} countries
+              <MapPin className="h-3 w-3" /> {filteredCountries.length} countries
             </span>
             <span className="flex items-center gap-1">
               <Building2 className="h-3 w-3" /> {totalCompanies} companies
@@ -234,54 +179,34 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               data-testid="input-filter-panel"
             />
           </div>
-          {selectedCount > 0 && (
-            <div className="mt-2 text-xs text-primary font-medium">
-              {selectedCount} company{selectedCount > 1 ? 'ies' : ''} selected
-            </div>
-          )}
         </div>
 
         <ScrollArea className="flex-1 w-full">
           <div className="p-2 space-y-1 min-w-[280px]">
-            {displayedCountries.map((country) => {
+            {filteredCountries.map((country) => {
               const isCountryExpanded = expandedCountries.has(country.name);
-              const isCountrySelected = selectedCountries.has(country.name);
               const totalRevenue = country.companies.reduce((sum, c) => sum + c.revenue_usd, 0);
               
               return (
                 <div key={country.name} className="rounded-lg overflow-hidden">
                   <div
-                    className={`
-                      flex items-center gap-2 p-3 cursor-pointer transition-all duration-200 rounded-lg
-                      ${isCountrySelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent'}
-                    `}
+                    className="flex items-center gap-2 p-3 cursor-pointer transition-all duration-200 rounded-lg hover:bg-muted/50 border border-transparent"
+                    onClick={() => toggleCountry(country.name)}
+                    data-testid={`row-country-${country.name}`}
                   >
-                    <Checkbox
-                      checked={isCountrySelected}
-                      onCheckedChange={() => toggleCountrySelection(country.name)}
-                      className="shrink-0"
-                      data-testid={`checkbox-country-${country.name}`}
-                    />
-                    <div 
-                      className="flex-1 flex items-center gap-2 min-w-0"
-                      onClick={() => toggleCountry(country.name)}
-                      data-testid={`row-country-${country.name}`}
-                    >
-                      <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isCountrySelected ? 'text-primary' : 'text-muted-foreground'} ${isCountryExpanded ? 'rotate-90' : ''}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className={`font-semibold text-sm truncate ${isCountrySelected ? 'text-primary' : ''}`}>
-                            {country.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          ${(totalRevenue / 1000000000).toFixed(1)}B total revenue
-                        </div>
+                    <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground ${isCountryExpanded ? 'rotate-90' : ''}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sm truncate">
+                          {country.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'}
+                        </span>
                       </div>
-                      <ChevronRight className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isCountryExpanded ? 'rotate-90' : ''}`} />
+                      <div className="text-xs text-muted-foreground">
+                        ${(totalRevenue / 1000000000).toFixed(1)}B total revenue
+                      </div>
                     </div>
                   </div>
 
@@ -289,7 +214,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                     <div className="ml-4 pl-4 border-l-2 border-border/50 space-y-1 py-1">
                       {country.companies.map((company) => {
                         const isCompanyExpanded = expandedCompanies.has(company.id);
-                        const isCompanySelected = selectedCompanies.has(company.id);
                         const isHighlighted = selectedCompanyId === company.id;
                         
                         return (
@@ -297,39 +221,26 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                             <div
                               className={`
                                 flex items-center gap-2 p-2.5 rounded-md cursor-pointer transition-all duration-200
-                                ${isHighlighted ? 'bg-accent/20 border border-accent/40' : 
-                                  isCompanySelected ? 'bg-primary/5 border border-primary/20' : 
-                                  'hover:bg-muted/40 border border-transparent'}
+                                ${isHighlighted ? 'bg-accent/20 border border-accent/40' : 'hover:bg-muted/40 border border-transparent'}
                               `}
+                              onClick={() => {
+                                toggleCompany(company.id);
+                                selectCompany(company.id);
+                              }}
+                              data-testid={`row-company-${company.id}`}
                             >
-                              <Checkbox
-                                checked={isCompanySelected}
-                                onCheckedChange={() => toggleCompanySelection(company.id, country.name)}
-                                className="shrink-0"
-                                data-testid={`checkbox-company-${company.id}`}
-                              />
-                              <div 
-                                className="flex-1 flex items-center gap-2 min-w-0"
-                                onClick={() => {
-                                  toggleCompany(company.id);
-                                  selectCompany(company.id);
-                                }}
-                                data-testid={`row-company-${company.id}`}
-                              >
-                                <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? 'text-accent' : isCompanySelected ? 'text-primary' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} />
-                                <div className="flex-1 min-w-0">
-                                  <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : isCompanySelected ? 'text-primary' : ''}`}>
-                                    {company.name}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <span>${(company.revenue_usd / 1000000000).toFixed(1)}B</span>
-                                    <span>•</span>
-                                    <span>{company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}</span>
-                                  </div>
+                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? 'text-accent' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} />
+                              <div className="flex-1 min-w-0">
+                                <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : ''}`}>
+                                  {company.name}
                                 </div>
-                                {company.executives.length > 0 && (
-                                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isCompanyExpanded ? 'rotate-90' : ''}`} />
-                                )}
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span>${(company.revenue_usd / 1000000000).toFixed(1)}B</span>
+                                  <span>•</span>
+                                  <span>{company.employees.toLocaleString()} employees</span>
+                                  <span>•</span>
+                                  <span>{company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}</span>
+                                </div>
                               </div>
                             </div>
 
@@ -369,7 +280,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               );
             })}
 
-            {displayedCountries.length === 0 && (
+            {filteredCountries.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 <Globe className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No results found</p>
@@ -380,7 +291,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         </ScrollArea>
         
         <div className="p-2 border-t border-border bg-muted/20 text-[10px] text-center text-muted-foreground min-w-[280px]">
-          {displayedCountries.reduce((sum, c) => sum + c.companies.length, 0)} Companies in {displayedCountries.length} Countries
+          {filteredCountries.reduce((sum, c) => sum + c.companies.length, 0)} Companies in {filteredCountries.length} Countries
         </div>
       </div>
     </div>

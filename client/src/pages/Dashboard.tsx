@@ -106,8 +106,7 @@ export default function Dashboard() {
       setExecutives([]);
       refetchHistory();
       setShowClearConfirm(false);
-      toast.success('Results cleared successfully');
-      setLocation('/');
+      toast.success('Results cleared - ready for new search');
     } catch (error) {
       toast.error('Failed to clear results');
       console.error(error);

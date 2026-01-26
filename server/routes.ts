@@ -494,6 +494,21 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
     }
   });
 
+  app.get("/api/search-history/:id/load", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.id);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+      
+      const results = await storage.getFullSearchResults(searchId);
+      res.json({ results, searchQueryId: searchId });
+    } catch (error) {
+      console.error("Error loading search history:", error);
+      res.status(500).json({ error: "Failed to load search history" });
+    }
+  });
+
   app.get("/api/search-results/:id", async (req, res) => {
     try {
       const searchQueryId = parseInt(req.params.id);

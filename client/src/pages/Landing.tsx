@@ -172,12 +172,11 @@ export default function Landing() {
                   {searchHistory && searchHistory.length > 0 ? (
                     <div className="overflow-y-auto max-h-56">
                       {searchHistory.slice(0, 10).map((item: any, index: number) => (
-                        <button
+                        <div
                           key={`${item.id}-${index}`}
-                          type="button"
-                          onClick={() => selectHistoryItem(item.query)}
-                          className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group"
+                          className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group cursor-pointer"
                           data-testid={`button-history-item-${index}`}
+                          onClick={() => selectHistoryItem(item.query)}
                         >
                           <div className="flex items-center gap-3">
                             <Search className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
@@ -190,20 +189,18 @@ export default function Landing() {
                                 )}
                               </div>
                             </div>
-                            <Button
+                            <button
                               type="button"
-                              variant="ghost"
-                              size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleLoadHistory(item);
                               }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-transparent hover:bg-primary/10 hover:text-primary"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-transparent hover:bg-primary/10 hover:text-primary px-3 py-1.5 rounded-md text-sm font-medium"
                             >
                               Load
-                            </Button>
+                            </button>
                           </div>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   ) : (

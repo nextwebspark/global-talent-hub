@@ -66,25 +66,25 @@ export default function MapComponent() {
 
   // Scale revenue/employees to radius
   const getRadius = (value: number) => {
-    let minVal, maxVal;
-    
-    if (scalingMetric === 'revenue') {
-      minVal = 100000000;
-      maxVal = 50000000000;
-    } else {
-      minVal = 200;
-      maxVal = 100000;
-    }
+    if (!value || filteredCompanies.length === 0) return 20;
+
+    // Calculate min/max from current filtered dataset for relative scaling
+    const values = filteredCompanies.map(c => scalingMetric === 'revenue' ? c.revenue_usd : c.employees);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
     
     const minRadius = 15;
-    const maxRadius = 60;
+    const maxRadius = 50;
 
-    if (!value) return minRadius;
+    if (maxVal === minVal) return (minRadius + maxRadius) / 2;
 
-    const clampedVal = Math.max(minVal, Math.min(value, maxVal));
-    const normalized = Math.pow((clampedVal - minVal) / (maxVal - minVal), 0.5);
+    // Linear scaling relative to the current dataset
+    const normalized = (value - minVal) / (maxVal - minVal);
     
-    return minRadius + (normalized * (maxRadius - minRadius));
+    // Apply a slight power scale to make smaller bubbles more visible but maintain relative difference
+    const scaled = Math.pow(normalized, 0.7);
+    
+    return minRadius + (scaled * (maxRadius - minRadius));
   };
 
   const handleColorSelect = (color: string) => {

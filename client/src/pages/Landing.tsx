@@ -22,6 +22,38 @@ export default function Landing() {
   const { data: models } = useModels();
   const { data: searchHistory } = useSearchHistory();
 
+  const handleLoadHistory = async (item: any) => {
+    try {
+      toast.loading('Loading previous search results...', { id: 'load-history' });
+      
+      const response = await fetch(`/api/search-history/${item.id}/load`);
+      if (!response.ok) throw new Error('Failed to load history');
+      
+      const data = await response.json();
+      toast.dismiss('load-history');
+
+      if (!data.results || data.results.length === 0) {
+        toast.error('No results found for this search.');
+        return;
+      }
+
+      setProject({
+        id: String(item.id),
+        name: item.query,
+        search_string: item.query,
+        created_at: new Date(item.createdAt)
+      });
+
+      loadFromAPI(data.results);
+      toast.success(`Loaded ${data.results.length} companies from history`);
+      setLocation('/dashboard');
+    } catch (error) {
+      toast.dismiss('load-history');
+      toast.error('Failed to load search history');
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
@@ -158,6 +190,18 @@ export default function Landing() {
                                 )}
                               </div>
                             </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLoadHistory(item);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-transparent hover:bg-primary/10 hover:text-primary"
+                            >
+                              Load
+                            </Button>
                           </div>
                         </button>
                       ))}

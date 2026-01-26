@@ -74,6 +74,10 @@ export default function Landing() {
     inputRef.current?.focus();
   };
 
+  const filteredHistory = searchHistory?.filter((item: any) => 
+    item.query.toLowerCase().includes(input.toLowerCase())
+  ).sort((a: any, b: any) => a.query.localeCompare(b.query)) || [];
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) {
@@ -173,12 +177,12 @@ export default function Landing() {
                 <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">
                   <div className="p-3 border-b border-border bg-muted/30">
                     <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <History className="h-4 w-4" /> Recent Searches
+                      <History className="h-4 w-4" /> {input ? 'Matching Searches' : 'Recent Searches'}
                     </span>
                   </div>
-                  {searchHistory && searchHistory.length > 0 ? (
+                  {filteredHistory.length > 0 ? (
                     <div className="overflow-y-auto max-h-56">
-                      {searchHistory.slice(0, 10).map((item: any, index: number) => (
+                      {filteredHistory.slice(0, 10).map((item: any, index: number) => (
                         <div
                           key={`${item.id}-${index}`}
                           className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group cursor-pointer"
@@ -191,8 +195,8 @@ export default function Landing() {
                               <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
                               <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
                                 <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                                {item.resultCount > 0 && (
-                                  <span className="text-primary/70">{item.resultCount} results</span>
+                                {(item.companyCount || item.resultCount) > 0 && (
+                                  <span className="text-primary/70">{item.companyCount || item.resultCount} companies</span>
                                 )}
                               </div>
                             </div>
@@ -212,8 +216,8 @@ export default function Landing() {
                     </div>
                   ) : (
                     <div className="p-6 text-center text-muted-foreground">
-                      <p className="text-sm">No previous searches yet</p>
-                      <p className="text-xs mt-1">Your search history will appear here</p>
+                      <p className="text-sm">{input ? 'No matching searches' : 'No previous searches yet'}</p>
+                      <p className="text-xs mt-1">{input ? 'Try a different search term' : 'Your search history will appear here'}</p>
                     </div>
                   )}
                 </div>

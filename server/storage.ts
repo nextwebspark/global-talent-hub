@@ -41,6 +41,7 @@ export interface IStorage {
   upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
   deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void>;
+  deleteSearchQuery(id: number): Promise<void>;
   getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
   getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
 }
@@ -176,6 +177,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void> {
     await db.delete(companies).where(eq(companies.searchQueryId, searchQueryId));
+  }
+
+  async deleteSearchQuery(id: number): Promise<void> {
+    await db.delete(searchQueries).where(eq(searchQueries.id, id));
   }
 
   async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {

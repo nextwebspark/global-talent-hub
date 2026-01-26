@@ -300,6 +300,21 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/search-queries/:id/results", async (req, res) => {
+    try {
+      const searchQueryId = parseInt(String(req.params.id));
+      const companies = await storage.getCompaniesBySearchQuery(searchQueryId);
+      for (const company of companies) {
+        await storage.deleteCompany(company.id);
+      }
+      await storage.deleteSearchQuery(searchQueryId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error clearing search results:", error);
+      res.status(500).json({ error: "Failed to clear results" });
+    }
+  });
+
   app.get("/api/models", async (req, res) => {
     try {
       const response = await fetch("https://openrouter.ai/api/v1/models", {

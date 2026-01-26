@@ -6,7 +6,7 @@ import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
 import { useLocation } from 'wouter';
-import { Loader2, Search, Globe, Bot, ChevronDown, History } from 'lucide-react';
+import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,6 +23,8 @@ export default function Dashboard() {
   const [searchInput, setSearchInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('replit');
   const [showHistory, setShowHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   
@@ -83,6 +85,35 @@ export default function Dashboard() {
     setSearchInput(query);
     setShowHistory(false);
     inputRef.current?.focus();
+  };
+
+  const filteredHistory = searchHistory?.filter((item: any) => 
+    item.query.toLowerCase().includes(searchInput.toLowerCase())
+  ).sort((a: any, b: any) => a.query.localeCompare(b.query)) || [];
+
+  const handleClearResults = async () => {
+    if (!currentProject?.id) return;
+    
+    setIsClearing(true);
+    try {
+      const response = await fetch(`/api/search-queries/${currentProject.id}/results`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) throw new Error('Failed to clear results');
+      
+      setCompanies([]);
+      setExecutives([]);
+      refetchHistory();
+      setShowClearConfirm(false);
+      toast.success('Results cleared successfully');
+      setLocation('/');
+    } catch (error) {
+      toast.error('Failed to clear results');
+      console.error(error);
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   const loadHistorySearch = async (item: any) => {
@@ -236,12 +267,12 @@ export default function Dashboard() {
                 <div className="absolute top-full left-0 right-0 mt-2 bg-background/98 backdrop-blur-md border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">
                   <div className="p-3 border-b border-border bg-muted/30">
                     <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                      <History className="h-3 w-3" /> Recent Searches
+                      <History className="h-3 w-3" /> {searchInput ? 'Matching Searches' : 'Recent Searches'}
                     </span>
                   </div>
-                  {searchHistory && searchHistory.length > 0 ? (
+                  {filteredHistory.length > 0 ? (
                     <div className="overflow-y-auto max-h-56">
-                      {searchHistory.slice(0, 10).map((item: any, index: number) => (
+                      {filteredHistory.slice(0, 10).map((item: any, index: number) => (
                         <div
                           key={`${item.id}-${index}`}
                           className="w-full px-4 py-2.5 text-sm hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group flex items-center gap-2"
@@ -281,7 +312,7 @@ export default function Dashboard() {
                     </div>
                   ) : (
                     <div className="p-4 text-center text-muted-foreground">
-                      <p className="text-xs">No previous searches yet</p>
+                      <p className="text-xs">{searchInput ? 'No matching searches' : 'No previous searches yet'}</p>
                     </div>
                   )}
                 </div>
@@ -320,9 +351,53 @@ export default function Dashboard() {
                 {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
                 {searchMutation.isPending ? 'Searching...' : 'Run Search'}
               </Button>
+              
+              <Button 
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowClearConfirm(true)}
+                className="h-10 rounded-full px-4 text-sm shadow-lg border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                data-testid="button-clear-results"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Clear Results
+              </Button>
             </div>
           </form>
         </div>
+        
+        {showClearConfirm && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-[100]">
+            <div className="bg-card border border-border rounded-xl shadow-2xl p-6 max-w-sm mx-4">
+              <h3 className="text-lg font-semibold mb-2">Clear All Results?</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                This will permanently delete all companies and executives from this search. This action cannot be undone.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowClearConfirm(false)}
+                  disabled={isClearing}
+                  data-testid="button-clear-cancel"
+                >
+                  No, Keep Results
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleClearResults}
+                  disabled={isClearing}
+                  data-testid="button-clear-confirm"
+                >
+                  {isClearing ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  Yes, Clear All
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         
         <MapComponent />
       </div>

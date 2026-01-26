@@ -709,7 +709,7 @@ STRICT REQUIREMENTS:
    - latitude/longitude: The PRECISE GPS coordinates of the street address (not city center)
    - Example: "One Apple Park Way, Cupertino" with lat: 37.3346, lng: -122.0090 (exact building location)
 4. For each data point, provide a source and confidence score (1-10)
-5. REVENUE IS REQUIRED: Every company MUST have revenue data in USD. Use annual revenue from most recent fiscal year. If exact revenue unknown, provide best estimate based on company size/industry/public data and set confidence lower. NEVER return 0 for revenue unless it's a startup with no revenue.
+5. REVENUE IS REQUIRED: Every company MUST have revenue data in USD. Use annual revenue from most recent fiscal year. If revenue is reported in a local currency (e.g. EUR, GBP, JPY), you MUST convert it to USD using today's exchange rate. If exact revenue unknown, provide best estimate based on company size/industry/public data and set confidence lower. NEVER return 0 for revenue unless it's a startup with no revenue.
 6. EMPLOYEES IS REQUIRED: Every company MUST have employee count. If exact unknown, estimate and set confidence lower.
 7. Cross-reference multiple sources when possible
 8. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}

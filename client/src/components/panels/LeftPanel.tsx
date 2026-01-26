@@ -267,7 +267,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                       onClick={() => toggleCountry(country.name)}
                       data-testid={`row-country-${country.name}`}
                     >
-                      <MapPin className={`h-4 w-4 shrink-0 ${isCountrySelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isCountrySelected ? 'text-primary' : 'text-muted-foreground'} ${isCountryExpanded ? 'rotate-90' : ''}`} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <span className={`font-semibold text-sm truncate ${isCountrySelected ? 'text-primary' : ''}`}>
@@ -281,11 +281,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                           ${(totalRevenue / 1000000000).toFixed(1)}B total revenue
                         </div>
                       </div>
-                      {isCountryExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                      )}
+                      <ChevronRight className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isCountryExpanded ? 'rotate-90' : ''}`} />
                     </div>
                   </div>
 
@@ -320,7 +316,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                 }}
                                 data-testid={`row-company-${company.id}`}
                               >
-                                <Building2 className={`h-3.5 w-3.5 shrink-0 ${isHighlighted ? 'text-accent' : isCompanySelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                                <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? 'text-accent' : isCompanySelected ? 'text-primary' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} />
                                 <div className="flex-1 min-w-0">
                                   <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : isCompanySelected ? 'text-primary' : ''}`}>
                                     {company.name}
@@ -332,11 +328,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                   </div>
                                 </div>
                                 {company.executives.length > 0 && (
-                                  isCompanyExpanded ? (
-                                    <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  ) : (
-                                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  )
+                                  <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200 ${isCompanyExpanded ? 'rotate-90' : ''}`} />
                                 )}
                               </div>
                             </div>

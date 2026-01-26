@@ -194,9 +194,9 @@ export default function MapComponent() {
         })}
       </MapContainer>
 
-      {/* Logo in top right */}
-      <div className="absolute top-4 right-4 z-[400]">
-        <img src={logoImage} alt="ALAC Partners" className="h-10 w-auto opacity-90" />
+      {/* Logo in bottom right */}
+      <div className="absolute bottom-4 right-4 z-[400]">
+        <img src={logoImage} alt="ALAC Partners" className="h-8 w-auto opacity-40" />
       </div>
 
       {/* Color Picker Overlay */}

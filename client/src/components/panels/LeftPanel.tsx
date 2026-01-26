@@ -2,9 +2,10 @@ import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Globe, Trash2, Plus, X } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
+import logoImage from '@/assets/images/logo.png';
 
 interface CountryData {
   name: string;
@@ -32,11 +33,12 @@ interface LeftPanelProps {
 }
 
 export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
-  const { companies, executives, selectCompany, selectedCompanyId, deleteCompany, addCompany, currentProject } = useAppStore();
+  const { companies, executives, selectCompany, selectedCompanyId, deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddExecForm, setShowAddExecForm] = useState<string | null>(null);
   const [newCompany, setNewCompany] = useState({
     name: '',
     hq_city: '',
@@ -44,7 +46,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     revenue_usd: '',
     employees: ''
   });
+  const [newExecutive, setNewExecutive] = useState({
+    name: '',
+    title: ''
+  });
   const [isAdding, setIsAdding] = useState(false);
+  const [isAddingExec, setIsAddingExec] = useState(false);
 
   const handleDeleteCompany = async (e: React.MouseEvent, companyId: string, companyName: string) => {
     e.stopPropagation();
@@ -107,6 +114,62 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
       toast.error('Failed to add company');
     } finally {
       setIsAdding(false);
+    }
+  };
+
+  const handleDeleteExecutive = async (e: React.MouseEvent, execId: string, execName: string) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${execName}" from results?`)) return;
+    
+    try {
+      await fetch(`/api/executives/${execId}`, { method: 'DELETE' });
+      deleteExecutive(execId);
+      toast.success(`Removed ${execName}`);
+    } catch (error) {
+      toast.error('Failed to delete executive');
+    }
+  };
+
+  const handleAddExecutive = async (e: React.FormEvent, companyId: string) => {
+    e.preventDefault();
+    if (!newExecutive.name.trim()) {
+      toast.error('Please enter an executive name');
+      return;
+    }
+
+    setIsAddingExec(true);
+    try {
+      const response = await fetch('/api/executives', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newExecutive.name,
+          title: newExecutive.title || 'Executive',
+          companyId: parseInt(companyId),
+          confidence: 5,
+          source: 'manual'
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to add executive');
+      
+      const created = await response.json();
+      addExecutive({
+        id: String(created.id),
+        company_id: companyId,
+        name: created.name,
+        title: created.title || 'Executive',
+        source: 'manual',
+        confidence: created.confidence || 5
+      });
+      
+      setNewExecutive({ name: '', title: '' });
+      setShowAddExecForm(null);
+      toast.success(`Added ${created.name}`);
+    } catch (error) {
+      toast.error('Failed to add executive');
+    } finally {
+      setIsAddingExec(false);
     }
   };
 
@@ -227,8 +290,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         <div className="p-4 border-b border-border min-w-[280px]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Globe className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-serif font-bold text-foreground">Results by Region</h2>
+              <img src={logoImage} alt="Logo" className="h-6 w-auto" />
+              <h2 className="text-lg font-serif font-bold text-foreground">Results</h2>
             </div>
             <Button
               variant="outline"
@@ -389,12 +452,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                               </button>
                             </div>
 
-                            {isCompanyExpanded && company.executives.length > 0 && (
+                            {isCompanyExpanded && (
                               <div className="ml-5 pl-3 border-l border-border/30 space-y-0.5 py-1">
                                 {company.executives.map((exec) => (
                                   <div
                                     key={exec.id}
-                                    className="flex items-center gap-2 p-2 rounded hover:bg-muted/30 transition-colors cursor-pointer group"
+                                    className="flex items-center gap-2 p-2 rounded hover:bg-muted/30 transition-colors cursor-pointer group/exec"
                                     onClick={() => exec.profileUrl && window.open(exec.profileUrl, '_blank')}
                                     data-testid={`exec-${exec.id}`}
                                   >
@@ -402,7 +465,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                       <User className="h-3 w-3 text-muted-foreground" />
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <div className="text-xs font-medium truncate group-hover:text-primary transition-colors">
+                                      <div className="text-xs font-medium truncate group-hover/exec:text-primary transition-colors">
                                         {exec.name}
                                       </div>
                                       <div className="text-[10px] text-muted-foreground truncate">
@@ -412,8 +475,51 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                     <span className={`text-[9px] font-bold ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
                                       {exec.confidence}/10
                                     </span>
+                                    <button
+                                      onClick={(e) => handleDeleteExecutive(e, exec.id, exec.name)}
+                                      className="opacity-0 group-hover/exec:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all shrink-0"
+                                      title="Delete executive"
+                                      data-testid={`button-delete-exec-${exec.id}`}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
                                   </div>
                                 ))}
+                                
+                                {showAddExecForm === company.id ? (
+                                  <form onSubmit={(e) => handleAddExecutive(e, company.id)} className="p-2 bg-muted/20 rounded space-y-1.5">
+                                    <Input
+                                      placeholder="Name *"
+                                      value={newExecutive.name}
+                                      onChange={(e) => setNewExecutive({ ...newExecutive, name: e.target.value })}
+                                      className="h-7 text-xs"
+                                      autoFocus
+                                    />
+                                    <Input
+                                      placeholder="Title"
+                                      value={newExecutive.title}
+                                      onChange={(e) => setNewExecutive({ ...newExecutive, title: e.target.value })}
+                                      className="h-7 text-xs"
+                                    />
+                                    <div className="flex gap-1">
+                                      <Button type="submit" size="sm" className="h-6 text-[10px] flex-1" disabled={isAddingExec}>
+                                        {isAddingExec ? 'Adding...' : 'Add'}
+                                      </Button>
+                                      <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setShowAddExecForm(null)}>
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </form>
+                                ) : (
+                                  <button
+                                    onClick={() => setShowAddExecForm(company.id)}
+                                    className="w-full flex items-center gap-1 p-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+                                    data-testid={`button-add-exec-${company.id}`}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add Executive
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
@@ -427,7 +533,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
 
             {filteredCountries.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                <Globe className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No results found</p>
                 <p className="text-xs mt-1">Try a different search term</p>
               </div>

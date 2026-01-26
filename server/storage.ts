@@ -36,8 +36,11 @@ export interface IStorage {
   getAllSearchQueries(): Promise<SearchQuery[]>;
   getUniqueSearchQueries(): Promise<SearchQuery[]>;
   getSearchQuery(id: number): Promise<SearchQuery | undefined>;
+  getSearchQueryByUniqueKey(uniqueKey: string): Promise<SearchQuery | undefined>;
   createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
+  upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
+  deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void>;
   getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
   getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
 }
@@ -139,13 +142,40 @@ export class DatabaseStorage implements IStorage {
     return query;
   }
 
+  async getSearchQueryByUniqueKey(uniqueKey: string): Promise<SearchQuery | undefined> {
+    const [query] = await db.select().from(searchQueries).where(eq(searchQueries.uniqueKey, uniqueKey));
+    return query;
+  }
+
   async createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
     const [newQuery] = await db.insert(searchQueries).values(query).returning();
     return newQuery;
   }
 
+  async upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
+    const existing = await this.getSearchQueryByUniqueKey(query.uniqueKey);
+    if (existing) {
+      const [updated] = await db
+        .update(searchQueries)
+        .set({ 
+          query: query.query,
+          parsedCriteria: query.parsedCriteria,
+          resultCount: query.resultCount || 0,
+          updatedAt: sql`CURRENT_TIMESTAMP`
+        })
+        .where(eq(searchQueries.id, existing.id))
+        .returning();
+      return updated;
+    }
+    return this.createSearchQuery(query);
+  }
+
   async updateSearchQueryResultCount(id: number, count: number): Promise<void> {
-    await db.update(searchQueries).set({ resultCount: count }).where(eq(searchQueries.id, id));
+    await db.update(searchQueries).set({ resultCount: count, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(searchQueries.id, id));
+  }
+
+  async deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void> {
+    await db.delete(companies).where(eq(companies.searchQueryId, searchQueryId));
   }
 
   async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {

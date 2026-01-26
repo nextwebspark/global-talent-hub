@@ -24,8 +24,12 @@ export default function Landing() {
 
   const handleLoadHistory = async (item: any) => {
     try {
+      // Clear existing results before loading fresh data from database
+      loadFromAPI([]);
+      
       toast.loading('Loading previous search results...', { id: 'load-history' });
       
+      // Fetch fresh data from database using the search ID
       const response = await fetch(`/api/search-history/${item.id}/load`);
       if (!response.ok) throw new Error('Failed to load history');
       
@@ -78,6 +82,9 @@ export default function Landing() {
     }
 
     setShowHistory(false);
+    
+    // Clear existing results before new search
+    loadFromAPI([]);
     
     try {
       toast.loading('Searching for companies and executives...', { id: 'search' });

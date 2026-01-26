@@ -88,8 +88,14 @@ export default function Dashboard() {
   const loadHistorySearch = async (item: any) => {
     try {
       setShowHistory(false);
+      
+      // Clear existing results before loading
+      setCompanies([]);
+      setExecutives([]);
+      
       toast.loading('Loading previous search results...', { id: 'load-history' });
       
+      // Fetch fresh data from database using the search ID
       const results = await loadSearchResults.mutateAsync(item.id);
       
       const companies = results.companies.map((c: any) => transformAPICompany(c));
@@ -126,6 +132,10 @@ export default function Dashboard() {
     }
     
     setShowHistory(false);
+    
+    // Clear existing results before new search
+    setCompanies([]);
+    setExecutives([]);
     
     try {
       toast.loading('Searching for companies and executives...', { id: 'search' });

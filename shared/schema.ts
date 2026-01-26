@@ -47,10 +47,12 @@ export const executives = pgTable("executives", {
 
 export const searchQueries = pgTable("search_queries", {
   id: serial("id").primaryKey(),
+  uniqueKey: text("unique_key").notNull().unique(),
   query: text("query").notNull(),
   parsedCriteria: text("parsed_criteria"),
   resultCount: integer("result_count").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
 export const conversations = pgTable("conversations", {

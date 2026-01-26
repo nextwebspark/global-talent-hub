@@ -459,11 +459,25 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
         limit: typeof parsed.criteria?.limit === 'number' ? parsed.criteria.limit : 20
       };
 
-      const searchQuery = await storage.createSearchQuery({
+      // Generate unique key from query + filters (normalized)
+      const normalizedQuery = query.toLowerCase().trim();
+      const regionsKey = criteria.regions.sort().join(',').toLowerCase();
+      const sectorsKey = criteria.sectors.sort().join(',').toLowerCase();
+      const uniqueKey = `${normalizedQuery}|regions:${regionsKey}|sectors:${sectorsKey}`;
+      
+      console.log("Generated unique search key:", uniqueKey);
+
+      // Upsert the search query - overwrites previous results for same query
+      const searchQuery = await storage.upsertSearchQuery({
+        uniqueKey,
         query,
         parsedCriteria: JSON.stringify(criteria),
         resultCount: 0
       });
+
+      // Delete existing companies for this search to replace with fresh data
+      await storage.deleteCompaniesBySearchQuery(searchQuery.id);
+      console.log("Cleared previous results for search ID:", searchQuery.id);
 
       console.log("Generating search results with criteria:", JSON.stringify(criteria));
       const companies = await generateSearchResults(criteria, searchQuery.id, selectedModel);

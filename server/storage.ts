@@ -38,6 +38,8 @@ export interface IStorage {
   getSearchQuery(id: number): Promise<SearchQuery | undefined>;
   createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
+  getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
+  getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -144,6 +146,37 @@ export class DatabaseStorage implements IStorage {
 
   async updateSearchQueryResultCount(id: number, count: number): Promise<void> {
     await db.update(searchQueries).set({ resultCount: count }).where(eq(searchQueries.id, id));
+  }
+
+  async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {
+    const allQueries = await db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+    const seen = new Set<string>();
+    const result: Array<SearchQuery & { companyCount: number }> = [];
+    
+    for (const q of allQueries) {
+      const key = q.query.toLowerCase().trim();
+      if (!seen.has(key)) {
+        seen.add(key);
+        const companiesForQuery = await db.select().from(companies).where(eq(companies.searchQueryId, q.id));
+        result.push({ ...q, companyCount: companiesForQuery.length });
+      }
+    }
+    return result;
+  }
+
+  async getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null> {
+    const searchQuery = await this.getSearchQuery(searchQueryId);
+    if (!searchQuery) return null;
+
+    const companiesForQuery = await db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
+    const companiesWithExecs: Array<Company & { executives: Executive[] }> = [];
+
+    for (const company of companiesForQuery) {
+      const execsForCompany = await db.select().from(executives).where(eq(executives.companyId, company.id));
+      companiesWithExecs.push({ ...company, executives: execsForCompany });
+    }
+
+    return { searchQuery, companies: companiesWithExecs };
   }
 }
 

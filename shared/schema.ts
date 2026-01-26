@@ -15,6 +15,7 @@ export const companies = pgTable("companies", {
   sector: text("sector"),
   region: text("region"),
   country: text("country"),
+  streetAddress: text("street_address"),
   latitude: numeric("latitude", { precision: 10, scale: 7 }).notNull(),
   longitude: numeric("longitude", { precision: 10, scale: 7 }).notNull(),
   revenue: numeric("revenue", { precision: 15, scale: 2 }),

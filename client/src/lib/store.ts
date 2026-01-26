@@ -7,6 +7,7 @@ export interface Company {
   industry: string;
   hq_city: string;
   hq_country: string;
+  streetAddress?: string;
   lat: number;
   lng: number;
   revenue_usd: number;
@@ -102,6 +103,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     industry: String(apiCompany.sector || 'Unknown').trim(),
     hq_city: String(apiCompany.region || 'Unknown').trim(),
     hq_country: String(apiCompany.country || 'Unknown').trim(),
+    streetAddress: (apiCompany as any).streetAddress ? String((apiCompany as any).streetAddress).trim() : undefined,
     lat: isValidCoordinate(lat, lng) ? lat : 0,
     lng: isValidCoordinate(lat, lng) ? lng : 0,
     revenue_usd: revenue >= 0 ? revenue : 0,

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCompanies, useSearch, useModels, useSearchHistory } from '@/lib/api';
+import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults } from '@/lib/api';
+import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
@@ -13,11 +14,12 @@ import { toast } from 'sonner';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId } = useAppStore();
+  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, setCompanies, setExecutives } = useAppStore();
   const { isLoading } = useCompanies();
   const searchMutation = useSearch();
   const { data: models } = useModels();
   const { data: searchHistory, refetch: refetchHistory } = useSearchHistory();
+  const loadSearchResults = useLoadSearchResults();
   const [searchInput, setSearchInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('replit');
   const [showHistory, setShowHistory] = useState(false);
@@ -81,6 +83,38 @@ export default function Dashboard() {
     setSearchInput(query);
     setShowHistory(false);
     inputRef.current?.focus();
+  };
+
+  const loadHistorySearch = async (item: any) => {
+    try {
+      setShowHistory(false);
+      toast.loading('Loading previous search results...', { id: 'load-history' });
+      
+      const results = await loadSearchResults.mutateAsync(item.id);
+      
+      const companies = results.companies.map((c: any) => transformAPICompany(c));
+      const executives = results.companies.flatMap((c: any) => 
+        (c.executives || []).map((e: any) => transformAPIExecutive(e, String(c.id)))
+      );
+      
+      setProject({
+        id: String(item.id),
+        name: item.query,
+        search_string: item.query,
+        created_at: new Date(item.createdAt)
+      });
+      
+      setCompanies(companies);
+      setExecutives(executives);
+      setSearchInput(item.query);
+      
+      toast.dismiss('load-history');
+      toast.success(`Loaded ${companies.length} companies from previous search`);
+    } catch (error) {
+      toast.dismiss('load-history');
+      toast.error('Failed to load previous search results');
+      console.error('Failed to load search results:', error);
+    }
   };
 
 
@@ -198,26 +232,41 @@ export default function Dashboard() {
                   {searchHistory && searchHistory.length > 0 ? (
                     <div className="overflow-y-auto max-h-56">
                       {searchHistory.slice(0, 10).map((item: any, index: number) => (
-                        <button
+                        <div
                           key={`${item.id}-${index}`}
-                          type="button"
-                          onClick={() => selectHistoryItem(item.query)}
-                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group"
-                          data-testid={`button-dashboard-history-${index}`}
+                          className="w-full px-4 py-2.5 text-sm hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group flex items-center gap-2"
                         >
-                          <div className="flex items-center gap-2">
-                            <Search className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                                <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                                {item.resultCount > 0 && (
-                                  <span className="text-primary/70">{item.resultCount} results</span>
-                                )}
+                          <button
+                            type="button"
+                            onClick={() => selectHistoryItem(item.query)}
+                            className="flex-1 text-left"
+                            data-testid={`button-dashboard-history-${index}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Search className="h-3 w-3 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                                  <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                                  {(item.companyCount || item.resultCount) > 0 && (
+                                    <span className="text-primary/70">{item.companyCount || item.resultCount} companies</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </button>
+                          </button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => loadHistorySearch(item)}
+                            disabled={loadSearchResults.isPending}
+                            className="shrink-0 text-xs h-7 px-2"
+                            data-testid={`button-load-history-${index}`}
+                          >
+                            {loadSearchResults.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Load'}
+                          </Button>
+                        </div>
                       ))}
                     </div>
                   ) : (

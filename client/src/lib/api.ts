@@ -6,6 +6,7 @@ export interface Company {
   sector: string | null;
   region: string | null;
   country: string | null;
+  streetAddress: string | null;
   latitude: string;
   longitude: string;
   revenue: string | null;
@@ -185,13 +186,36 @@ export function useSearch() {
   });
 }
 
+export interface SearchHistoryItem {
+  id: number;
+  query: string;
+  parsedCriteria: string | null;
+  resultCount: number;
+  companyCount: number;
+  createdAt: string;
+}
+
 export function useSearchHistory() {
-  return useQuery({
+  return useQuery<SearchHistoryItem[]>({
     queryKey: ['search-history'],
     queryFn: async () => {
       const response = await fetch('/api/search-history');
       if (!response.ok) throw new Error('Failed to fetch search history');
       return response.json();
+    },
+  });
+}
+
+export function useLoadSearchResults() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (searchQueryId: number) => {
+      const response = await fetch(`/api/search-results/${searchQueryId}`);
+      if (!response.ok) throw new Error('Failed to load search results');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies'] });
     },
   });
 }

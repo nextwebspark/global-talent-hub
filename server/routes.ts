@@ -501,8 +501,38 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
         return res.status(400).json({ error: "Invalid search ID" });
       }
       
-      const results = await storage.getFullSearchResults(searchId);
-      res.json({ results, searchQueryId: searchId });
+      const data = await storage.getFullSearchResults(searchId);
+      if (!data) {
+        return res.status(404).json({ error: "Search results not found" });
+      }
+      
+      const formattedCompanies = data.companies.map(company => ({
+        id: company.id,
+        name: company.name,
+        sector: company.sector,
+        region: company.region,
+        country: company.country,
+        streetAddress: company.streetAddress,
+        latitude: company.latitude,
+        longitude: company.longitude,
+        revenue: company.revenue,
+        revenueSource: company.revenueSource,
+        employees: company.employees,
+        employeesSource: company.employeesSource,
+        confidence: company.confidence,
+        color: company.color,
+        executives: company.executives.map(exec => ({
+          id: exec.id,
+          name: exec.name,
+          title: exec.title,
+          source: exec.source,
+          profileUrl: exec.profileUrl,
+          imageUrl: exec.imageUrl,
+          confidence: exec.confidence
+        }))
+      }));
+      
+      res.json({ results: formattedCompanies, searchQueryId: searchId });
     } catch (error) {
       console.error("Error loading search history:", error);
       res.status(500).json({ error: "Failed to load search history" });

@@ -113,6 +113,7 @@ function validateCompanyData(data: any): any {
     region,
     country,
     city: String(data.city || data.headquarters || data.hq || '').trim(),
+    streetAddress: String(data.streetAddress || data.street_address || data.address || '').trim(),
     latitude: coords.lat,
     longitude: coords.lng,
     revenue,
@@ -485,11 +486,59 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
 
   app.get("/api/search-history", async (req, res) => {
     try {
-      const history = await storage.getUniqueSearchQueries();
-      res.json(history.slice(0, 20));
+      const history = await storage.getSearchHistoryWithResults();
+      res.json(history.slice(0, 50));
     } catch (error) {
       console.error("Error fetching search history:", error);
       res.status(500).json({ error: "Failed to fetch search history" });
+    }
+  });
+
+  app.get("/api/search-results/:id", async (req, res) => {
+    try {
+      const searchQueryId = parseInt(req.params.id);
+      if (isNaN(searchQueryId)) {
+        return res.status(400).json({ error: "Invalid search query ID" });
+      }
+      
+      const results = await storage.getFullSearchResults(searchQueryId);
+      if (!results) {
+        return res.status(404).json({ error: "Search results not found" });
+      }
+      
+      const formattedCompanies = results.companies.map(company => ({
+        id: company.id,
+        name: company.name,
+        sector: company.sector,
+        region: company.region,
+        country: company.country,
+        streetAddress: company.streetAddress,
+        latitude: company.latitude,
+        longitude: company.longitude,
+        revenue: company.revenue,
+        revenueSource: company.revenueSource,
+        employees: company.employees,
+        employeesSource: company.employeesSource,
+        confidence: company.confidence,
+        color: company.color,
+        executives: company.executives.map(exec => ({
+          id: exec.id,
+          name: exec.name,
+          title: exec.title,
+          source: exec.source,
+          profileUrl: exec.profileUrl,
+          imageUrl: exec.imageUrl,
+          confidence: exec.confidence
+        }))
+      }));
+
+      res.json({
+        searchQuery: results.searchQuery,
+        companies: formattedCompanies
+      });
+    } catch (error) {
+      console.error("Error loading search results:", error);
+      res.status(500).json({ error: "Failed to load search results" });
     }
   });
 
@@ -569,6 +618,7 @@ Return a JSON object with this EXACT structure:
       "region": "Geographic Region", 
       "country": "Country Name",
       "city": "Headquarters City",
+      "streetAddress": "123 Main Street, Suite 100",
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 5000000000,
@@ -609,7 +659,10 @@ DATA SOURCES FOR COMPANY DATA:
 STRICT REQUIREMENTS:
 1. Return ONLY real, existing companies - NO fictional companies
 2. Return ONLY executives that match the EXECUTIVE FILTERING RULES above - this is CRITICAL
-3. Use the MAIN OFFICE/HEADQUARTERS ADDRESS coordinates - actual street address of head office
+3. HEADQUARTERS LOCATION (CRITICAL): 
+   - streetAddress: The EXACT physical street address of the company's MAIN OFFICE/HEADQUARTERS in that country
+   - latitude/longitude: The PRECISE GPS coordinates of the street address (not city center)
+   - Example: "One Apple Park Way, Cupertino" with lat: 37.3346, lng: -122.0090 (exact building location)
 4. For each data point, provide a source and confidence score (1-10)
 5. DO NOT INFER OR ESTIMATE - if you don't have accurate data, use 0 or "Unknown"
 6. Cross-reference multiple sources when possible
@@ -711,6 +764,7 @@ Remember: Only return actual, existing companies with accurate information. Retu
         sector: validatedData.sector,
         region: validatedData.region,
         country: validatedData.country,
+        streetAddress: validatedData.streetAddress || null,
         latitude: String(validatedData.latitude),
         longitude: String(validatedData.longitude),
         revenue: String(validatedData.revenue),

@@ -33,10 +33,17 @@ Preferred communication style: Simple, everyday language.
 - **Schema Location**: `shared/schema.ts` contains all table definitions
 - **Key Tables**:
   - `users` - User accounts
-  - `companies` - Research results with geo-coordinates, revenue, employees
+  - `companies` - Research results with geo-coordinates, street address, revenue, employees
   - `executives` - Company leadership data linked to companies
-  - `searchQueries` - Search history and parsed criteria
+  - `searchQueries` - Search history and parsed criteria (supports loading previous results)
   - `conversations` / `messages` - Chat functionality for AI interactions
+
+### Search History Feature
+- All searches are persisted in the database with linked companies and executives
+- Users can view recent searches from the dropdown in the search bar
+- **Load Previous Results**: Click "Load" button to restore a previous search with all companies and executives
+- History shows company count for each past search
+- Data updates (additions/deletions) are reflected in the stored search results
 
 ### Project Structure
 ```
@@ -60,6 +67,8 @@ Preferred communication style: Simple, everyday language.
 - Multi-model support via OpenRouter (GPT-4, Claude, Gemini, Llama, Mixtral)
 - Search string parsing extracts: industry, geography, company count, executive roles
 - Results ranked primarily by revenue (USD), secondarily by employee count
+- **Precise HQ Location**: LLM is instructed to find exact street address and GPS coordinates of company headquarters
+- Street address is stored in database for accurate map placement
 
 ### Executive Filtering (CRITICAL - Do Not Change Default Behavior)
 - `filterExecutivesByRole()` in `server/routes.ts` filters executives based on search criteria

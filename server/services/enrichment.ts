@@ -101,7 +101,7 @@ interface ClockworkAPIPaginatedResponse {
 /**
  * Get Clockwork API configuration
  */
-function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; baseUrl: string } | null {
+function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; baseUrl: string; authToken: string } | null {
   const apiKey = process.env.CLOCKWORK_API_KEY;
   const apiSecret = process.env.CLOCKWORK_API_SECRET;
   const firmKey = process.env.CLOCKWORK_FIRM_KEY;
@@ -111,9 +111,11 @@ function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: str
     return null;
   }
   
-  const baseUrl = process.env.CLOCKWORK_API_URL || 'https://api.clockworkrecruiting.com/v1';
+  // Clockwork uses Token auth with base64(api_key:api_secret)
+  const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  const baseUrl = process.env.CLOCKWORK_API_URL || 'https://api.clockworkrecruiting.com/v3.0';
   
-  return { apiKey, apiSecret, firmKey, baseUrl };
+  return { apiKey, apiSecret, firmKey, baseUrl, authToken };
 }
 
 /**
@@ -173,20 +175,18 @@ export async function getClockworkProjects(): Promise<ClockworkProject[]> {
       console.log(`[Enrichment:Clockwork] Fetching page ${currentPage}...`);
       
       // Build URL with pagination - include all statuses
-      const url = new URL(`${config.baseUrl}/projects`);
+      // Clockwork API format: /v3.0/{firm_key}/positions (positions = projects/searches)
+      const url = new URL(`${config.baseUrl}/${config.firmKey}/positions`);
       url.searchParams.set('page', String(currentPage));
       url.searchParams.set('per_page', '100'); // Request max per page
       // Include all project statuses (open, closed, retained, special)
-      url.searchParams.set('include_closed', 'true');
-      url.searchParams.set('include_all_statuses', 'true');
+      url.searchParams.set('status', 'all'); // Request all statuses
       
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'X-API-Key': config.apiKey,
-          'X-API-Secret': config.apiSecret,
-          'X-Firm-Key': config.firmKey,
+          'Authorization': `Token ${config.authToken}`,
+          'X-API-Key': config.firmKey,
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         }

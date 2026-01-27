@@ -89,6 +89,10 @@ export interface Executive {
   profileUrl?: string;
   imageUrl?: string;
   confidence: number;
+  enrichmentSource?: string;
+  enrichmentConfidence?: number;
+  enrichmentTimestamp?: string;
+  isEnriched: boolean;
 }
 
 export interface Project {
@@ -108,6 +112,12 @@ export interface ExecutiveDetails {
     linkedin: string | null;
     profileUrl: string | null;
     imageUrl: string | null;
+    email: string | null;
+    phone: string | null;
+    enrichmentSource: string | null;
+    enrichmentConfidence: number | null;
+    enrichmentTimestamp: string | null;
+    isEnriched: boolean;
   };
   company: {
     id: number;
@@ -236,6 +246,11 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
   let confidence = Math.round(safeParseFloat((apiExec as any).confidence, 5));
   confidence = Math.max(1, Math.min(10, confidence));
   
+  const enrichmentSource = (apiExec as any).enrichmentSource || undefined;
+  const enrichmentConfidence = (apiExec as any).enrichmentConfidence || undefined;
+  const enrichmentTimestamp = (apiExec as any).enrichmentTimestamp || undefined;
+  const isEnriched = Boolean(enrichmentSource || (apiExec as any).clockworkId);
+  
   return {
     id: String(apiExec.id || '0'),
     company_id: String(companyId || '0'),
@@ -245,6 +260,10 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     profileUrl: (apiExec as any).profileUrl || (apiExec as any).linkedin || undefined,
     imageUrl: (apiExec as any).imageUrl || undefined,
     confidence,
+    enrichmentSource,
+    enrichmentConfidence,
+    enrichmentTimestamp,
+    isEnriched,
   };
 }
 

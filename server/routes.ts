@@ -142,6 +142,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Executive not found" });
       }
       
+      const isEnriched = Boolean(details.executive.enrichmentSource || details.executive.clockworkId);
       res.json({
         executive: {
           id: details.executive.id,
@@ -151,7 +152,13 @@ export async function registerRoutes(
           confidence: details.executive.confidence,
           linkedin: details.executive.linkedin,
           profileUrl: details.executive.profileUrl,
-          imageUrl: details.executive.imageUrl
+          imageUrl: details.executive.imageUrl,
+          email: details.executive.email,
+          phone: details.executive.phone,
+          enrichmentSource: details.executive.enrichmentSource,
+          enrichmentConfidence: details.executive.enrichmentConfidence,
+          enrichmentTimestamp: details.executive.enrichmentTimestamp,
+          isEnriched
         },
         company: details.company ? {
           id: details.company.id,

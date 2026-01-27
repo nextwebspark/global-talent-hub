@@ -1,5 +1,5 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, type Executive } from '@/lib/store';
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -54,7 +54,7 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
   // Filter companies based on revenue slider and valid coordinates
@@ -120,14 +120,23 @@ export default function MapComponent() {
           const radius = getRadius(value);
           const diameter = radius * 2;
           
+          // Check if company has any enriched executives
+          const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
+          const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
+          
           const fillColor = company.color || (isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)');
           const borderColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
+          
+          // Subtle enrichment indicator - emerald ring for enriched companies
+          const enrichedRing = hasEnrichedExecs ? 
+            `<div style="position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; background: #10b981; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>` : '';
 
           // Create custom icon for draggable marker
           const customIcon = L.divIcon({
             className: 'custom-bubble-icon',
             html: `
               <div style="
+                position: relative;
                 width: ${diameter}px;
                 height: ${diameter}px;
                 background-color: ${fillColor};
@@ -139,7 +148,7 @@ export default function MapComponent() {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-              "></div>
+              ">${enrichedRing}</div>
             `,
             iconSize: [diameter, diameter],
             iconAnchor: [radius, radius], // Center the icon

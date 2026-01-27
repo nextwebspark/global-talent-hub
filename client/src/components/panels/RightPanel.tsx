@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2 } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -193,7 +193,8 @@ export default function RightPanel({ width = 384 }: RightPanelProps) {
       name: 'New Executive',
       title: 'Position TBD',
       source: 'Manual Entry',
-      confidence: 3
+      confidence: 3,
+      isEnriched: false
     };
     
     addExecutiveLocal(newExec);
@@ -595,6 +596,7 @@ function ExecutiveDetailView({
       </div>
 
       <ScrollArea className="flex-1">
+        <div key={executive.id} className="animate-in fade-in-0 duration-300">
         {/* Company Context - Always Visible */}
         {company && (
           <div className="p-4 bg-muted/20 border-b border-border">
@@ -623,19 +625,63 @@ function ExecutiveDetailView({
           {/* Executive Header */}
           <div>
             <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl">
+              <div className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
                 {executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1">
-                <h2 className="text-xl font-serif font-bold">{executive.name}</h2>
-                <p className="text-sm text-muted-foreground">{executive.title}</p>
-                {executive.confidence && (
-                  <Badge variant="secondary" className={`mt-1 text-xs ${executive.confidence >= 7 ? 'bg-green-100 text-green-800' : executive.confidence >= 4 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`}>
-                    Confidence: {executive.confidence}/10
-                  </Badge>
+                {executive.isEnriched && (
+                  <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center ring-2 ring-background">
+                    <CheckCircle2 className="h-3 w-3 text-white" />
+                  </div>
                 )}
               </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-serif font-bold">{executive.name}</h2>
+                  {executive.isEnriched && (
+                    <span title={`Enriched via ${executive.enrichmentSource || 'external source'}`}>
+                      <Sparkles className="h-4 w-4 text-emerald-500" />
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{executive.title}</p>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {executive.confidence && (
+                    <Badge variant="secondary" className={`text-xs ${executive.confidence >= 7 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : executive.confidence >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
+                      Confidence: {executive.confidence}/10
+                    </Badge>
+                  )}
+                  {executive.isEnriched && (
+                    <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700">
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Enriched
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* Contact Info Section */}
+            {(executive.email || executive.phone || executive.linkedin) && (
+              <div className="flex flex-wrap gap-2 mt-3 p-3 bg-muted/30 rounded-lg">
+                {executive.email && (
+                  <a href={`mailto:${executive.email}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
+                    <Mail className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-muted-foreground">{executive.email}</span>
+                  </a>
+                )}
+                {executive.phone && (
+                  <a href={`tel:${executive.phone}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
+                    <Phone className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-muted-foreground">{executive.phone}</span>
+                  </a>
+                )}
+                {executive.linkedin && (
+                  <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
+                    <Linkedin className="h-3 w-3 text-blue-600" />
+                    <span className="text-blue-600">LinkedIn</span>
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           <Separator />
@@ -896,6 +942,7 @@ function ExecutiveDetailView({
               </div>
             )}
           </div>
+        </div>
         </div>
       </ScrollArea>
     </div>

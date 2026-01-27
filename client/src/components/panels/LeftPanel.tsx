@@ -2,7 +2,8 @@ import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -25,6 +26,8 @@ interface CountryData {
       title: string;
       confidence: number;
       profileUrl?: string;
+      isEnriched?: boolean;
+      enrichmentSource?: string;
     }[];
   }[];
 }
@@ -169,7 +172,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         name: created.name,
         title: created.title || 'Executive',
         source: 'manual',
-        confidence: created.confidence || 5
+        confidence: created.confidence || 5,
+        isEnriched: false
       });
       
       setNewExecutive({ name: '', title: '' });
@@ -202,7 +206,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           name: e.name,
           title: e.title,
           confidence: e.confidence,
-          profileUrl: e.profileUrl
+          profileUrl: e.profileUrl,
+          isEnriched: e.isEnriched,
+          enrichmentSource: e.enrichmentSource
         }));
       
       countryMap.get(countryName)!.companies.push({
@@ -512,20 +518,38 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                     onClick={(e) => handleSelectExecutive(e, exec.id, company.id)}
                                     data-testid={`exec-${exec.id}`}
                                   >
-                                    <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
-                                      <User className="h-3 w-3 text-muted-foreground" />
+                                    <div className={`relative h-6 w-6 rounded-full flex items-center justify-center shrink-0 transition-all ${exec.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-muted'}`}>
+                                      <User className={`h-3 w-3 ${exec.isEnriched ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+                                      {exec.isEnriched && (
+                                        <div className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 flex items-center justify-center ring-1 ring-background">
+                                          <CheckCircle2 className="h-2 w-2 text-white" />
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <div className="text-xs font-medium truncate group-hover/exec:text-primary transition-colors">
-                                        {exec.name}
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs font-medium truncate group-hover/exec:text-primary transition-colors">
+                                          {exec.name}
+                                        </span>
+                                        {exec.isEnriched && (
+                                          <span title={`Enriched via ${exec.enrichmentSource || 'external source'}`}>
+                                            <Sparkles className="h-2.5 w-2.5 text-emerald-500 shrink-0" />
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="text-[10px] text-muted-foreground truncate">
                                         {exec.title}
                                       </div>
                                     </div>
-                                    <span className={`text-[9px] font-bold ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
-                                      {exec.confidence}/10
-                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${
+                                        exec.confidence >= 7 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
+                                        exec.confidence >= 4 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 
+                                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                      }`}>
+                                        {exec.confidence}/10
+                                      </div>
+                                    </div>
                                     <button
                                       onClick={(e) => handleDeleteExecutive(e, exec.id, exec.name)}
                                       className="opacity-0 group-hover/exec:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all shrink-0"

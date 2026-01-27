@@ -120,7 +120,7 @@ function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: str
   
   console.log(`[Enrichment:Clockwork] Using firm slug: ${firmSlug} with base URL: ${baseUrl}`);
   
-  return { apiKey, apiSecret, firmKey, firmSlug, baseUrl, authToken };
+  return { apiKey, apiSecret, firmKey, firmSlug: firmSlug || firmKey, baseUrl, authToken };
 }
 
 /**

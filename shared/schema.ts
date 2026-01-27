@@ -56,6 +56,7 @@ export const searchQueries = pgTable("search_queries", {
   query: text("query").notNull(),
   parsedCriteria: text("parsed_criteria"),
   resultCount: integer("result_count").default(0),
+  clockworkProjectId: text("clockwork_project_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

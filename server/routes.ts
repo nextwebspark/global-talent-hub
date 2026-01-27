@@ -546,6 +546,42 @@ export async function registerRoutes(
     }
   });
 
+  // CLOCKWORK PROJECT MANAGEMENT
+  // Fetch available Clockwork projects (READ-ONLY)
+  app.get("/api/clockwork/projects", async (_req, res) => {
+    try {
+      const { getClockworkProjects } = await import("./services/enrichment");
+      const projects = await getClockworkProjects();
+      res.json(projects);
+    } catch (error) {
+      console.error("Error fetching Clockwork projects:", error);
+      res.status(500).json({ error: "Failed to fetch Clockwork projects" });
+    }
+  });
+
+  // Update the Clockwork project selection for a search
+  app.patch("/api/search/:searchId/clockwork-project", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.searchId);
+      const { clockworkProjectId } = req.body;
+      
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid searchId" });
+      }
+      
+      if (!clockworkProjectId) {
+        return res.status(400).json({ error: "clockworkProjectId is required" });
+      }
+      
+      const updated = await storage.updateSearchQueryClockworkProject(searchId, clockworkProjectId);
+      console.log(`[Clockwork] Updated search ${searchId} to use project ${clockworkProjectId}`);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating Clockwork project:", error);
+      res.status(500).json({ error: "Failed to update Clockwork project" });
+    }
+  });
+
   // ENRICHMENT LAYER: Orchestrate matching between local executives and Clockwork project
   // This endpoint is deterministic and side-effect free - it only returns match results
   app.post("/api/enrichment/match", async (req, res) => {

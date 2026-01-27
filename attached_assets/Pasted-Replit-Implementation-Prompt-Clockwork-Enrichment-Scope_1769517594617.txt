@@ -1,0 +1,149 @@
+Replit Implementation Prompt — Clockwork Enrichment Scoped by Selected Project (Read-Only)
+
+Implement the following changes to the application.
+
+This is an architectural enforcement change, not a redesign. Preserve all existing functionality unless explicitly modified below.
+
+1. Enrichment Must Be Scoped to a User-Selected Clockwork Project
+
+Modify the enrichment flow so that:
+
+Clockwork enrichment cannot run unless the user explicitly selects a Clockwork project
+
+There is no default Clockwork project
+
+Enrichment is always scoped to one specific Clockwork project per search
+
+Implementation requirements:
+
+When the user clicks “Enrich Data”:
+
+If no clockwork_project_id is associated with the current search_id:
+
+Fetch available Clockwork projects via the Clockwork API
+
+Prompt the user to select one project
+
+Persist the selected clockwork_project_id against the search_id
+
+All enrichment requests must include:
+
+search_id
+
+clockwork_project_id
+
+Never fetch or parse executives across multiple Clockwork projects in a single enrichment run
+
+2. Clockwork API Usage Must Be Strictly READ-ONLY
+
+Enforce strict write protection for Clockwork:
+
+The application must never:
+
+Create Clockwork records
+
+Update Clockwork records
+
+Sync user edits back to Clockwork
+
+All Clockwork API calls must be read-only fetch operations
+
+Any edits made in the app apply only to the app database
+
+This rule is non-negotiable and must be enforced at the service layer.
+
+3. Enrichment Flow (Updated)
+
+Update the enrichment logic to follow this exact sequence:
+
+LLM discovery runs first and creates executive records
+
+User explicitly clicks “Enrich Data”
+
+User selects a Clockwork project (if not already selected)
+
+App fetches executives only from the selected Clockwork project
+
+Fuzzy matching is performed
+
+Match Review UI is shown
+
+Enrichment occurs only after user confirmation
+
+Do not auto-enrich, auto-merge, or auto-delete executives.
+
+4. Enrichment Persistence Rules (No Clockwork Sync)
+
+When a user confirms enrichment:
+
+Copy selected Clockwork data into the app database:
+
+Career history
+
+Education
+
+LinkedIn URL (if available)
+
+Populate empty fields only
+
+Persist enrichment metadata:
+
+clockwork_project_id
+
+clockwork_profile_id
+
+Match confidence
+
+Timestamp
+
+After enrichment:
+
+Manual edits always override imported data
+
+No further Clockwork sync occurs automatically
+
+Re-running enrichment requires explicit user action
+
+5. Reload & Safety Behaviour
+
+On reload of a search:
+
+Display the latest curated app data
+
+Do not re-fetch Clockwork data automatically
+
+Do not change the selected Clockwork project silently
+
+If the user wants to change the Clockwork project:
+
+Require explicit confirmation
+
+Treat it as a new enrichment run
+
+6. Explicit Prohibitions
+
+Do not:
+
+Write back to Clockwork
+
+Assume Clockwork data is authoritative
+
+Auto-select a Clockwork project
+
+Mix Clockwork data across projects
+
+Override user edits with imported data
+
+Implementation Guidance
+
+Enforce these rules in the Enrichment service, not the UI
+
+Keep orchestration deterministic and idempotent
+
+Preserve all existing discovery, matching, and review behaviour
+
+Authoritative Principle
+
+Clockwork is an external, read-only enrichment source.
+The application database is the system of record.
+Human decisions always have final authority.

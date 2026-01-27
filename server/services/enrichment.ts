@@ -44,6 +44,38 @@ export function getAvailableSources(): EnrichmentSource[] {
   return AVAILABLE_SOURCES;
 }
 
+/**
+ * Clockwork Project interface
+ */
+export interface ClockworkProject {
+  id: string;
+  name: string;
+  description?: string;
+  executiveCount: number;
+}
+
+/**
+ * Fetch available Clockwork projects (READ-ONLY)
+ * This is a placeholder until Clockwork API is integrated.
+ * IMPORTANT: All Clockwork API calls are strictly read-only.
+ */
+export async function getClockworkProjects(): Promise<ClockworkProject[]> {
+  console.log('[Enrichment:Clockwork] Fetching available projects (placeholder)');
+  
+  // PLACEHOLDER: Return demo projects until API integration
+  // In production, this would call:
+  // const response = await fetch('https://api.clockwork.com/projects', {
+  //   headers: { 'Authorization': `Bearer ${process.env.CLOCKWORK_API_KEY}` }
+  // });
+  // return response.json();
+  
+  return [
+    { id: 'demo-project', name: 'Demo Project', description: 'Sample Clockwork project for testing', executiveCount: 0 },
+    { id: 'uae-executives', name: 'UAE Executives', description: 'Middle East executive database', executiveCount: 0 },
+    { id: 'global-ceos', name: 'Global CEOs', description: 'Global CEO and C-suite database', executiveCount: 0 },
+  ];
+}
+
 export function isEnrichmentEnabled(sourceType: string): boolean {
   const source = AVAILABLE_SOURCES.find(s => s.type === sourceType);
   return source?.isEnabled ?? false;

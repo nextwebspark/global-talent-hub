@@ -101,10 +101,13 @@ interface ClockworkAPIPaginatedResponse {
 /**
  * Get Clockwork API configuration
  */
-function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; baseUrl: string; authToken: string } | null {
+function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; firmSlug: string; baseUrl: string; authToken: string } | null {
   const apiKey = process.env.CLOCKWORK_API_KEY;
   const apiSecret = process.env.CLOCKWORK_API_SECRET;
   const firmKey = process.env.CLOCKWORK_FIRM_KEY;
+  // Firm slug is used in the URL path (e.g., "acme-search" from clockworkrecruiting.com/acme-search)
+  // Falls back to firm key if not set separately
+  const firmSlug = process.env.CLOCKWORK_FIRM_SLUG || firmKey;
   
   if (!apiKey || !apiSecret || !firmKey) {
     console.warn('[Enrichment:Clockwork] Missing API credentials - CLOCKWORK_API_KEY, CLOCKWORK_API_SECRET, or CLOCKWORK_FIRM_KEY not set');
@@ -115,7 +118,9 @@ function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: str
   const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
   const baseUrl = process.env.CLOCKWORK_API_URL || 'https://api.clockworkrecruiting.com/v3.0';
   
-  return { apiKey, apiSecret, firmKey, baseUrl, authToken };
+  console.log(`[Enrichment:Clockwork] Using firm slug: ${firmSlug} with base URL: ${baseUrl}`);
+  
+  return { apiKey, apiSecret, firmKey, firmSlug, baseUrl, authToken };
 }
 
 /**
@@ -175,12 +180,15 @@ export async function getClockworkProjects(): Promise<ClockworkProject[]> {
       console.log(`[Enrichment:Clockwork] Fetching page ${currentPage}...`);
       
       // Build URL with pagination - include all statuses
-      // Clockwork API format: /v3.0/{firm_key}/positions (positions = projects/searches)
-      const url = new URL(`${config.baseUrl}/${config.firmKey}/positions`);
+      // Clockwork API format: /v3.0/{firm_slug}/searches (searches = projects)
+      // Alternative endpoints to try: /searches, /positions, /projects
+      const url = new URL(`${config.baseUrl}/${config.firmSlug}/searches`);
       url.searchParams.set('page', String(currentPage));
       url.searchParams.set('per_page', '100'); // Request max per page
       // Include all project statuses (open, closed, retained, special)
       url.searchParams.set('status', 'all'); // Request all statuses
+      
+      console.log(`[Enrichment:Clockwork] Requesting URL: ${url.toString()}`);
       
       const response = await fetch(url.toString(), {
         method: 'GET',

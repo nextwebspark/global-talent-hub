@@ -234,8 +234,25 @@ export default function Dashboard() {
     setMatchReviewData(null);
   };
 
-  const handleRefreshAfterEnrichment = () => {
-    refetchCompanies();
+  const handleRefreshAfterEnrichment = async () => {
+    // Reload the current search results to update map and panels
+    if (currentProject?.id) {
+      try {
+        const results = await loadSearchResults.mutateAsync(parseInt(currentProject.id));
+        const companies = results.companies.map((c: any) => transformAPICompany(c));
+        const executives = results.companies.flatMap((c: any) => 
+          (c.executives || []).map((e: any) => transformAPIExecutive(e, String(c.id)))
+        );
+        setCompanies(companies);
+        setExecutives(executives);
+      } catch (error) {
+        console.error('Failed to refresh after enrichment:', error);
+        // Fallback to simple refetch
+        refetchCompanies();
+      }
+    } else {
+      refetchCompanies();
+    }
   };
 
   const handleNewSearch = async (e: React.FormEvent) => {

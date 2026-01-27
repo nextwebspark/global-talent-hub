@@ -101,6 +101,76 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   createdAt: true,
 });
 
+// Executive Details Tables
+export const careerHistory = pgTable("career_history", {
+  id: serial("id").primaryKey(),
+  executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),
+  company: text("company").notNull(),
+  title: text("title").notNull(),
+  startDate: text("start_date"),
+  endDate: text("end_date"),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const education = pgTable("education", {
+  id: serial("id").primaryKey(),
+  executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),
+  institution: text("institution").notNull(),
+  degree: text("degree"),
+  fieldOfStudy: text("field_of_study"),
+  graduationYear: text("graduation_year"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const remuneration = pgTable("remuneration", {
+  id: serial("id").primaryKey(),
+  executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),
+  baseSalary: numeric("base_salary", { precision: 15, scale: 2 }),
+  bonus: numeric("bonus", { precision: 15, scale: 2 }),
+  longTermIncentives: numeric("long_term_incentives", { precision: 15, scale: 2 }),
+  currency: text("currency").default("USD"),
+  year: text("year"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const executiveNotes = pgTable("executive_notes", {
+  id: serial("id").primaryKey(),
+  executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertCareerHistorySchema = createInsertSchema(careerHistory).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEducationSchema = createInsertSchema(education).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRemunerationSchema = createInsertSchema(remuneration).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertExecutiveNotesSchema = createInsertSchema(executiveNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Company = typeof companies.$inferSelect;
@@ -113,3 +183,11 @@ export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type CareerHistory = typeof careerHistory.$inferSelect;
+export type InsertCareerHistory = z.infer<typeof insertCareerHistorySchema>;
+export type Education = typeof education.$inferSelect;
+export type InsertEducation = z.infer<typeof insertEducationSchema>;
+export type Remuneration = typeof remuneration.$inferSelect;
+export type InsertRemuneration = z.infer<typeof insertRemunerationSchema>;
+export type ExecutiveNotes = typeof executiveNotes.$inferSelect;
+export type InsertExecutiveNotes = z.infer<typeof insertExecutiveNotesSchema>;

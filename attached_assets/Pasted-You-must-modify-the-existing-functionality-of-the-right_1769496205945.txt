@@ -1,0 +1,214 @@
+You must modify the existing functionality of the right-hand panel and executive click behaviour as follows.
+
+Core Behaviour Change
+
+When a user clicks an executive name in the left-hand results panel:
+
+Do NOT open any external tabs or links
+
+Do NOT navigate away from the application
+
+Instead, update the right-hand panel inside the app
+
+Switch the panel into Executive Detail View
+
+Preserve the company context at all times
+
+This behaviour is mandatory.
+
+Right-Hand Panel Structure
+1. Company Context (Always Visible – Unchanged)
+
+At the top of the right-hand panel, always display:
+
+Company name
+
+Country
+
+Revenue
+
+Number of employees
+
+This section must remain unchanged when switching views.
+
+2. Executive Detail View (Replaces “Key Executives”)
+
+When an executive is selected, replace the “Key Executives” section with an Executive Profile containing the following editable sections:
+
+Executive Profile Sections
+A. Executive Header
+
+Display:
+
+Full name
+
+Current title
+
+Company
+
+Country
+
+Confidence score (if available)
+
+B. Career History
+
+Display in a LinkedIn-style timeline/list
+
+Each entry includes:
+
+Company
+
+Title
+
+Start date
+
+End date
+
+Optional description
+
+If LinkedIn data is available, pre-populate this section
+
+All entries must be:
+
+Editable inline
+
+Deletable
+
+Extendable (add new roles)
+
+Manual edits always override imported data
+
+C. Education
+
+Institution
+
+Degree
+
+Field of study
+
+Graduation year
+
+Fully editable
+
+Allow adding new education entries
+
+D. Remuneration
+
+Structured but flexible fields:
+
+Base salary
+
+Bonus
+
+Long-term incentives / equity
+
+Currency
+
+Year
+
+Notes
+
+Entirely manual input
+
+Support multiple remuneration rows
+
+All fields must be editable
+
+E. Notes
+
+Free-text notes section
+
+Used for internal commentary and assessments
+
+Fully editable
+
+Persisted permanently
+
+Data Persistence Rules (Critical)
+
+You must implement persistent storage logic with the following rules:
+
+Each executive has a unique executive_id
+
+Each company has a unique company_id
+
+Each search has a unique search_id
+
+All edits must:
+
+Save immediately to persistent storage (database)
+
+Be stored against:
+
+executive_id
+
+company_id
+
+search_id
+
+When:
+
+A search is reloaded
+
+The same executive is clicked again (even days later)
+
+You must always load and display the latest saved version of the data.
+
+Never revert to cached, in-memory, or older snapshots.
+
+LinkedIn Data Handling Rules
+
+If LinkedIn data is available:
+
+Use it only for initial population
+
+Once a user edits any field:
+
+The manually edited data becomes the source of truth
+
+Do not overwrite manual changes with future LinkedIn pulls
+
+UI / UX Rules
+
+Inline editing only (no modal popups)
+
+Clear “Add new” actions for:
+
+Career entries
+
+Education
+
+Remuneration
+
+Custom fields
+
+Updates must feel immediate
+
+No full page reloads
+
+Strict Prohibitions
+
+Do NOT open external executive links
+
+Do NOT mix data between executives
+
+Do NOT reuse UAE data in Saudi searches (or vice versa)
+
+Do NOT display stale or cached data
+
+State Management Summary
+
+Left panel click → updates app state
+
+Right-hand panel reacts dynamically
+
+View modes:
+
+company
+
+executive
+
+Always query persistent storage for display
+
+You must follow these instructions exactly.
+This behaviour defines the core functionality of the application.

@@ -98,11 +98,61 @@ export interface Project {
   created_at: Date;
 }
 
+export interface ExecutiveDetails {
+  executive: {
+    id: number;
+    name: string;
+    title: string;
+    companyId: number;
+    confidence: number | null;
+    linkedin: string | null;
+    profileUrl: string | null;
+    imageUrl: string | null;
+  };
+  company: {
+    id: number;
+    name: string;
+    country: string | null;
+    revenue: string | null;
+    employees: number | null;
+  } | null;
+  careerHistory: Array<{
+    id: number;
+    company: string;
+    title: string;
+    startDate: string | null;
+    endDate: string | null;
+    description: string | null;
+    sortOrder: number | null;
+  }>;
+  education: Array<{
+    id: number;
+    institution: string;
+    degree: string | null;
+    fieldOfStudy: string | null;
+    graduationYear: string | null;
+  }>;
+  remuneration: Array<{
+    id: number;
+    baseSalary: string | null;
+    bonus: string | null;
+    longTermIncentives: string | null;
+    currency: string | null;
+    year: string | null;
+    notes: string | null;
+  }>;
+  notes: { id: number; content: string } | null;
+}
+
 interface AppState {
   currentProject: Project | null;
   companies: Company[];
   executives: Executive[];
   selectedCompanyId: string | null;
+  selectedExecutiveId: string | null;
+  executiveDetails: ExecutiveDetails | null;
+  isLoadingExecutiveDetails: boolean;
+  panelView: 'company' | 'executive';
   searchQuery: string;
   scalingMetric: 'revenue' | 'employees';
   revenueFilter: number;
@@ -119,6 +169,10 @@ interface AppState {
   deleteCompany: (id: string) => void;
   
   selectCompany: (id: string | null) => void;
+  selectExecutive: (id: string | null) => void;
+  setExecutiveDetails: (details: ExecutiveDetails | null) => void;
+  setLoadingExecutiveDetails: (loading: boolean) => void;
+  setPanelView: (view: 'company' | 'executive') => void;
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
   setRevenueFilter: (value: number) => void;
@@ -199,6 +253,10 @@ export const useAppStore = create<AppState>((set) => ({
   companies: [],
   executives: [],
   selectedCompanyId: null,
+  selectedExecutiveId: null,
+  executiveDetails: null,
+  isLoadingExecutiveDetails: false,
+  panelView: 'company',
   searchQuery: '',
   scalingMetric: 'revenue',
   revenueFilter: 0,
@@ -235,7 +293,11 @@ export const useAppStore = create<AppState>((set) => ({
     persistCompanyDelete(id);
   },
 
-  selectCompany: (id) => set({ selectedCompanyId: id }),
+  selectCompany: (id) => set({ selectedCompanyId: id, panelView: 'company', selectedExecutiveId: null, executiveDetails: null }),
+  selectExecutive: (id) => set({ selectedExecutiveId: id, panelView: 'executive' }),
+  setExecutiveDetails: (details) => set({ executiveDetails: details }),
+  setLoadingExecutiveDetails: (loading) => set({ isLoadingExecutiveDetails: loading }),
+  setPanelView: (view) => set({ panelView: view }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
   setRevenueFilter: (value) => set({ revenueFilter: value }),
@@ -263,6 +325,10 @@ export const useAppStore = create<AppState>((set) => ({
     companies: [],
     executives: [],
     selectedCompanyId: null,
+    selectedExecutiveId: null,
+    executiveDetails: null,
+    isLoadingExecutiveDetails: false,
+    panelView: 'company',
     searchQuery: '',
     scalingMetric: 'revenue',
     revenueFilter: 0

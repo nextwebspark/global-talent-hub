@@ -36,7 +36,7 @@ interface LeftPanelProps {
 }
 
 export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
-  const { companies, executives, selectCompany, selectedCompanyId, deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject } = useAppStore();
+  const { companies, executives, selectCompany, selectExecutive, selectedCompanyId, deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
@@ -131,6 +131,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     } catch (error) {
       toast.error('Failed to delete executive');
     }
+  };
+
+  const handleSelectExecutive = (e: React.MouseEvent, execId: string, companyId: string) => {
+    e.stopPropagation();
+    selectCompany(companyId);
+    selectExecutive(execId);
   };
 
   const handleAddExecutive = async (e: React.FormEvent, companyId: string) => {
@@ -503,7 +509,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                   <div
                                     key={exec.id}
                                     className="flex items-center gap-2 p-2 rounded hover:bg-muted/30 transition-colors cursor-pointer group/exec"
-                                    onClick={() => exec.profileUrl && window.open(exec.profileUrl, '_blank')}
+                                    onClick={(e) => handleSelectExecutive(e, exec.id, company.id)}
                                     data-testid={`exec-${exec.id}`}
                                   >
                                     <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">

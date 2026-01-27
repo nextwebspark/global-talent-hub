@@ -309,18 +309,50 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Executive not found" });
       }
       
-      // Get company info for the executive
-      const company = await storage.getCompany(details.executive.companyId);
-      
       res.json({
-        ...details,
-        company: company ? {
-          id: company.id,
-          name: company.name,
-          country: company.country,
-          revenue: company.revenue,
-          employees: company.employees
-        } : null
+        executive: {
+          id: details.executive.id,
+          name: details.executive.name,
+          title: details.executive.title,
+          companyId: details.executive.companyId,
+          confidence: details.executive.confidence,
+          linkedin: details.executive.linkedin,
+          profileUrl: details.executive.profileUrl,
+          imageUrl: details.executive.imageUrl
+        },
+        company: details.company ? {
+          id: details.company.id,
+          name: details.company.name,
+          country: details.company.country,
+          revenue: details.company.revenue,
+          employees: details.company.employees
+        } : null,
+        careerHistory: details.careerHistory.map(ch => ({
+          id: ch.id,
+          company: ch.company,
+          title: ch.title,
+          startDate: ch.startDate,
+          endDate: ch.endDate,
+          description: ch.description,
+          sortOrder: ch.sortOrder
+        })),
+        education: details.education.map(ed => ({
+          id: ed.id,
+          institution: ed.institution,
+          degree: ed.degree,
+          fieldOfStudy: ed.fieldOfStudy,
+          graduationYear: ed.graduationYear
+        })),
+        remuneration: details.remuneration.map(rem => ({
+          id: rem.id,
+          baseSalary: rem.baseSalary,
+          bonus: rem.bonus,
+          longTermIncentives: rem.longTermIncentives,
+          currency: rem.currency,
+          year: rem.year,
+          notes: rem.notes
+        })),
+        notes: details.notes ? { id: details.notes.id, content: details.notes.content } : null
       });
     } catch (error) {
       console.error("Error fetching executive details:", error);

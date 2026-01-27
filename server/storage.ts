@@ -78,6 +78,7 @@ export interface IStorage {
   
   getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
+    company: Company | undefined;
     careerHistory: CareerHistory[];
     education: Education[];
     remuneration: Remuneration[];
@@ -352,6 +353,7 @@ export class DatabaseStorage implements IStorage {
   // Get full executive details
   async getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
+    company: Company | undefined;
     careerHistory: CareerHistory[];
     education: Education[];
     remuneration: Remuneration[];
@@ -360,7 +362,8 @@ export class DatabaseStorage implements IStorage {
     const executive = await this.getExecutive(executiveId);
     if (!executive) return null;
 
-    const [careerHistoryData, educationData, remunerationData, notesData] = await Promise.all([
+    const [companyData, careerHistoryData, educationData, remunerationData, notesData] = await Promise.all([
+      this.getCompany(executive.companyId),
       this.getCareerHistory(executiveId),
       this.getEducation(executiveId),
       this.getRemuneration(executiveId),
@@ -369,6 +372,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       executive,
+      company: companyData,
       careerHistory: careerHistoryData,
       education: educationData,
       remuneration: remunerationData,

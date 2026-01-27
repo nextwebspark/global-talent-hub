@@ -30,30 +30,39 @@ interface LocalExecutive {
   companyName?: string;
 }
 
-interface MatchResult {
-  localExecutive: LocalExecutive;
-  clockworkExecutive: ClockworkExecutive;
-  nameMatchScore: number;
-  titleMatchScore: number;
-  companyMatchScore: number;
-  overallConfidence: number;
+
+interface ExecutiveMatchItem {
+  localExecutiveId: number;
+  localExecutiveName: string;
+  localExecutiveTitle: string;
+  localCompanyName: string;
+  clockworkExecutiveId: number | null;
+  clockworkExecutiveName: string | null;
+  clockworkExecutiveTitle: string | null;
+  classification: 'confirmed' | 'possible' | 'no_match';
+  confidence: number;
+  matchDetails: {
+    nameScore: number;
+    titleScore: number;
+    companyScore: number;
+  };
 }
 
 interface MatchReviewData {
   searchId: number;
   clockworkProjectId: string;
-  confirmed: MatchResult[];
-  possible: MatchResult[];
-  noMatch: {
-    localExecutives: LocalExecutive[];
-    unmatchedClockwork: ClockworkExecutive[];
+  timestamp: string;
+  totalLocalExecutives: number;
+  totalClockworkExecutives: number;
+  matches: {
+    confirmed: ExecutiveMatchItem[];
+    possible: ExecutiveMatchItem[];
+    noMatch: ExecutiveMatchItem[];
   };
   summary: {
-    totalLocalExecutives: number;
-    totalClockworkExecutives: number;
-    confirmedMatches: number;
-    possibleMatches: number;
-    noMatches: number;
+    confirmedCount: number;
+    possibleCount: number;
+    noMatchCount: number;
   };
 }
 
@@ -84,8 +93,8 @@ export default function MatchReviewPanel({
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleConfirmEnrichment = async (match: MatchResult, clockworkProjectId?: string) => {
-    const itemKey = `confirm-${match.localExecutive.id}`;
+  const handleConfirmEnrichment = async (match: ExecutiveMatchItem, clockworkProjectId?: string) => {
+    const itemKey = `confirm-${match.localExecutiveId}`;
     if (processingItems.has(itemKey)) return;
 
     setProcessingItems(prev => new Set(prev).add(itemKey));
@@ -94,16 +103,13 @@ export default function MatchReviewPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          executiveId: match.localExecutive.id,
+          executiveId: match.localExecutiveId,
           clockworkData: {
-            email: match.clockworkExecutive.email,
-            phone: match.clockworkExecutive.phone,
-            linkedin: match.clockworkExecutive.linkedin,
-            profileUrl: match.clockworkExecutive.profileUrl,
-            imageUrl: match.clockworkExecutive.imageUrl
+            name: match.clockworkExecutiveName,
+            title: match.clockworkExecutiveTitle
           },
-          confidence: match.overallConfidence,
-          clockworkId: match.clockworkExecutive.id,
+          confidence: match.confidence,
+          clockworkId: match.clockworkExecutiveId,
           clockworkProjectId
         })
       });
@@ -114,11 +120,11 @@ export default function MatchReviewPanel({
       setCompletedItems(prev => new Set(prev).add(itemKey));
       
       if (result.alreadyEnriched) {
-        toast.info(`${match.localExecutive.name} was already enriched with this profile`);
+        toast.info(`${match.localExecutiveName} was already enriched with this profile`);
       } else if (result.enrichedFields.length > 0) {
-        toast.success(`Enriched ${result.enrichedFields.length} fields for ${match.localExecutive.name}`);
+        toast.success(`Enriched ${result.enrichedFields.length} fields for ${match.localExecutiveName}`);
       } else {
-        toast.info(`No new fields to enrich for ${match.localExecutive.name}`);
+        toast.info(`No new fields to enrich for ${match.localExecutiveName}`);
       }
       onRefreshData?.();
     } catch (error) {
@@ -133,10 +139,10 @@ export default function MatchReviewPanel({
     }
   };
 
-  const handleSkip = (match: MatchResult) => {
-    const itemKey = `confirm-${match.localExecutive.id}`;
+  const handleSkip = (match: ExecutiveMatchItem) => {
+    const itemKey = `confirm-${match.localExecutiveId}`;
     setSkippedItems(prev => new Set(prev).add(itemKey));
-    toast.info(`Skipped ${match.localExecutive.name}`);
+    toast.info(`Skipped ${match.localExecutiveName}`);
   };
 
   const handleCreateFromClockwork = async (clockworkExec: ClockworkExecutive, companyId: number, clockworkProjectId?: string) => {
@@ -212,7 +218,11 @@ export default function MatchReviewPanel({
 
   if (!matchData) return null;
 
-  const { confirmed, possible, noMatch, summary } = matchData;
+  // API returns { matches: { confirmed, possible, noMatch }, summary }
+  const { matches, summary } = matchData;
+  const confirmed = matches?.confirmed || [];
+  const possible = matches?.possible || [];
+  const noMatch = matches?.noMatch || [];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="match-review-panel">
@@ -221,7 +231,7 @@ export default function MatchReviewPanel({
           <div>
             <h2 className="text-xl font-semibold" data-testid="match-review-title">Match Review</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {summary.totalLocalExecutives} local executives, {summary.totalClockworkExecutives} from Clockwork
+              {matchData.totalLocalExecutives} local executives, {matchData.totalClockworkExecutives} from Clockwork
             </p>
           </div>
           <Button variant="ghost" onClick={onClose} data-testid="btn-close-review">
@@ -232,15 +242,15 @@ export default function MatchReviewPanel({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{summary.confirmedMatches}</div>
+              <div className="text-2xl font-bold text-green-600">{summary.confirmedCount}</div>
               <div className="text-sm text-gray-600 dark:text-gray-400">Confirmed</div>
             </div>
             <div className="text-center p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-              <div className="text-2xl font-bold text-yellow-600">{summary.possibleMatches}</div>
+              <div className="text-2xl font-bold text-yellow-600">{summary.possibleCount}</div>
               <div className="text-sm text-gray-600 dark:text-gray-400">Possible</div>
             </div>
             <div className="text-center p-3 bg-gray-50 dark:bg-gray-700/20 rounded-lg">
-              <div className="text-2xl font-bold text-gray-600">{summary.noMatches}</div>
+              <div className="text-2xl font-bold text-gray-600">{summary.noMatchCount}</div>
               <div className="text-sm text-gray-600 dark:text-gray-400">No Match</div>
             </div>
           </div>
@@ -261,26 +271,26 @@ export default function MatchReviewPanel({
               {expandedSections.confirmed && (
                 <div className="divide-y divide-gray-200 dark:divide-gray-700">
                   {confirmed.map((match) => {
-                    const itemKey = `confirm-${match.localExecutive.id}`;
+                    const itemKey = `confirm-${match.localExecutiveId}`;
                     const isProcessing = processingItems.has(itemKey);
                     const isCompleted = completedItems.has(itemKey);
                     const isSkipped = skippedItems.has(itemKey);
 
                     return (
                       <div 
-                        key={match.localExecutive.id} 
+                        key={match.localExecutiveId} 
                         className={`p-4 ${isCompleted ? 'bg-green-50 dark:bg-green-900/10' : isSkipped ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                        data-testid={`match-item-${match.localExecutive.id}`}
+                        data-testid={`match-item-${match.localExecutiveId}`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium truncate">{match.localExecutive.name}</span>
-                              {getConfidenceBadge(match.overallConfidence)}
+                              <span className="font-medium truncate">{match.localExecutiveName}</span>
+                              {getConfidenceBadge(match.confidence)}
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{match.localExecutive.title}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{match.localExecutiveTitle}</p>
                             <p className="text-xs text-gray-500 mt-1">
-                              Clockwork: {match.clockworkExecutive.name} - {match.clockworkExecutive.title}
+                              Clockwork: {match.clockworkExecutiveName} - {match.clockworkExecutiveTitle}
                             </p>
                           </div>
                           <div className="flex gap-2">
@@ -291,7 +301,7 @@ export default function MatchReviewPanel({
                                   variant="outline"
                                   onClick={() => handleSkip(match)}
                                   disabled={isProcessing}
-                                  data-testid={`btn-skip-${match.localExecutive.id}`}
+                                  data-testid={`btn-skip-${match.localExecutiveId}`}
                                 >
                                   Skip
                                 </Button>
@@ -299,7 +309,7 @@ export default function MatchReviewPanel({
                                   size="sm"
                                   onClick={() => handleConfirmEnrichment(match, matchData?.clockworkProjectId)}
                                   disabled={isProcessing}
-                                  data-testid={`btn-confirm-${match.localExecutive.id}`}
+                                  data-testid={`btn-confirm-${match.localExecutiveId}`}
                                 >
                                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
                                   Enrich
@@ -334,29 +344,29 @@ export default function MatchReviewPanel({
               {expandedSections.possible && (
                 <div className="divide-y divide-gray-200 dark:divide-gray-700">
                   {possible.map((match) => {
-                    const itemKey = `confirm-${match.localExecutive.id}`;
+                    const itemKey = `confirm-${match.localExecutiveId}`;
                     const isProcessing = processingItems.has(itemKey);
                     const isCompleted = completedItems.has(itemKey);
                     const isSkipped = skippedItems.has(itemKey);
 
                     return (
                       <div 
-                        key={match.localExecutive.id}
+                        key={match.localExecutiveId}
                         className={`p-4 ${isCompleted ? 'bg-green-50 dark:bg-green-900/10' : isSkipped ? 'bg-gray-100 dark:bg-gray-800' : ''}`}
-                        data-testid={`match-item-${match.localExecutive.id}`}
+                        data-testid={`match-item-${match.localExecutiveId}`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium truncate">{match.localExecutive.name}</span>
-                              {getConfidenceBadge(match.overallConfidence)}
+                              <span className="font-medium truncate">{match.localExecutiveName}</span>
+                              {getConfidenceBadge(match.confidence)}
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{match.localExecutive.title}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{match.localExecutiveTitle}</p>
                             <p className="text-xs text-gray-500 mt-1">
-                              Possible Clockwork match: {match.clockworkExecutive.name} - {match.clockworkExecutive.title}
+                              Possible Clockwork match: {match.clockworkExecutiveName} - {match.clockworkExecutiveTitle}
                             </p>
                             <div className="text-xs text-gray-400 mt-1">
-                              Name: {match.nameMatchScore}% | Title: {match.titleMatchScore}%
+                              Name: {match.matchDetails.nameScore}% | Title: {match.matchDetails.titleScore}%
                             </div>
                           </div>
                           <div className="flex gap-2">
@@ -367,7 +377,7 @@ export default function MatchReviewPanel({
                                   variant="outline"
                                   onClick={() => handleSkip(match)}
                                   disabled={isProcessing}
-                                  data-testid={`btn-skip-${match.localExecutive.id}`}
+                                  data-testid={`btn-skip-${match.localExecutiveId}`}
                                 >
                                   Skip
                                 </Button>
@@ -375,7 +385,7 @@ export default function MatchReviewPanel({
                                   size="sm"
                                   onClick={() => handleConfirmEnrichment(match, matchData?.clockworkProjectId)}
                                   disabled={isProcessing}
-                                  data-testid={`btn-confirm-${match.localExecutive.id}`}
+                                  data-testid={`btn-confirm-${match.localExecutiveId}`}
                                 >
                                   {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
                                   Enrich
@@ -394,60 +404,41 @@ export default function MatchReviewPanel({
             </div>
           )}
 
-          {noMatch.unmatchedClockwork.length > 0 && (
+          {noMatch.length > 0 && (
             <div className="border rounded-lg overflow-hidden">
               <button
-                onClick={() => toggleSection('unmatchedClockwork')}
-                className="w-full p-3 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-between"
-                data-testid="toggle-unmatched-section"
+                onClick={() => toggleSection('noMatch')}
+                className="w-full p-3 bg-gray-50 dark:bg-gray-900/20 flex items-center justify-between"
+                data-testid="toggle-nomatch-section"
               >
                 <div className="flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-blue-600" />
-                  <span className="font-medium">Unmatched Clockwork Executives ({noMatch.unmatchedClockwork.length})</span>
+                  <X className="h-5 w-5 text-gray-600" />
+                  <span className="font-medium">No Match ({noMatch.length})</span>
                 </div>
-                {expandedSections.unmatchedClockwork ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                {expandedSections.noMatch ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </button>
-              {expandedSections.unmatchedClockwork && (
+              {expandedSections.noMatch && (
                 <div className="p-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    These executives from Clockwork don't have a local match. You can create new executive records from them.
+                    These executives have no matching records in Clockwork.
                   </p>
-                  <div className="space-y-3">
-                    {noMatch.unmatchedClockwork.map((exec) => {
-                      const itemKey = `create-${exec.id}`;
-                      const isProcessing = processingItems.has(itemKey);
-                      const isCompleted = completedItems.has(itemKey);
-
-                      return (
-                        <div 
-                          key={exec.id} 
-                          className={`p-3 border rounded-lg ${isCompleted ? 'bg-green-50 dark:bg-green-900/10' : ''}`}
-                          data-testid={`clockwork-exec-${exec.id}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="font-medium">{exec.name}</span>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">{exec.title}</p>
-                              {exec.company && <p className="text-xs text-gray-500">{exec.company}</p>}
-                            </div>
-                            {!isCompleted ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleCreateFromClockwork(exec, noMatch.localExecutives[0]?.companyId || 0, matchData?.clockworkProjectId)}
-                                disabled={isProcessing || !noMatch.localExecutives[0]?.companyId}
-                                data-testid={`btn-create-${exec.id}`}
-                              >
-                                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4 mr-1" />}
-                                Create
-                              </Button>
-                            ) : (
-                              <Badge className="bg-green-100 text-green-800">Created</Badge>
-                            )}
+                  <div className="space-y-2">
+                    {noMatch.map((exec: ExecutiveMatchItem) => (
+                      <div 
+                        key={exec.localExecutiveId} 
+                        className="p-3 border rounded-lg bg-gray-50 dark:bg-gray-800"
+                        data-testid={`nomatch-exec-${exec.localExecutiveId}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-medium">{exec.localExecutiveName}</span>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{exec.localExecutiveTitle}</p>
+                            <p className="text-xs text-gray-500">{exec.localCompanyName}</p>
                           </div>
+                          <Badge variant="secondary">No Match</Badge>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

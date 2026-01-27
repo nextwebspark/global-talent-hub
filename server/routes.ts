@@ -47,10 +47,11 @@ export async function registerRoutes(
     }
   });
 
+  // UI/MANUAL LAYER: User-initiated company creation
   app.post("/api/companies", async (req, res) => {
     try {
       const validated = insertCompanySchema.parse(req.body);
-      const company = await storage.createCompany(validated);
+      const company = await storage.createCompanyManual(validated);
       res.status(201).json(company);
     } catch (error) {
       console.error("Error creating company:", error);
@@ -58,10 +59,11 @@ export async function registerRoutes(
     }
   });
 
+  // UI/MANUAL LAYER: User-initiated company edits always override imported data
   app.patch("/api/companies/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const company = await storage.updateCompany(id, req.body);
+      const company = await storage.updateCompanyManual(id, req.body);
       res.json(company);
     } catch (error) {
       console.error("Error updating company:", error);
@@ -91,10 +93,11 @@ export async function registerRoutes(
     }
   });
 
+  // UI/MANUAL LAYER: User-initiated executive creation
   app.post("/api/executives", async (req, res) => {
     try {
       const validated = insertExecutiveSchema.parse(req.body);
-      const executive = await storage.createExecutive(validated);
+      const executive = await storage.createExecutiveManual(validated);
       res.status(201).json(executive);
     } catch (error) {
       console.error("Error creating executive:", error);
@@ -102,10 +105,11 @@ export async function registerRoutes(
     }
   });
 
+  // UI/MANUAL LAYER: User-initiated executive edits always override imported data
   app.patch("/api/executives/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const executive = await storage.updateExecutive(id, req.body);
+      const executive = await storage.updateExecutiveManual(id, req.body);
       res.json(executive);
     } catch (error) {
       console.error("Error updating executive:", error);

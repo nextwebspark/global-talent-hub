@@ -27,6 +27,11 @@ import {
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, ilike, or, sql, asc } from "drizzle-orm";
 
+/**
+ * Data origin types for tracking write permissions per layer
+ */
+export type DataOrigin = 'discovery' | 'enrichment' | 'manual';
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -44,6 +49,18 @@ export interface IStorage {
   createExecutive(executive: InsertExecutive): Promise<Executive>;
   updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
   deleteExecutive(id: number): Promise<void>;
+  
+  // Layer-aware methods with ownership enforcement
+  createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive>;
+  createExecutiveManual(executive: InsertExecutive): Promise<Executive>;
+  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>): Promise<{ updated: Executive; enrichedFields: string[] }>;
+  updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
+  
+  // Company layer-aware methods
+  createCompanyFromDiscovery(company: InsertCompany): Promise<Company>;
+  createCompanyManual(company: InsertCompany): Promise<Company>;
+  enrichCompanyEmptyFields(id: number, data: Partial<InsertCompany>): Promise<{ updated: Company; enrichedFields: string[] }>;
+  updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company>;
   
   getAllSearchQueries(): Promise<SearchQuery[]>;
   getUniqueSearchQueries(): Promise<SearchQuery[]>;
@@ -115,12 +132,23 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
   }
 
+  /**
+   * @deprecated Use layer-aware methods instead:
+   * - Discovery: createCompanyFromDiscovery()
+   */
   async createCompany(company: InsertCompany): Promise<Company> {
+    console.warn('[Storage] DEPRECATED: createCompany() called - use createCompanyFromDiscovery() for discovery layer');
     const [newCompany] = await db.insert(companies).values(company).returning();
     return newCompany;
   }
 
+  /**
+   * @deprecated Use layer-aware methods instead:
+   * - Enrichment: enrichCompanyEmptyFields()
+   * - Manual/UI: updateCompanyManual()
+   */
   async updateCompany(id: number, data: Partial<InsertCompany>): Promise<Company> {
+    console.warn('[Storage] DEPRECATED: updateCompany() called - use updateCompanyManual() for UI edits or enrichCompanyEmptyFields() for enrichment');
     const [updated] = await db
       .update(companies)
       .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -149,12 +177,25 @@ export class DatabaseStorage implements IStorage {
     return executive;
   }
 
+  /**
+   * @deprecated Use layer-aware methods instead:
+   * - Discovery: createExecutiveFromDiscovery()
+   * - Enrichment: enrichExecutiveEmptyFields()
+   * - Manual/UI: updateExecutiveManual()
+   */
   async createExecutive(executive: InsertExecutive): Promise<Executive> {
+    console.warn('[Storage] DEPRECATED: createExecutive() called - use createExecutiveFromDiscovery() for discovery layer');
     const [newExecutive] = await db.insert(executives).values(executive).returning();
     return newExecutive;
   }
 
+  /**
+   * @deprecated Use layer-aware methods instead:
+   * - Enrichment: enrichExecutiveEmptyFields()
+   * - Manual/UI: updateExecutiveManual()
+   */
   async updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
+    console.warn('[Storage] DEPRECATED: updateExecutive() called - use updateExecutiveManual() for UI edits or enrichExecutiveEmptyFields() for enrichment');
     const [updated] = await db
       .update(executives)
       .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -165,6 +206,189 @@ export class DatabaseStorage implements IStorage {
 
   async deleteExecutive(id: number): Promise<void> {
     await db.delete(executives).where(eq(executives.id, id));
+  }
+
+  /**
+   * DISCOVERY LAYER: Create executive record only.
+   * - May only CREATE new executives
+   * - Must never update existing executives
+   * - Must never write to profile sections after creation
+   */
+  async createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive> {
+    console.log(`[Storage:Discovery] Creating executive: ${executive.name}`);
+    const [newExecutive] = await db.insert(executives).values({
+      ...executive,
+      source: executive.source || 'discovery'
+    }).returning();
+    return newExecutive;
+  }
+
+  /**
+   * ENRICHMENT LAYER: Enrich only empty/null fields.
+   * - May only update NULL or empty string fields
+   * - Must never overwrite existing data
+   * - Must never delete executives
+   * - Returns list of actually enriched fields
+   */
+  async enrichExecutiveEmptyFields(
+    id: number, 
+    data: Partial<InsertExecutive>
+  ): Promise<{ updated: Executive; enrichedFields: string[] }> {
+    const existing = await this.getExecutive(id);
+    if (!existing) {
+      throw new Error(`Executive ${id} not found for enrichment`);
+    }
+
+    const enrichedFields: string[] = [];
+    const updateData: Partial<InsertExecutive> = {};
+
+    // Only update fields that are currently null or empty
+    const fieldsToCheck: (keyof InsertExecutive)[] = [
+      'email', 'linkedin', 'profileUrl', 'imageUrl', 'source'
+    ];
+
+    for (const field of fieldsToCheck) {
+      const existingValue = existing[field as keyof typeof existing];
+      const newValue = data[field];
+      
+      // Only enrich if current value is null/undefined/empty AND new value exists
+      if ((existingValue === null || existingValue === undefined || existingValue === '') && 
+          newValue !== null && newValue !== undefined && newValue !== '') {
+        (updateData as any)[field] = newValue;
+        enrichedFields.push(field);
+        console.log(`[Storage:Enrichment] Enriching field ${field} for executive ${id}`);
+      }
+    }
+
+    if (enrichedFields.length === 0) {
+      console.log(`[Storage:Enrichment] No empty fields to enrich for executive ${id}`);
+      return { updated: existing, enrichedFields: [] };
+    }
+
+    const [updated] = await db
+      .update(executives)
+      .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(executives.id, id))
+      .returning();
+
+    console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for executive ${id}: ${enrichedFields.join(', ')}`);
+    return { updated, enrichedFields };
+  }
+
+  /**
+   * UI/MANUAL LAYER: Create executive via user action.
+   * - Full capability for user-initiated creation
+   * - Source is marked as 'manual'
+   */
+  async createExecutiveManual(executive: InsertExecutive): Promise<Executive> {
+    console.log(`[Storage:Manual] User creating executive: ${executive.name}`);
+    const [newExecutive] = await db.insert(executives).values({
+      ...executive,
+      source: 'manual'
+    }).returning();
+    return newExecutive;
+  }
+
+  /**
+   * UI/MANUAL LAYER: Full update capability.
+   * - Manual edits always override imported data
+   * - No field restrictions
+   * - Used only for user-initiated edits via UI
+   */
+  async updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
+    console.log(`[Storage:Manual] User editing executive ${id}`);
+    const [updated] = await db
+      .update(executives)
+      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(executives.id, id))
+      .returning();
+    return updated;
+  }
+
+  /**
+   * DISCOVERY LAYER: Create company record only.
+   * - May only CREATE new companies
+   * - Must never update existing companies after creation
+   */
+  async createCompanyFromDiscovery(company: InsertCompany): Promise<Company> {
+    console.log(`[Storage:Discovery] Creating company: ${company.name}`);
+    const [newCompany] = await db.insert(companies).values(company).returning();
+    return newCompany;
+  }
+
+  /**
+   * ENRICHMENT LAYER: Enrich only empty/null company fields.
+   * - May only update NULL or empty string fields
+   * - Must never overwrite existing data
+   * - Returns list of actually enriched fields
+   */
+  async enrichCompanyEmptyFields(
+    id: number, 
+    data: Partial<InsertCompany>
+  ): Promise<{ updated: Company; enrichedFields: string[] }> {
+    const existing = await this.getCompany(id);
+    if (!existing) {
+      throw new Error(`Company ${id} not found for enrichment`);
+    }
+
+    const enrichedFields: string[] = [];
+    const updateData: Partial<InsertCompany> = {};
+
+    const fieldsToCheck: (keyof InsertCompany)[] = [
+      'streetAddress', 'revenueSource', 'employeesSource'
+    ];
+
+    for (const field of fieldsToCheck) {
+      const existingValue = existing[field as keyof typeof existing];
+      const newValue = data[field];
+      
+      if ((existingValue === null || existingValue === undefined || existingValue === '') && 
+          newValue !== null && newValue !== undefined && newValue !== '') {
+        (updateData as any)[field] = newValue;
+        enrichedFields.push(field);
+        console.log(`[Storage:Enrichment] Enriching field ${field} for company ${id}`);
+      }
+    }
+
+    if (enrichedFields.length === 0) {
+      console.log(`[Storage:Enrichment] No empty fields to enrich for company ${id}`);
+      return { updated: existing, enrichedFields: [] };
+    }
+
+    const [updated] = await db
+      .update(companies)
+      .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(companies.id, id))
+      .returning();
+
+    console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for company ${id}: ${enrichedFields.join(', ')}`);
+    return { updated, enrichedFields };
+  }
+
+  /**
+   * UI/MANUAL LAYER: Create company via user action.
+   * - Full capability for user-initiated creation
+   */
+  async createCompanyManual(company: InsertCompany): Promise<Company> {
+    console.log(`[Storage:Manual] User creating company: ${company.name}`);
+    const [newCompany] = await db.insert(companies).values(company).returning();
+    return newCompany;
+  }
+
+  /**
+   * UI/MANUAL LAYER: Full company update capability.
+   * - Manual edits always override imported data
+   * - No field restrictions
+   * - Used only for user-initiated edits via UI
+   */
+  async updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company> {
+    console.log(`[Storage:Manual] User editing company ${id}`);
+    const [updated] = await db
+      .update(companies)
+      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(companies.id, id))
+      .returning();
+    return updated;
   }
 
   async getAllSearchQueries(): Promise<SearchQuery[]> {

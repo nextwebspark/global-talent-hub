@@ -66,23 +66,33 @@ Preferred communication style: Simple, everyday language.
 ```
 
 ### Layered Architecture (CRITICAL - Maintain Separation)
-The backend follows a clean layered architecture:
+The backend follows a clean layered architecture with strict ownership rules:
 
 1. **Discovery Layer** (`server/services/discovery.ts`): 
    - All LLM-related search logic (OpenAI/OpenRouter clients, model management, query parsing)
    - Runs ONCE per search, never re-runs unless user explicitly re-searches
    - Contains: parseSearchQuery, discoverCompaniesAndExecutives, fetchAvailableModels
+   - **OWNERSHIP**: May CREATE records only, never updates existing executives/companies after creation
+   - Uses: `storage.createCompanyFromDiscovery()`, `storage.createExecutiveFromDiscovery()`
 
 2. **Enrichment Layer** (`server/services/enrichment.ts`):
    - Placeholder for Clockwork API integration
    - Runs ONLY when user explicitly triggers enrichment
-   - NEVER auto-runs, NEVER replaces LLM-discovered data
+   - **OWNERSHIP**: May enrich EMPTY fields only, never overwrites existing data, never deletes records
+   - Uses: `storage.enrichExecutiveEmptyFields()`, `storage.enrichCompanyEmptyFields()`
 
 3. **Persistence Layer** (`server/storage.ts`):
    - Database is single source of truth
+   - **ENFORCES** write restrictions per layer via layer-aware methods
    - All edits persist permanently via Drizzle ORM
+   - Layer-specific methods: `createFromDiscovery`, `enrichEmptyFields`, `updateManual`
 
-4. **Routes Layer** (`server/routes.ts`):
+4. **UI/Manual Layer** (via routes.ts POST/PATCH endpoints):
+   - User-initiated creates and edits always override imported data
+   - No field restrictions - full create/update capability
+   - Uses: `storage.createCompanyManual()`, `storage.createExecutiveManual()`, `storage.updateCompanyManual()`, `storage.updateExecutiveManual()`
+
+5. **Routes Layer** (`server/routes.ts`):
    - Thin orchestration layer that coordinates services
    - No business logic - delegates to discovery/enrichment/storage
 

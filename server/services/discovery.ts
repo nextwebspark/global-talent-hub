@@ -635,7 +635,8 @@ Remember: Only return actual, existing companies with accurate information. Retu
         continue;
       }
       
-      const company = await storage.createCompany({
+      // DISCOVERY LAYER: Create only, never update existing
+      const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: validatedData.sector,
         region: validatedData.region,
@@ -661,7 +662,8 @@ Remember: Only return actual, existing companies with accurate information. Retu
           const validatedExec = validateExecutiveData(rawExec);
           if (!validatedExec) continue;
           
-          const executive = await storage.createExecutive({
+          // DISCOVERY LAYER: Create only, never update existing
+          const executive = await storage.createExecutiveFromDiscovery({
             companyId: company.id,
             name: validatedExec.name,
             title: validatedExec.title,
@@ -669,7 +671,7 @@ Remember: Only return actual, existing companies with accurate information. Retu
             linkedin: validatedExec.linkedin,
             profileUrl: validatedExec.profileUrl,
             imageUrl: validatedExec.imageUrl,
-            source: validatedExec.source,
+            source: validatedExec.source || 'discovery',
             confidence: validatedExec.confidence
           });
           executives.push(executive);

@@ -51,9 +51,15 @@ export function isEnrichmentEnabled(sourceType: string): boolean {
 
 /**
  * Enrich a single executive with additional data.
- * This function is called ONLY when explicitly triggered by the user.
- * It NEVER runs automatically.
- * It NEVER replaces LLM-discovered data - only adds supplementary fields.
+ * 
+ * ENRICHMENT LAYER RULES (STRICTLY ENFORCED):
+ * - Runs ONLY when explicitly triggered by the user
+ * - May enrich EMPTY profile fields only
+ * - Must NEVER overwrite existing data
+ * - Must NEVER delete or auto-merge executives
+ * 
+ * This function uses storage.enrichExecutiveEmptyFields() which enforces
+ * that only null/empty fields can be updated.
  */
 export async function enrichExecutive(
   executiveId: number,
@@ -75,15 +81,25 @@ export async function enrichExecutive(
   // PLACEHOLDER: Clockwork API integration would go here
   // When implemented:
   // 1. Call Clockwork API with executive name/company
-  // 2. Merge returned data WITHOUT overwriting LLM-discovered fields
-  // 3. Update database with new supplementary fields only
+  // 2. Use storage.enrichExecutiveEmptyFields() to update only empty fields
+  // 3. Return list of actually enriched fields
+  
+  // Example of how Clockwork data would be applied (when implemented):
+  // const clockworkData = await fetchFromClockwork(executive.name, company.name);
+  // const { enrichedFields } = await storage.enrichExecutiveEmptyFields(executiveId, {
+  //   email: clockworkData.email,
+  //   linkedin: clockworkData.linkedinUrl,
+  //   profileUrl: clockworkData.profileUrl,
+  //   imageUrl: clockworkData.photoUrl
+  // });
   
   console.log(`[Enrichment] Placeholder - Clockwork integration not yet implemented`);
+  console.log(`[Enrichment] When implemented, will only enrich empty fields for executive ${executiveId}`);
   
   return {
     success: true,
     executiveId,
-    enrichedFields: [], // Would contain list of fields updated
+    enrichedFields: [], // Would contain list of fields actually updated
     source: sourceType,
     timestamp: new Date()
   };
@@ -91,7 +107,15 @@ export async function enrichExecutive(
 
 /**
  * Enrich a company with additional data.
- * This function is called ONLY when explicitly triggered by the user.
+ * 
+ * ENRICHMENT LAYER RULES (STRICTLY ENFORCED):
+ * - Runs ONLY when explicitly triggered by the user
+ * - May enrich EMPTY company fields only
+ * - Must NEVER overwrite existing data
+ * - Must NEVER delete companies
+ * 
+ * This function uses storage.enrichCompanyEmptyFields() which enforces
+ * that only null/empty fields can be updated.
  */
 export async function enrichCompany(
   companyId: number,

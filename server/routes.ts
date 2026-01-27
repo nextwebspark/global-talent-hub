@@ -582,6 +582,56 @@ export async function registerRoutes(
     }
   });
 
+  // DIAGNOSTIC ENDPOINT: Test Clockwork project candidate fetch
+  // Returns detailed info about what would be fetched without persisting anything
+  app.get("/api/clockwork/diagnostics/project/:clockworkProjectId", async (req, res) => {
+    try {
+      const { clockworkProjectId } = req.params;
+      
+      if (!clockworkProjectId) {
+        return res.status(400).json({ error: "clockworkProjectId is required" });
+      }
+      
+      // Run orchestration with a dummy search ID to test fetch
+      const matchResult = await orchestrateEnrichmentMatching(0, clockworkProjectId);
+      
+      // Build diagnostic response
+      const diagnostics = {
+        ok: matchResult.fetchStatus === 'success',
+        status: matchResult.fetchError?.status || null,
+        fetchedCount: matchResult.totalClockworkExecutives,
+        fetchStatus: matchResult.fetchStatus,
+        sampleFieldsPresent: matchResult.clockworkCandidates.length > 0 
+          ? Object.keys(matchResult.clockworkCandidates[0]).filter(k => 
+              matchResult.clockworkCandidates[0][k as keyof typeof matchResult.clockworkCandidates[0]]
+            )
+          : [],
+        paginationUsed: matchResult.paginationUsed,
+        pagesFetched: matchResult.pagesFetched,
+        totalRawCandidates: matchResult.totalRawCandidates,
+        errorMessage: matchResult.fetchError?.message || null,
+        endpoint: matchResult.fetchError?.endpoint || null,
+        enrichmentRunId: matchResult.enrichmentRunId,
+        firmSlug: matchResult.clockworkFirmSlug,
+        sampleCandidates: matchResult.clockworkCandidates.slice(0, 3).map(c => ({
+          id: c.id,
+          name: c.name,
+          title: c.title,
+          company: c.company
+        }))
+      };
+      
+      res.json(diagnostics);
+    } catch (error) {
+      console.error("Error in Clockwork diagnostics:", error);
+      res.status(500).json({ 
+        ok: false,
+        error: "Failed to run diagnostics",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // ENRICHMENT LAYER: Orchestrate matching between local executives and Clockwork project
   // This endpoint is deterministic and side-effect free - it only returns match results
   app.post("/api/enrichment/match", async (req, res) => {

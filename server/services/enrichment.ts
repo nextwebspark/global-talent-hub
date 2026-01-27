@@ -6,11 +6,45 @@
  * - Never auto-runs on search or page load
  * - Never replaces or deletes LLM-discovered executives
  * - Adds supplementary data to existing records
- * 
- * Status: PLACEHOLDER - Ready for Clockwork integration
  */
 
 import { storage } from "../storage";
+import { randomUUID } from "crypto";
+
+/**
+ * Enrichment run context for observability
+ */
+export interface EnrichmentRunContext {
+  enrichmentRunId: string;
+  searchId: number;
+  clockworkProjectId: string;
+  clockworkFirmSlug: string;
+  startedAt: Date;
+}
+
+/**
+ * Enrichment diagnostics result
+ */
+export interface EnrichmentDiagnostics {
+  ok: boolean;
+  status: number | null;
+  fetchedCount: number;
+  sampleFieldsPresent: string[];
+  paginationUsed: boolean;
+  errorMessage: string | null;
+  endpoint: string | null;
+}
+
+/**
+ * Fetch error details for observability
+ */
+export interface ClockworkFetchError {
+  endpoint: string;
+  status: number | null;
+  statusText: string;
+  errorMessage: string;
+  timestamp: Date;
+}
 
 export interface EnrichmentSource {
   name: string;
@@ -501,11 +535,14 @@ export interface ClockworkExecutive {
  * Structured result from enrichment orchestration
  */
 export interface EnrichmentMatchResult {
+  enrichmentRunId: string;
   searchId: number;
   clockworkProjectId: string;
+  clockworkFirmSlug: string;
   timestamp: Date;
   totalLocalExecutives: number;
   totalClockworkExecutives: number;
+  totalRawCandidates: number;
   clockworkCandidates: ClockworkExecutive[];
   matches: {
     confirmed: ExecutiveMatch[];
@@ -517,6 +554,14 @@ export interface EnrichmentMatchResult {
     possibleCount: number;
     noMatchCount: number;
   };
+  fetchStatus: 'success' | 'error' | 'no_candidates';
+  fetchError?: {
+    message: string;
+    status?: number;
+    endpoint?: string;
+  };
+  paginationUsed: boolean;
+  pagesFetched: number;
 }
 
 /**
@@ -704,16 +749,67 @@ function findBestMatch(
 }
 
 /**
- * Fetch candidates/people from a Clockwork project.
- * Tries multiple endpoint patterns to find the right one.
+ * Result from fetching Clockwork candidates
  */
-async function fetchClockworkExecutives(clockworkProjectId: string): Promise<ClockworkExecutive[]> {
-  console.log(`[Enrichment:Clockwork] Fetching candidates from Clockwork project: ${clockworkProjectId}`);
+interface ClockworkFetchResult {
+  candidates: ClockworkExecutive[];
+  status: 'success' | 'error' | 'no_candidates';
+  error?: {
+    message: string;
+    status?: number;
+    endpoint?: string;
+  };
+  paginationUsed: boolean;
+  pagesFetched: number;
+  totalRawCandidates: number;
+  successEndpoint?: string;
+}
+
+/**
+ * Transform a raw person record to ClockworkExecutive format
+ */
+function transformToClockworkExecutive(p: any): ClockworkExecutive | null {
+  const id = p.id || p.uuid || p.person_id;
+  if (!id) {
+    return null;
+  }
+  return {
+    id: String(id),
+    name: p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+    title: p.title || p.position || p.current_title || '',
+    company: p.company || p.current_company || p.organization || '',
+    email: p.email || p.primary_email || '',
+    linkedin: p.linkedin || p.linkedin_url || '',
+    imageUrl: p.image_url || p.photo_url || p.avatar_url || ''
+  };
+}
+
+/**
+ * Fetch candidates/people from a Clockwork project with pagination.
+ * Tries multiple endpoint patterns to find the right one.
+ * Returns structured result with error info for observability.
+ */
+async function fetchClockworkExecutives(
+  clockworkProjectId: string,
+  enrichmentRunId: string
+): Promise<ClockworkFetchResult> {
+  console.log(`[Enrichment:${enrichmentRunId}] Fetching candidates from Clockwork project: ${clockworkProjectId}`);
   
   const config = getClockworkConfig();
   if (!config) {
-    console.error('[Enrichment:Clockwork] Failed to get config - credentials missing');
-    return [];
+    console.error(`[Enrichment:${enrichmentRunId}] ERROR - Failed to get config - credentials missing`);
+    return {
+      candidates: [],
+      status: 'error',
+      error: {
+        message: 'Clockwork API credentials not configured (CLOCKWORK_API_KEY, CLOCKWORK_API_SECRET, CLOCKWORK_FIRM_KEY)',
+        status: undefined,
+        endpoint: undefined
+      },
+      paginationUsed: false,
+      pagesFetched: 0,
+      totalRawCandidates: 0
+    };
   }
   
   // Try multiple endpoint patterns for fetching project candidates
@@ -724,66 +820,154 @@ async function fetchClockworkExecutives(clockworkProjectId: string): Promise<Clo
     `positions/${clockworkProjectId}/candidates`,
   ];
   
+  const errors: Array<{ endpoint: string; status: number | null; message: string }> = [];
+  
   for (const endpoint of endpointsToTry) {
-    const url = `${config.baseUrl}/${config.firmSlug}/${endpoint}`;
-    console.log(`[Enrichment:Clockwork] Trying: ${url}`);
+    const allCandidates: ClockworkExecutive[] = [];
+    let currentPage = 1;
+    let hasMorePages = true;
+    const maxPages = 50; // Safety limit
+    const perPage = 100;
+    let totalRawCandidates = 0;
+    let paginationUsed = false;
     
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Token ${config.authToken}`,
-          'X-API-Key': config.firmKey,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
+    while (hasMorePages && currentPage <= maxPages) {
+      const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpoint}`);
+      url.searchParams.set('page', String(currentPage));
+      url.searchParams.set('per_page', String(perPage));
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`[Enrichment:Clockwork] SUCCESS! Endpoint ${endpoint} works`);
+      console.log(`[Enrichment:${enrichmentRunId}] Trying: ${url.toString()} (page ${currentPage})`);
+      
+      try {
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Authorization': `Token ${config.authToken}`,
+            'X-API-Key': config.firmKey,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
         
-        // Extract people/candidates from various response formats
-        const people = data.data || data.people || data.candidates || data.items || [];
-        
-        if (Array.isArray(people)) {
-          console.log(`[Enrichment:Clockwork] Found ${people.length} candidates in project`);
+        if (response.ok) {
+          const data = await response.json();
           
-          // Transform to ClockworkExecutive format
-          // Filter out candidates without stable IDs for idempotency
-          const validCandidates = people
-            .filter((p: any) => {
-              const id = p.id || p.uuid || p.person_id;
-              if (!id) {
+          if (currentPage === 1) {
+            console.log(`[Enrichment:${enrichmentRunId}] SUCCESS! Endpoint ${endpoint} works`);
+          }
+          
+          // Extract people/candidates from various response formats
+          const people = data.data || data.people || data.candidates || data.items || [];
+          
+          if (Array.isArray(people)) {
+            totalRawCandidates += people.length;
+            console.log(`[Enrichment:${enrichmentRunId}] INFO - Page ${currentPage}: Found ${people.length} candidates`);
+            
+            // Transform and filter candidates
+            for (const p of people) {
+              const candidate = transformToClockworkExecutive(p);
+              if (candidate) {
+                allCandidates.push(candidate);
+              } else {
                 const name = p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
-                console.warn(`[Enrichment:Clockwork] Skipping candidate without stable ID: ${name}`);
-                return false;
+                console.warn(`[Enrichment:${enrichmentRunId}] Skipping candidate without stable ID: ${name}`);
               }
-              return true;
-            })
-            .map((p: any) => ({
-              id: String(p.id || p.uuid || p.person_id),
-              name: p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
-              title: p.title || p.position || p.current_title || '',
-              company: p.company || p.current_company || p.organization || '',
-              email: p.email || p.primary_email || '',
-              linkedin: p.linkedin || p.linkedin_url || '',
-              imageUrl: p.image_url || p.photo_url || p.avatar_url || ''
-            }));
-          
-          console.log(`[Enrichment:Clockwork] Returning ${validCandidates.length} candidates with stable IDs`);
-          return validCandidates;
+            }
+            
+            // Check for pagination info from multiple possible sources
+            // Try nested meta/pagination objects first, then top-level fields
+            const meta = data.meta || data.pagination || {};
+            
+            // Get total count from various sources
+            const totalCount = meta.total_count || meta.total || data.total_count || data.total || 0;
+            
+            // Get total pages - either explicit or computed from total_count / per_page
+            let totalPages = meta.total_pages || meta.pages || data.total_pages || data.pages || 0;
+            
+            // If total_count is provided but total_pages is not, compute it
+            if (totalPages === 0 && totalCount > 0) {
+              totalPages = Math.ceil(totalCount / perPage);
+            }
+            
+            // Fallback: if still no pagination info, assume single page if we got fewer items than requested
+            if (totalPages === 0) {
+              totalPages = people.length >= perPage ? currentPage + 1 : 1;
+            }
+            
+            console.log(`[Enrichment:${enrichmentRunId}] INFO - Pagination: page ${currentPage}, totalPages=${totalPages}, totalCount=${totalCount}, perPage=${perPage}, received=${people.length}`);
+            
+            if (totalPages > 1 || totalCount > perPage) {
+              paginationUsed = true;
+            }
+            
+            // Determine if there are more pages
+            // Continue if: we haven't reached totalPages AND we got a full page of results
+            if (currentPage >= totalPages) {
+              hasMorePages = false;
+            } else if (people.length < perPage) {
+              // Received fewer items than requested - this was the last page
+              hasMorePages = false;
+            } else {
+              currentPage++;
+            }
+          } else {
+            hasMorePages = false;
+          }
+        } else {
+          const errorBody = await response.text().catch(() => '(no body)');
+          console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpoint} returned ${response.status}: ${errorBody.substring(0, 200)}`);
+          errors.push({
+            endpoint,
+            status: response.status,
+            message: `HTTP ${response.status}: ${response.statusText}`
+          });
+          hasMorePages = false;
+          break; // Try next endpoint
         }
-      } else {
-        console.log(`[Enrichment:Clockwork] Endpoint ${endpoint} returned ${response.status}`);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpoint} failed: ${errMsg}`);
+        errors.push({
+          endpoint,
+          status: null,
+          message: errMsg
+        });
+        hasMorePages = false;
+        break; // Try next endpoint
       }
-    } catch (err) {
-      console.log(`[Enrichment:Clockwork] Endpoint ${endpoint} failed: ${err}`);
+    }
+    
+    // If we got candidates from this endpoint, return them
+    if (allCandidates.length > 0 || (currentPage > 1 && totalRawCandidates > 0)) {
+      console.log(`[Enrichment:${enrichmentRunId}] INFO - Total pages fetched: ${currentPage}, raw candidates: ${totalRawCandidates}, valid candidates: ${allCandidates.length}`);
+      
+      return {
+        candidates: allCandidates,
+        status: allCandidates.length > 0 ? 'success' : 'no_candidates',
+        paginationUsed,
+        pagesFetched: currentPage,
+        totalRawCandidates,
+        successEndpoint: endpoint
+      };
     }
   }
   
-  console.warn('[Enrichment:Clockwork] All candidate endpoints failed - returning empty array');
-  return [];
+  // All endpoints failed
+  const lastError = errors[errors.length - 1];
+  console.error(`[Enrichment:${enrichmentRunId}] ERROR - All ${endpointsToTry.length} candidate endpoints failed`);
+  
+  return {
+    candidates: [],
+    status: 'error',
+    error: {
+      message: lastError?.message || 'All candidate endpoints failed',
+      status: lastError?.status ?? undefined,
+      endpoint: lastError?.endpoint
+    },
+    paginationUsed: false,
+    pagesFetched: 0,
+    totalRawCandidates: 0
+  };
 }
 
 /**
@@ -796,11 +980,12 @@ async function fetchClockworkExecutives(clockworkProjectId: string): Promise<Clo
  * - READ-ONLY: Only reads from database, never writes
  * 
  * Steps:
- * 1. Fetch all executives from our database for the given search_id
- * 2. Fetch all executives from the Clockwork project (placeholder)
- * 3. Use fuzzy matching to compare each local executive against Clockwork
- * 4. Classify matches as: confirmed, possible, or no_match
- * 5. Return structured results to UI for user review
+ * 1. Generate enrichment_run_id for observability
+ * 2. Fetch all executives from our database for the given search_id
+ * 3. Fetch all executives from the Clockwork project
+ * 4. Use fuzzy matching to compare each local executive against Clockwork
+ * 5. Classify matches as: confirmed, possible, or no_match
+ * 6. Return structured results to UI for user review
  * 
  * ENRICHMENT LAYER RULES:
  * - Does NOT auto-merge executives
@@ -811,7 +996,13 @@ export async function orchestrateEnrichmentMatching(
   searchId: number,
   clockworkProjectId: string
 ): Promise<EnrichmentMatchResult> {
-  console.log(`[Enrichment:Orchestrate] Starting match orchestration for search ${searchId} with Clockwork project ${clockworkProjectId}`);
+  // Generate unique run ID for observability
+  const enrichmentRunId = randomUUID().substring(0, 8);
+  const config = getClockworkConfig();
+  const firmSlug = config?.firmSlug || 'unknown';
+  
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - Starting match orchestration`);
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - search_id=${searchId}, clockwork_project_id=${clockworkProjectId}, firm_slug=${firmSlug}`);
   
   // Step 1: Fetch all companies and executives for this search from our database
   const companies = await storage.getCompaniesBySearchQuery(searchId);
@@ -836,11 +1027,13 @@ export async function orchestrateEnrichmentMatching(
     }
   }
   
-  console.log(`[Enrichment:Orchestrate] Found ${localExecutives.length} local executives from ${companies.length} companies`);
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - Found ${localExecutives.length} local executives from ${companies.length} companies`);
   
   // Step 2: Fetch executives from Clockwork project
-  const clockworkExecutives = await fetchClockworkExecutives(clockworkProjectId);
-  console.log(`[Enrichment:Orchestrate] Found ${clockworkExecutives.length} Clockwork executives`);
+  const fetchResult = await fetchClockworkExecutives(clockworkProjectId, enrichmentRunId);
+  const clockworkExecutives = fetchResult.candidates;
+  
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - Clockwork fetch status: ${fetchResult.status}, candidates: ${clockworkExecutives.length}`);
   
   // Step 3 & 4: Match and classify each local executive
   const matches: {
@@ -899,21 +1092,29 @@ export async function orchestrateEnrichmentMatching(
   
   // Step 5: Build and return structured result
   const result: EnrichmentMatchResult = {
+    enrichmentRunId,
     searchId,
     clockworkProjectId,
+    clockworkFirmSlug: firmSlug,
     timestamp: new Date(),
     totalLocalExecutives: localExecutives.length,
     totalClockworkExecutives: clockworkExecutives.length,
+    totalRawCandidates: fetchResult.totalRawCandidates,
     clockworkCandidates: clockworkExecutives,
     matches,
     summary: {
       confirmedCount: matches.confirmed.length,
       possibleCount: matches.possible.length,
       noMatchCount: matches.noMatch.length
-    }
+    },
+    fetchStatus: fetchResult.status,
+    fetchError: fetchResult.error,
+    paginationUsed: fetchResult.paginationUsed,
+    pagesFetched: fetchResult.pagesFetched
   };
   
-  console.log(`[Enrichment:Orchestrate] Match results: ${result.summary.confirmedCount} confirmed, ${result.summary.possibleCount} possible, ${result.summary.noMatchCount} no match`);
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - Match results: confirmed=${result.summary.confirmedCount}, possible=${result.summary.possibleCount}, no_match=${result.summary.noMatchCount}`);
+  console.log(`[Enrichment:${enrichmentRunId}] INFO - Clockwork candidates available: ${clockworkExecutives.length}`);
   
   return result;
 }

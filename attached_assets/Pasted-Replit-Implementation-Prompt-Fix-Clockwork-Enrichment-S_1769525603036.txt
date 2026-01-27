@@ -1,0 +1,178 @@
+Replit Implementation Prompt — Fix Clockwork Enrichment Showing “No Match” Only
+
+We have a functional LLM Discovery flow and a Clockwork enrichment flow with project selection. However, after selecting a Clockwork project and clicking “Enrich Data”, the Match Review shows only the original LLM executives and reports “no match” — it does not display any Clockwork executives, and it appears no Clockwork candidates are being fetched/used.
+
+Objective
+
+Make Clockwork enrichment actually fetch candidates from the selected Clockwork project, display them in the Match Review, and allow enrichment to work. The system must be deterministic, auditable, and must not silently fall back to “no matches” when API calls fail.
+
+Non-negotiable principles
+
+Clockwork is read-only (no write-back).
+
+Enrichment is user-triggered and scoped to selected Clockwork project.
+
+If Clockwork fetch fails or returns zero results, the UI must show a clear error state and the server must log why. Do not present it as “no match”.
+
+Avoid regressions: preserve existing discovery behaviour and data model boundaries.
+
+Step 1 — Add Observability (must do first)
+
+Add structured logs + correlation ID for the enrichment run:
+
+Generate enrichment_run_id (UUID) when user clicks “Enrich Data”.
+
+Log at INFO level (server side only):
+
+enrichment_run_id
+
+search_id
+
+clockwork_project_id
+
+clockwork_firm_slug
+
+which endpoint(s) were called
+
+pagination details (page, pageSize, total)
+
+number of candidates fetched from Clockwork (before filtering)
+
+number of app executives used for matching
+
+number of matches by band (confirmed / possible / none)
+
+Log at ERROR level:
+
+HTTP status code
+
+response body excerpt (redacted)
+
+error stack
+
+Add a diagnostic endpoint:
+
+GET /api/clockwork/diagnostics/project/:clockworkProjectId
+
+Returns: { ok, status, fetchedCount, sampleFieldsPresent, paginationUsed, errorMessage }
+
+Must redact secrets.
+
+Step 2 — Verify the correct data is being fetched (most likely failure)
+
+Fix and verify the Clockwork “fetch candidates by project” logic:
+
+Ensure the call is made using:
+
+the selected clockwork_project_id
+
+the correct firm slug (from env var CLOCKWORK_FIRM_SLUG)
+
+correct auth headers (do not invent auth methods; use the existing working Clockwork auth in the project)
+
+Handle pagination: fetch all pages until exhausted.
+
+Do not filter out “closed”/“retained” projects unless the user does.
+
+Normalize the Clockwork response into a canonical internal shape:
+
+clockwork_profile_id
+
+full_name
+
+company (or current company)
+
+title
+
+location/country
+
+linkedin_url (if present)
+
+career_history (if present)
+
+education (if present)
+
+Important: if fetchedCount === 0, return a distinct UI state:
+
+“Clockwork returned 0 candidates for this project” + diagnostics hint
+Not “no matches”.
+
+Step 3 — Ensure UI is not hiding Clockwork candidates
+
+Update Match Review UI behaviour:
+
+Show two sections:
+
+Clockwork candidates fetched (count + list, searchable)
+
+Match results (confirmed/possible/no match)
+
+Even if there are zero matches, still show the Clockwork candidates so the user can:
+
+manually create a new executive from Clockwork
+
+confirm a match manually
+
+Do not show only LLM executives unless Clockwork fetchedCount is truly zero.
+
+Step 4 — Fix matching input bugs (common cause)
+
+Verify the matching function is comparing the right sets:
+
+Ensure you are matching:
+
+appExecutivesForSearch(search_id) vs clockworkCandidatesForProject(clockwork_project_id)
+
+Confirm no bug where:
+
+clockworkCandidates array is empty due to a mapping mismatch
+
+wrong key used (e.g., projectId vs project_id)
+
+candidates are overwritten by an empty array in state
+
+the UI is calling the wrong endpoint or not passing clockwork_project_id
+
+Add unit-level checks:
+
+If clockworkCandidates.length === 0, do not run fuzzy matching; return early with “0 candidates fetched”.
+
+Step 5 — Acceptance Criteria (must pass)
+
+After selecting a Clockwork project and clicking “Enrich Data”, the UI shows:
+
+The number of Clockwork candidates fetched (non-zero for populated projects)
+
+A visible list of those Clockwork candidates
+
+Even if there are no matches, Clockwork candidates are still visible.
+
+If the API call fails (401/403/500), the UI shows a clear error and does not pretend it’s “no match”.
+
+Logging clearly shows:
+
+candidate fetch count
+
+pagination used
+
+match counts by band
+
+Step 6 — Do not break current functionality
+
+Do not change:
+
+LLM discovery results format
+
+existing persistence rules (manual edits override imports; enrichment fills empty fields only)
+
+idempotency protections
+
+Deliverables
+
+Working enrichment flow that fetches and displays Clockwork candidates
+
+Diagnostic endpoint for debugging
+
+Improved UI that shows Clockwork candidates + match results
+
+Server logs sufficient to trace failures in one run

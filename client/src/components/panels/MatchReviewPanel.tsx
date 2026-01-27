@@ -49,8 +49,10 @@ interface ExecutiveMatchItem {
 }
 
 interface MatchReviewData {
+  enrichmentRunId?: string;
   searchId: number;
   clockworkProjectId: string;
+  clockworkFirmSlug?: string;
   timestamp: string;
   totalLocalExecutives: number;
   totalClockworkExecutives: number;
@@ -64,6 +66,12 @@ interface MatchReviewData {
     confirmedCount: number;
     possibleCount: number;
     noMatchCount: number;
+  };
+  fetchStatus?: 'success' | 'error' | 'no_candidates';
+  fetchError?: {
+    message: string;
+    status?: number;
+    endpoint?: string;
   };
 }
 
@@ -268,6 +276,10 @@ export default function MatchReviewPanel({
     }
   };
 
+  // Determine if there's a fetch error
+  const hasFetchError = matchData.fetchStatus === 'error';
+  const hasNoCandidates = matchData.fetchStatus === 'no_candidates';
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="match-review-panel">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col bg-white dark:bg-gray-800">
@@ -276,6 +288,9 @@ export default function MatchReviewPanel({
             <h2 className="text-xl font-semibold" data-testid="match-review-title">Match Review</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {matchData.totalLocalExecutives} local executives, {matchData.totalClockworkExecutives} from Clockwork
+              {matchData.enrichmentRunId && (
+                <span className="ml-2 text-xs text-gray-400">(Run: {matchData.enrichmentRunId})</span>
+              )}
             </p>
           </div>
           <Button variant="ghost" onClick={onClose} data-testid="btn-close-review">
@@ -284,6 +299,48 @@ export default function MatchReviewPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* Error Banner - Show when Clockwork fetch failed */}
+          {hasFetchError && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg" data-testid="fetch-error-banner">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-red-800 dark:text-red-200">Failed to fetch Clockwork candidates</h3>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    {matchData.fetchError?.message || 'Unknown error occurred while fetching from Clockwork API'}
+                  </p>
+                  {matchData.fetchError?.status && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                      HTTP Status: {matchData.fetchError.status}
+                    </p>
+                  )}
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-2">
+                    This is NOT a "no match" result. Check server logs for details.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No Candidates Banner - Show when API succeeded but returned 0 candidates */}
+          {hasNoCandidates && (
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg" data-testid="no-candidates-banner">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-yellow-800 dark:text-yellow-200">Clockwork project has no candidates</h3>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                    The selected Clockwork project returned 0 candidates. This could mean:
+                  </p>
+                  <ul className="text-sm text-yellow-700 dark:text-yellow-300 mt-1 list-disc ml-4">
+                    <li>The project is empty</li>
+                    <li>All candidates were filtered out (no stable IDs)</li>
+                    <li>You may need to select a different project</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-800">
               <div className="text-2xl font-bold text-blue-600">{clockworkCandidates.length}</div>
@@ -302,6 +359,74 @@ export default function MatchReviewPanel({
               <div className="text-sm text-gray-600 dark:text-gray-400">No Match</div>
             </div>
           </div>
+
+          {/* Clockwork Candidates Section - Show all candidates fetched from Clockwork project */}
+          {clockworkCandidates.length > 0 && (
+            <div className="border-2 border-blue-200 dark:border-blue-800 rounded-lg overflow-hidden">
+              <button
+                onClick={() => toggleSection('clockworkCandidates')}
+                className="w-full p-3 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-between"
+                data-testid="toggle-clockwork-candidates-section"
+              >
+                <div className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-blue-600" />
+                  <span className="font-medium text-blue-800 dark:text-blue-200">
+                    Clockwork Project Candidates ({clockworkCandidates.length})
+                  </span>
+                  <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                    Available to Import
+                  </Badge>
+                </div>
+                {expandedSections.clockworkCandidates ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+              </button>
+              {expandedSections.clockworkCandidates && (
+                <div className="divide-y divide-blue-100 dark:divide-blue-800">
+                  {clockworkCandidates.map((candidate) => {
+                    const itemKey = `import-${candidate.id}`;
+                    const isProcessing = processingItems.has(itemKey);
+                    const isCompleted = completedItems.has(itemKey);
+
+                    return (
+                      <div 
+                        key={candidate.id}
+                        className={`p-4 ${isCompleted ? 'bg-green-50 dark:bg-green-900/10' : 'bg-white dark:bg-gray-800'}`}
+                        data-testid={`clockwork-candidate-${candidate.id}`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium truncate">{candidate.name}</span>
+                              <Badge variant="outline" className="text-xs">Clockwork</Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">{candidate.title || 'No title'}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {candidate.company && <span>Company: {candidate.company}</span>}
+                              {candidate.email && <span className="ml-2">| {candidate.email}</span>}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {!isCompleted && (
+                              <Button
+                                size="sm"
+                                onClick={() => handleImportCandidate(candidate)}
+                                disabled={isProcessing}
+                                className="bg-blue-600 hover:bg-blue-700"
+                                data-testid={`btn-import-${candidate.id}`}
+                              >
+                                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4 mr-1" />}
+                                Add to Search
+                              </Button>
+                            )}
+                            {isCompleted && <Badge className="bg-green-100 text-green-800">Added</Badge>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {confirmed.length > 0 && (
             <div className="border rounded-lg overflow-hidden">

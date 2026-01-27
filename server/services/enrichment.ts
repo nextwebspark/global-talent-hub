@@ -825,6 +825,128 @@ async function fetchPersonPositions(
 }
 
 /**
+ * Career position data from Clockwork API
+ */
+export interface ClockworkCareerPosition {
+  company: string;
+  title: string;
+  startDate: string | null;
+  endDate: string | null;
+  isCurrent: boolean;
+}
+
+/**
+ * Fetch ALL career positions for a person from Clockwork API
+ * Returns array of positions with company, title, dates
+ * Exported for use in import endpoint
+ */
+export async function fetchClockworkCareerHistory(
+  personId: string
+): Promise<ClockworkCareerPosition[]> {
+  const apiKey = process.env.CLOCKWORK_API_KEY;
+  const apiSecret = process.env.CLOCKWORK_API_SECRET;
+  const firmKey = process.env.CLOCKWORK_FIRM_KEY;
+  const firmSlug = process.env.CLOCKWORK_FIRM_SLUG;
+
+  if (!apiKey || !apiSecret || !firmKey || !firmSlug) {
+    console.warn('[Enrichment] Clockwork credentials not configured');
+    return [];
+  }
+
+  const authToken = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  const baseUrl = 'https://api.clockworkrecruiting.com/v3.0';
+
+  try {
+    const url = `${baseUrl}/${firmSlug}/people/${personId}/positions`;
+    console.log(`[Enrichment] Fetching career history for person ${personId}`);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Token ${authToken}`,
+        'X-API-Key': firmKey,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      console.warn(`[Enrichment] Career history fetch for ${personId} returned ${response.status}`);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log(`[Enrichment] Career history response: ${JSON.stringify(data).substring(0, 500)}`);
+    
+    // Clockwork API returns positions in 'personPositions' field
+    const positions = data.personPositions || data.data || data.positions || [];
+    
+    if (!Array.isArray(positions) || positions.length === 0) {
+      return [];
+    }
+    
+    // Transform to career position format
+    const careerPositions: ClockworkCareerPosition[] = positions.map((pos: any, index: number) => {
+      const title = pos.title || pos.positionTitle || 'Unknown Role';
+      const company = pos.company?.name || pos.companyName || pos.organization?.name || 'Unknown Company';
+      
+      // Parse dates - Clockwork may use various date formats
+      let startDate: string | null = null;
+      let endDate: string | null = null;
+      
+      if (pos.startDate || pos.start_date || pos.startMonth) {
+        const start = pos.startDate || pos.start_date;
+        if (start) {
+          // Try to extract year or full date
+          startDate = String(start).substring(0, 10); // YYYY-MM-DD or YYYY
+        } else if (pos.startYear && pos.startMonth) {
+          startDate = `${pos.startYear}-${String(pos.startMonth).padStart(2, '0')}`;
+        } else if (pos.startYear) {
+          startDate = String(pos.startYear);
+        }
+      }
+      
+      if (pos.endDate || pos.end_date || pos.endMonth) {
+        const end = pos.endDate || pos.end_date;
+        if (end) {
+          endDate = String(end).substring(0, 10);
+        } else if (pos.endYear && pos.endMonth) {
+          endDate = `${pos.endYear}-${String(pos.endMonth).padStart(2, '0')}`;
+        } else if (pos.endYear) {
+          endDate = String(pos.endYear);
+        }
+      }
+      
+      const isCurrent = pos.isCurrent === true || pos.is_current === true || !endDate;
+      
+      return {
+        company,
+        title,
+        startDate,
+        endDate,
+        isCurrent
+      };
+    });
+    
+    // Sort by current first, then by start date (most recent first)
+    careerPositions.sort((a, b) => {
+      if (a.isCurrent && !b.isCurrent) return -1;
+      if (!a.isCurrent && b.isCurrent) return 1;
+      // Both current or both not current - sort by start date
+      const aStart = a.startDate || '0000';
+      const bStart = b.startDate || '0000';
+      return bStart.localeCompare(aStart); // Descending
+    });
+    
+    console.log(`[Enrichment] Parsed ${careerPositions.length} career positions for person ${personId}`);
+    return careerPositions;
+  } catch (err) {
+    console.warn(`[Enrichment] Failed to fetch career history for person ${personId}: ${err}`);
+    return [];
+  }
+}
+
+/**
  * Transform a raw person record to ClockworkExecutive format
  * Handles both flat and nested data structures from Clockwork API
  */

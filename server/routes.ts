@@ -907,6 +907,34 @@ export async function registerRoutes(
 
       console.log(`[Import] Created executive from Clockwork: ${name} (ID: ${newExecutive.id})`);
 
+      // Fetch and store career history from Clockwork
+      try {
+        const { fetchClockworkCareerHistory } = await import('./services/enrichment');
+        const careerPositions = await fetchClockworkCareerHistory(clockworkId);
+        
+        if (careerPositions.length > 0) {
+          console.log(`[Import] Adding ${careerPositions.length} career history entries for ${name}`);
+          
+          for (let i = 0; i < careerPositions.length; i++) {
+            const pos = careerPositions[i];
+            await storage.createCareerHistory({
+              executiveId: newExecutive.id,
+              company: pos.company,
+              title: pos.title,
+              startDate: pos.startDate,
+              endDate: pos.endDate,
+              description: pos.isCurrent ? 'Current position' : null,
+              sortOrder: i
+            });
+          }
+          console.log(`[Import] Successfully added career history for ${name}`);
+        } else {
+          console.log(`[Import] No career history found in Clockwork for ${name}`);
+        }
+      } catch (careerError) {
+        console.warn(`[Import] Failed to fetch career history for ${name}:`, careerError);
+      }
+
       res.json({
         success: true,
         executive: newExecutive,

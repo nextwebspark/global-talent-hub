@@ -506,6 +506,7 @@ export interface EnrichmentMatchResult {
   timestamp: Date;
   totalLocalExecutives: number;
   totalClockworkExecutives: number;
+  clockworkCandidates: ClockworkExecutive[];
   matches: {
     confirmed: ExecutiveMatch[];
     possible: ExecutiveMatch[];
@@ -703,20 +704,85 @@ function findBestMatch(
 }
 
 /**
- * PLACEHOLDER: Fetch executives from Clockwork project.
- * In production, this would call the Clockwork API.
+ * Fetch candidates/people from a Clockwork project.
+ * Tries multiple endpoint patterns to find the right one.
  */
 async function fetchClockworkExecutives(clockworkProjectId: string): Promise<ClockworkExecutive[]> {
-  console.log(`[Enrichment:Clockwork] Fetching executives from Clockwork project: ${clockworkProjectId}`);
+  console.log(`[Enrichment:Clockwork] Fetching candidates from Clockwork project: ${clockworkProjectId}`);
   
-  // PLACEHOLDER: Return empty array until Clockwork API is integrated
-  // When implemented:
-  // const response = await fetch(`https://api.clockwork.com/projects/${clockworkProjectId}/executives`, {
-  //   headers: { 'Authorization': `Bearer ${process.env.CLOCKWORK_API_KEY}` }
-  // });
-  // return response.json();
+  const config = getClockworkConfig();
+  if (!config) {
+    console.error('[Enrichment:Clockwork] Failed to get config - credentials missing');
+    return [];
+  }
   
-  console.log(`[Enrichment:Clockwork] Placeholder - returning empty array until API integration`);
+  // Try multiple endpoint patterns for fetching project candidates
+  const endpointsToTry = [
+    `projects/${clockworkProjectId}/people`,
+    `projects/${clockworkProjectId}/candidates`,
+    `positions/${clockworkProjectId}/people`,
+    `positions/${clockworkProjectId}/candidates`,
+  ];
+  
+  for (const endpoint of endpointsToTry) {
+    const url = `${config.baseUrl}/${config.firmSlug}/${endpoint}`;
+    console.log(`[Enrichment:Clockwork] Trying: ${url}`);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Token ${config.authToken}`,
+          'X-API-Key': config.firmKey,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[Enrichment:Clockwork] SUCCESS! Endpoint ${endpoint} works`);
+        
+        // Extract people/candidates from various response formats
+        const people = data.data || data.people || data.candidates || data.items || [];
+        
+        if (Array.isArray(people)) {
+          console.log(`[Enrichment:Clockwork] Found ${people.length} candidates in project`);
+          
+          // Transform to ClockworkExecutive format
+          // Filter out candidates without stable IDs for idempotency
+          const validCandidates = people
+            .filter((p: any) => {
+              const id = p.id || p.uuid || p.person_id;
+              if (!id) {
+                const name = p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim();
+                console.warn(`[Enrichment:Clockwork] Skipping candidate without stable ID: ${name}`);
+                return false;
+              }
+              return true;
+            })
+            .map((p: any) => ({
+              id: String(p.id || p.uuid || p.person_id),
+              name: p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+              title: p.title || p.position || p.current_title || '',
+              company: p.company || p.current_company || p.organization || '',
+              email: p.email || p.primary_email || '',
+              linkedin: p.linkedin || p.linkedin_url || '',
+              imageUrl: p.image_url || p.photo_url || p.avatar_url || ''
+            }));
+          
+          console.log(`[Enrichment:Clockwork] Returning ${validCandidates.length} candidates with stable IDs`);
+          return validCandidates;
+        }
+      } else {
+        console.log(`[Enrichment:Clockwork] Endpoint ${endpoint} returned ${response.status}`);
+      }
+    } catch (err) {
+      console.log(`[Enrichment:Clockwork] Endpoint ${endpoint} failed: ${err}`);
+    }
+  }
+  
+  console.warn('[Enrichment:Clockwork] All candidate endpoints failed - returning empty array');
   return [];
 }
 
@@ -838,6 +904,7 @@ export async function orchestrateEnrichmentMatching(
     timestamp: new Date(),
     totalLocalExecutives: localExecutives.length,
     totalClockworkExecutives: clockworkExecutives.length,
+    clockworkCandidates: clockworkExecutives,
     matches,
     summary: {
       confirmedCount: matches.confirmed.length,

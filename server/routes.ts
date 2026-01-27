@@ -740,5 +740,126 @@ export async function registerRoutes(
     }
   });
 
+  // ENRICHMENT LAYER: Import a Clockwork candidate into search results
+  // Creates both company (if needed) and executive from Clockwork project candidate
+  app.post("/api/enrichment/import-candidate", async (req, res) => {
+    try {
+      const { 
+        searchId, 
+        clockworkId, 
+        name, 
+        title, 
+        company: companyName, 
+        email, 
+        linkedin, 
+        imageUrl,
+        clockworkProjectId 
+      } = req.body;
+      
+      if (!searchId || !clockworkId || !name) {
+        return res.status(400).json({ 
+          error: "searchId, clockworkId, and name are required" 
+        });
+      }
+
+      const searchIdNum = parseInt(String(searchId));
+      if (isNaN(searchIdNum)) {
+        return res.status(400).json({ error: "Invalid searchId" });
+      }
+
+      // Check if search exists
+      const search = await storage.getSearchQuery(searchIdNum);
+      if (!search) {
+        return res.status(404).json({ error: "Search not found" });
+      }
+
+      // Find or create company for this candidate
+      // First, check if we already have a company with this name in this search
+      const companiesInSearch = await storage.getCompaniesBySearchQuery(searchIdNum);
+      let targetCompany = companiesInSearch.find(
+        c => c.name.toLowerCase() === (companyName || '').toLowerCase()
+      );
+
+      if (!targetCompany && companyName) {
+        // Create a new company for this Clockwork candidate
+        targetCompany = await storage.createCompanyManual({
+          name: companyName,
+          sector: 'From Clockwork',
+          region: 'Unknown',
+          country: 'Unknown',
+          latitude: '0',
+          longitude: '0',
+          revenue: '0',
+          employees: 0,
+          confidence: 5,
+          color: '#6366f1',
+          searchQueryId: searchIdNum
+        });
+        console.log(`[Import] Created new company: ${companyName} (ID: ${targetCompany.id})`);
+      } else if (!targetCompany) {
+        // Use first company in search as fallback
+        targetCompany = companiesInSearch[0];
+        if (!targetCompany) {
+          return res.status(400).json({ 
+            error: "No company available to attach executive. Run a search first." 
+          });
+        }
+      }
+
+      // Check if executive with this clockworkId already exists ANYWHERE in the search
+      // This ensures idempotency across all companies in the search
+      let existingExec = null;
+      for (const comp of companiesInSearch) {
+        const execs = await storage.getExecutivesByCompany(comp.id);
+        const found = execs.find(e => e.clockworkId === clockworkId);
+        if (found) {
+          existingExec = found;
+          break;
+        }
+      }
+      
+      if (existingExec) {
+        console.log(`[Import] Executive with clockworkId ${clockworkId} already exists (ID: ${existingExec.id})`);
+        return res.json({
+          success: true,
+          executive: existingExec,
+          company: targetCompany,
+          alreadyExists: true
+        });
+      }
+
+      // Create new executive from Clockwork data
+      const newExecutive = await storage.createExecutiveManual({
+        companyId: targetCompany.id,
+        name,
+        title: title || 'Executive',
+        email: email || null,
+        phone: null,
+        linkedin: linkedin || null,
+        profileUrl: null,
+        imageUrl: imageUrl || null,
+        source: 'clockwork',
+        confidence: 5,
+        enrichmentSource: 'clockwork',
+        enrichmentConfidence: 100,
+        enrichmentTimestamp: new Date(),
+        clockworkId,
+        clockworkProjectId
+      });
+
+      console.log(`[Import] Created executive from Clockwork: ${name} (ID: ${newExecutive.id})`);
+
+      res.json({
+        success: true,
+        executive: newExecutive,
+        company: targetCompany,
+        alreadyExists: false
+      });
+    } catch (error) {
+      console.error("Error importing Clockwork candidate:", error);
+      res.status(500).json({ error: "Failed to import Clockwork candidate" });
+    }
+  });
+
   return httpServer;
 }

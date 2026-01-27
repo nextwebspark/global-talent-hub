@@ -54,6 +54,7 @@ interface MatchReviewData {
   timestamp: string;
   totalLocalExecutives: number;
   totalClockworkExecutives: number;
+  clockworkCandidates?: ClockworkExecutive[];
   matches: {
     confirmed: ExecutiveMatchItem[];
     possible: ExecutiveMatchItem[];
@@ -86,7 +87,8 @@ export default function MatchReviewPanel({
     confirmed: true,
     possible: true,
     noMatch: false,
-    unmatchedClockwork: false
+    unmatchedClockwork: false,
+    clockworkCandidates: true
   });
 
   const toggleSection = (section: string) => {
@@ -218,11 +220,53 @@ export default function MatchReviewPanel({
 
   if (!matchData) return null;
 
-  // API returns { matches: { confirmed, possible, noMatch }, summary }
-  const { matches, summary } = matchData;
+  // API returns { matches: { confirmed, possible, noMatch }, summary, clockworkCandidates }
+  const { matches, summary, clockworkCandidates: rawCandidates } = matchData;
   const confirmed = matches?.confirmed || [];
   const possible = matches?.possible || [];
   const noMatch = matches?.noMatch || [];
+  const clockworkCandidates = rawCandidates || [];
+
+  const handleImportCandidate = async (candidate: ClockworkExecutive) => {
+    const itemKey = `import-${candidate.id}`;
+    if (processingItems.has(itemKey)) return;
+
+    setProcessingItems(prev => new Set(prev).add(itemKey));
+    try {
+      const response = await fetch('/api/enrichment/import-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchId: matchData.searchId,
+          clockworkId: candidate.id,
+          name: candidate.name,
+          title: candidate.title,
+          company: candidate.company,
+          email: candidate.email,
+          linkedin: candidate.linkedin,
+          imageUrl: candidate.imageUrl,
+          clockworkProjectId: matchData.clockworkProjectId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to import candidate');
+      }
+
+      setCompletedItems(prev => new Set(prev).add(itemKey));
+      toast.success(`Added ${candidate.name} to search results`);
+      onRefreshData?.();
+    } catch (error) {
+      console.error('Import failed:', error);
+      toast.error('Failed to import candidate');
+    } finally {
+      setProcessingItems(prev => {
+        const next = new Set(prev);
+        next.delete(itemKey);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="match-review-panel">
@@ -240,7 +284,11 @@ export default function MatchReviewPanel({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-800">
+              <div className="text-2xl font-bold text-blue-600">{clockworkCandidates.length}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">Clockwork Candidates</div>
+            </div>
             <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
               <div className="text-2xl font-bold text-green-600">{summary.confirmedCount}</div>
               <div className="text-sm text-gray-600 dark:text-gray-400">Confirmed</div>
@@ -399,6 +447,77 @@ export default function MatchReviewPanel({
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {clockworkCandidates.length > 0 && (
+            <div className="border rounded-lg overflow-hidden border-blue-200 dark:border-blue-800">
+              <button
+                onClick={() => toggleSection('clockworkCandidates')}
+                className="w-full p-3 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-between"
+                data-testid="toggle-clockwork-candidates-section"
+              >
+                <div className="flex items-center gap-2">
+                  <UserPlus className="h-5 w-5 text-blue-600" />
+                  <span className="font-medium">Clockwork Project Candidates ({clockworkCandidates.length})</span>
+                </div>
+                {expandedSections.clockworkCandidates ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+              </button>
+              {expandedSections.clockworkCandidates && (
+                <div className="p-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    These candidates are from the Clockwork project. Click "Add to Search" to include them in your results.
+                  </p>
+                  <div className="space-y-2">
+                    {clockworkCandidates.map((candidate: ClockworkExecutive) => {
+                      const itemKey = `import-${candidate.id}`;
+                      const isProcessing = processingItems.has(itemKey);
+                      const isCompleted = completedItems.has(itemKey);
+                      
+                      return (
+                        <div 
+                          key={candidate.id} 
+                          className={`p-3 border rounded-lg ${isCompleted ? 'bg-green-50 dark:bg-green-900/10' : 'bg-white dark:bg-gray-800'}`}
+                          data-testid={`clockwork-candidate-${candidate.id}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-medium">{candidate.name}</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">{candidate.title || 'No title'}</p>
+                              <p className="text-xs text-gray-500">{candidate.company || 'No company'}</p>
+                              {candidate.email && (
+                                <p className="text-xs text-blue-600">{candidate.email}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              {!isCompleted && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleImportCandidate(candidate)}
+                                  disabled={isProcessing}
+                                  data-testid={`btn-import-${candidate.id}`}
+                                >
+                                  {isProcessing ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <UserPlus className="h-4 w-4 mr-1" />
+                                      Add to Search
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                              {isCompleted && (
+                                <Badge className="bg-green-100 text-green-800">Added</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>

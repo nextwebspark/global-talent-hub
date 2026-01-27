@@ -84,7 +84,7 @@ export default function MatchReviewPanel({
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const handleConfirmEnrichment = async (match: MatchResult) => {
+  const handleConfirmEnrichment = async (match: MatchResult, clockworkProjectId?: string) => {
     const itemKey = `confirm-${match.localExecutive.id}`;
     if (processingItems.has(itemKey)) return;
 
@@ -103,7 +103,8 @@ export default function MatchReviewPanel({
             imageUrl: match.clockworkExecutive.imageUrl
           },
           confidence: match.overallConfidence,
-          clockworkId: match.clockworkExecutive.id
+          clockworkId: match.clockworkExecutive.id,
+          clockworkProjectId
         })
       });
 
@@ -111,7 +112,14 @@ export default function MatchReviewPanel({
       
       const result = await response.json();
       setCompletedItems(prev => new Set(prev).add(itemKey));
-      toast.success(`Enriched ${result.enrichedFields.length} fields for ${match.localExecutive.name}`);
+      
+      if (result.alreadyEnriched) {
+        toast.info(`${match.localExecutive.name} was already enriched with this profile`);
+      } else if (result.enrichedFields.length > 0) {
+        toast.success(`Enriched ${result.enrichedFields.length} fields for ${match.localExecutive.name}`);
+      } else {
+        toast.info(`No new fields to enrich for ${match.localExecutive.name}`);
+      }
       onRefreshData?.();
     } catch (error) {
       toast.error('Failed to confirm enrichment');
@@ -131,7 +139,7 @@ export default function MatchReviewPanel({
     toast.info(`Skipped ${match.localExecutive.name}`);
   };
 
-  const handleCreateFromClockwork = async (clockworkExec: ClockworkExecutive, companyId: number) => {
+  const handleCreateFromClockwork = async (clockworkExec: ClockworkExecutive, companyId: number, clockworkProjectId?: string) => {
     const itemKey = `create-${clockworkExec.id}`;
     if (processingItems.has(itemKey)) return;
 
@@ -152,14 +160,21 @@ export default function MatchReviewPanel({
             imageUrl: clockworkExec.imageUrl
           },
           confidence: 80,
-          clockworkId: clockworkExec.id
+          clockworkId: clockworkExec.id,
+          clockworkProjectId
         })
       });
 
       if (!response.ok) throw new Error('Failed to create executive');
       
+      const result = await response.json();
       setCompletedItems(prev => new Set(prev).add(itemKey));
-      toast.success(`Created executive ${clockworkExec.name} from Clockwork`);
+      
+      if (result.alreadyExists) {
+        toast.info(`${clockworkExec.name} was already imported from Clockwork`);
+      } else {
+        toast.success(`Created executive ${clockworkExec.name} from Clockwork`);
+      }
       onRefreshData?.();
     } catch (error) {
       toast.error('Failed to create executive from Clockwork');
@@ -282,7 +297,7 @@ export default function MatchReviewPanel({
                                 </Button>
                                 <Button
                                   size="sm"
-                                  onClick={() => handleConfirmEnrichment(match)}
+                                  onClick={() => handleConfirmEnrichment(match, matchData?.clockworkProjectId)}
                                   disabled={isProcessing}
                                   data-testid={`btn-confirm-${match.localExecutive.id}`}
                                 >
@@ -358,7 +373,7 @@ export default function MatchReviewPanel({
                                 </Button>
                                 <Button
                                   size="sm"
-                                  onClick={() => handleConfirmEnrichment(match)}
+                                  onClick={() => handleConfirmEnrichment(match, matchData?.clockworkProjectId)}
                                   disabled={isProcessing}
                                   data-testid={`btn-confirm-${match.localExecutive.id}`}
                                 >
@@ -419,7 +434,7 @@ export default function MatchReviewPanel({
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleCreateFromClockwork(exec, noMatch.localExecutives[0]?.companyId || 0)}
+                                onClick={() => handleCreateFromClockwork(exec, noMatch.localExecutives[0]?.companyId || 0, matchData?.clockworkProjectId)}
                                 disabled={isProcessing || !noMatch.localExecutives[0]?.companyId}
                                 data-testid={`btn-create-${exec.id}`}
                               >

@@ -579,7 +579,7 @@ export async function registerRoutes(
   // User-triggered only - enriches empty fields and stores metadata
   app.post("/api/enrichment/confirm", async (req, res) => {
     try {
-      const { executiveId, clockworkData, confidence, clockworkId } = req.body;
+      const { executiveId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
       
       if (!executiveId || !clockworkData) {
         return res.status(400).json({ 
@@ -598,7 +598,8 @@ export async function registerRoutes(
       }
 
       // Enrich empty fields with Clockwork data and store metadata
-      const { updated, enrichedFields } = await storage.enrichExecutiveEmptyFields(
+      // This is IDEMPOTENT: re-confirming same clockworkId returns existing state
+      const { updated, enrichedFields, alreadyEnriched } = await storage.enrichExecutiveEmptyFields(
         execIdNum,
         {
           email: clockworkData.email,
@@ -610,7 +611,8 @@ export async function registerRoutes(
         {
           source: 'clockwork',
           confidence: confidence || 0,
-          clockworkId: clockworkId
+          clockworkId: clockworkId,
+          clockworkProjectId: clockworkProjectId
         }
       );
 
@@ -618,10 +620,12 @@ export async function registerRoutes(
         success: true,
         executive: updated,
         enrichedFields,
+        alreadyEnriched,
         metadata: {
           source: 'clockwork',
           confidence,
           clockworkId,
+          clockworkProjectId,
           timestamp: new Date().toISOString()
         }
       });
@@ -633,9 +637,10 @@ export async function registerRoutes(
 
   // ENRICHMENT LAYER: Create new executive from Clockwork data
   // User-triggered only - creates a new executive when no local match exists
+  // IDEMPOTENT: If executive with same clockworkId already exists, returns existing
   app.post("/api/enrichment/create-from-clockwork", async (req, res) => {
     try {
-      const { companyId, clockworkData, confidence, clockworkId } = req.body;
+      const { companyId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
       
       if (!companyId || !clockworkData || !clockworkId) {
         return res.status(400).json({ 
@@ -654,7 +659,8 @@ export async function registerRoutes(
       }
 
       // Create new executive from Clockwork data
-      const newExecutive = await storage.createExecutiveFromClockwork(
+      // This is IDEMPOTENT: if clockworkId already exists, returns existing executive
+      const { executive: newExecutive, alreadyExists } = await storage.createExecutiveFromClockwork(
         {
           companyId: companyIdNum,
           name: clockworkData.name,
@@ -668,17 +674,20 @@ export async function registerRoutes(
         },
         {
           confidence: confidence || 0,
-          clockworkId
+          clockworkId,
+          clockworkProjectId
         }
       );
 
       res.json({
         success: true,
         executive: newExecutive,
+        alreadyExists,
         metadata: {
           source: 'clockwork',
           confidence,
           clockworkId,
+          clockworkProjectId,
           timestamp: new Date().toISOString()
         }
       });

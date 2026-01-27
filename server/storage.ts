@@ -53,8 +53,9 @@ export interface IStorage {
   // Layer-aware methods with ownership enforcement
   createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive>;
   createExecutiveManual(executive: InsertExecutive): Promise<Executive>;
-  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>, metadata?: { source: string; confidence: number; clockworkId?: string }): Promise<{ updated: Executive; enrichedFields: string[] }>;
-  createExecutiveFromClockwork(executive: InsertExecutive, metadata: { confidence: number; clockworkId: string }): Promise<Executive>;
+  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>, metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }>;
+  createExecutiveFromClockwork(executive: InsertExecutive, metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }): Promise<{ executive: Executive; alreadyExists: boolean }>;
+  checkExecutiveClockworkEnrichment(executiveId: number, clockworkId: string): Promise<boolean>;
   updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
   
   // Company layer-aware methods
@@ -230,16 +231,29 @@ export class DatabaseStorage implements IStorage {
    * - Must never overwrite existing data
    * - Must never delete executives
    * - Returns list of actually enriched fields
-   * - Stores enrichment metadata (source, confidence, timestamp, clockworkId)
+   * - Stores enrichment metadata (source, confidence, timestamp, clockworkId, clockworkProjectId)
+   * - IDEMPOTENT: If executive already enriched with same clockworkId, returns existing state
    */
   async enrichExecutiveEmptyFields(
     id: number, 
     data: Partial<InsertExecutive>,
-    metadata?: { source: string; confidence: number; clockworkId?: string }
-  ): Promise<{ updated: Executive; enrichedFields: string[] }> {
+    metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }
+  ): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }> {
     const existing = await this.getExecutive(id);
     if (!existing) {
       throw new Error(`Executive ${id} not found for enrichment`);
+    }
+
+    // IDEMPOTENCY CHECK: If already enriched with same clockworkId, return early
+    if (metadata?.clockworkId && existing.clockworkId === metadata.clockworkId) {
+      console.log(`[Storage:Enrichment] Executive ${id} already enriched with clockworkId ${metadata.clockworkId} - skipping (idempotent)`);
+      return { updated: existing, enrichedFields: [], alreadyEnriched: true };
+    }
+
+    // SAFEGUARD: If already enriched with a different clockworkId, prevent overwrite
+    if (metadata?.clockworkId && existing.clockworkId && existing.clockworkId !== metadata.clockworkId) {
+      console.log(`[Storage:Enrichment] Executive ${id} already enriched with different clockworkId ${existing.clockworkId} - preventing overwrite`);
+      return { updated: existing, enrichedFields: [], alreadyEnriched: true };
     }
 
     const enrichedFields: string[] = [];
@@ -265,7 +279,7 @@ export class DatabaseStorage implements IStorage {
 
     if (enrichedFields.length === 0 && !metadata) {
       console.log(`[Storage:Enrichment] No empty fields to enrich for executive ${id}`);
-      return { updated: existing, enrichedFields: [] };
+      return { updated: existing, enrichedFields: [], alreadyEnriched: false };
     }
 
     // Store enrichment metadata if provided
@@ -276,6 +290,9 @@ export class DatabaseStorage implements IStorage {
       if (metadata.clockworkId) {
         (updateData as any).clockworkId = metadata.clockworkId;
       }
+      if (metadata.clockworkProjectId) {
+        (updateData as any).clockworkProjectId = metadata.clockworkProjectId;
+      }
     }
 
     const [updated] = await db
@@ -285,7 +302,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for executive ${id}: ${enrichedFields.join(', ')}`);
-    return { updated, enrichedFields };
+    return { updated, enrichedFields, alreadyEnriched: false };
   }
 
   /**
@@ -293,11 +310,23 @@ export class DatabaseStorage implements IStorage {
    * - Used when user explicitly confirms creating a new executive from Clockwork match
    * - Source is marked as 'clockwork'
    * - Stores enrichment metadata
+   * - IDEMPOTENT: If executive with same clockworkId already exists in company, returns existing
    */
   async createExecutiveFromClockwork(
     executive: InsertExecutive,
-    metadata: { confidence: number; clockworkId: string }
-  ): Promise<Executive> {
+    metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }
+  ): Promise<{ executive: Executive; alreadyExists: boolean }> {
+    // IDEMPOTENCY CHECK: Check if executive with same clockworkId already exists in the company
+    const existing = await db.select()
+      .from(executives)
+      .where(eq(executives.clockworkId, metadata.clockworkId))
+      .limit(1);
+    
+    if (existing.length > 0) {
+      console.log(`[Storage:Enrichment] Executive with clockworkId ${metadata.clockworkId} already exists - returning existing (idempotent)`);
+      return { executive: existing[0], alreadyExists: true };
+    }
+
     console.log(`[Storage:Enrichment] Creating executive from Clockwork: ${executive.name}`);
     const [newExecutive] = await db.insert(executives).values({
       ...executive,
@@ -305,9 +334,18 @@ export class DatabaseStorage implements IStorage {
       enrichmentSource: 'clockwork',
       enrichmentConfidence: metadata.confidence,
       enrichmentTimestamp: sql`CURRENT_TIMESTAMP`,
-      clockworkId: metadata.clockworkId
+      clockworkId: metadata.clockworkId,
+      clockworkProjectId: metadata.clockworkProjectId || null
     }).returning();
-    return newExecutive;
+    return { executive: newExecutive, alreadyExists: false };
+  }
+
+  /**
+   * Check if an executive has already been enriched with a specific Clockwork profile
+   */
+  async checkExecutiveClockworkEnrichment(executiveId: number, clockworkId: string): Promise<boolean> {
+    const exec = await this.getExecutive(executiveId);
+    return exec?.clockworkId === clockworkId;
   }
 
   /**

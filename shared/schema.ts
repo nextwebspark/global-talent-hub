@@ -45,6 +45,7 @@ export const executives = pgTable("executives", {
   enrichmentConfidence: integer("enrichment_confidence"),
   enrichmentTimestamp: timestamp("enrichment_timestamp"),
   clockworkId: text("clockwork_id"),
+  clockworkProjectId: text("clockwork_project_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

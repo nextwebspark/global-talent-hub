@@ -45,35 +45,212 @@ export function getAvailableSources(): EnrichmentSource[] {
 }
 
 /**
- * Clockwork Project interface
+ * Clockwork Project interface - reflects real Clockwork project data
  */
 export interface ClockworkProject {
   id: string;
   name: string;
-  description?: string;
-  executiveCount: number;
+  clientCompany?: string;
+  status: 'open' | 'closed' | 'retained' | 'special' | 'unknown';
+  type?: string;
+  candidateCount?: number;
+  restricted?: boolean;
+  restrictionReason?: string;
 }
 
 /**
- * Fetch available Clockwork projects (READ-ONLY)
- * This is a placeholder until Clockwork API is integrated.
+ * Raw API response from Clockwork projects endpoint
+ */
+interface ClockworkAPIProjectResponse {
+  id: number | string;
+  name: string;
+  client?: { name?: string; company_name?: string };
+  client_name?: string;
+  status?: string;
+  project_type?: string;
+  type?: string;
+  candidate_count?: number;
+  candidates_count?: number;
+  restricted?: boolean;
+}
+
+/**
+ * Clockwork API pagination response
+ */
+interface ClockworkAPIPaginatedResponse {
+  data?: ClockworkAPIProjectResponse[];
+  projects?: ClockworkAPIProjectResponse[];
+  items?: ClockworkAPIProjectResponse[];
+  meta?: {
+    current_page?: number;
+    total_pages?: number;
+    total_count?: number;
+    per_page?: number;
+  };
+  pagination?: {
+    page?: number;
+    pages?: number;
+    total?: number;
+    per_page?: number;
+  };
+  page?: number;
+  total_pages?: number;
+  total?: number;
+}
+
+/**
+ * Get Clockwork API configuration
+ */
+function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; baseUrl: string } | null {
+  const apiKey = process.env.CLOCKWORK_API_KEY;
+  const apiSecret = process.env.CLOCKWORK_API_SECRET;
+  const firmKey = process.env.CLOCKWORK_FIRM_KEY;
+  
+  if (!apiKey || !apiSecret || !firmKey) {
+    console.warn('[Enrichment:Clockwork] Missing API credentials - CLOCKWORK_API_KEY, CLOCKWORK_API_SECRET, or CLOCKWORK_FIRM_KEY not set');
+    return null;
+  }
+  
+  const baseUrl = process.env.CLOCKWORK_API_URL || 'https://api.clockworkrecruiting.com/v1';
+  
+  return { apiKey, apiSecret, firmKey, baseUrl };
+}
+
+/**
+ * Normalize project status to standard values
+ */
+function normalizeProjectStatus(status?: string): ClockworkProject['status'] {
+  if (!status) return 'unknown';
+  const s = status.toLowerCase();
+  if (s.includes('open') || s === 'active') return 'open';
+  if (s.includes('close') || s === 'completed') return 'closed';
+  if (s.includes('retain')) return 'retained';
+  if (s.includes('special')) return 'special';
+  return 'unknown';
+}
+
+/**
+ * Transform raw API project to our ClockworkProject interface
+ */
+function transformAPIProject(raw: ClockworkAPIProjectResponse): ClockworkProject {
+  return {
+    id: String(raw.id),
+    name: raw.name,
+    clientCompany: raw.client?.company_name || raw.client?.name || raw.client_name,
+    status: normalizeProjectStatus(raw.status),
+    type: raw.project_type || raw.type,
+    candidateCount: raw.candidate_count || raw.candidates_count,
+    restricted: raw.restricted,
+    restrictionReason: raw.restricted ? 'Insufficient permissions' : undefined
+  };
+}
+
+/**
+ * Fetch ALL projects from Clockwork API with pagination (READ-ONLY)
+ * 
+ * CRITICAL: This function fetches ALL pages to ensure no projects are hidden.
+ * Includes closed, retained, and special projects.
  * IMPORTANT: All Clockwork API calls are strictly read-only.
  */
 export async function getClockworkProjects(): Promise<ClockworkProject[]> {
-  console.log('[Enrichment:Clockwork] Fetching available projects (placeholder)');
+  const config = getClockworkConfig();
   
-  // PLACEHOLDER: Return demo projects until API integration
-  // In production, this would call:
-  // const response = await fetch('https://api.clockwork.com/projects', {
-  //   headers: { 'Authorization': `Bearer ${process.env.CLOCKWORK_API_KEY}` }
-  // });
-  // return response.json();
+  if (!config) {
+    console.error('[Enrichment:Clockwork] Cannot fetch projects - API credentials not configured');
+    console.error('[Enrichment:Clockwork] Required secrets: CLOCKWORK_API_KEY, CLOCKWORK_API_SECRET, CLOCKWORK_FIRM_KEY');
+    return [];
+  }
   
-  return [
-    { id: 'demo-project', name: 'Demo Project', description: 'Sample Clockwork project for testing', executiveCount: 0 },
-    { id: 'uae-executives', name: 'UAE Executives', description: 'Middle East executive database', executiveCount: 0 },
-    { id: 'global-ceos', name: 'Global CEOs', description: 'Global CEO and C-suite database', executiveCount: 0 },
-  ];
+  console.log('[Enrichment:Clockwork] Fetching projects from Clockwork API...');
+  
+  const allProjects: ClockworkProject[] = [];
+  let currentPage = 1;
+  let hasMorePages = true;
+  const maxPages = 100; // Safety limit
+  
+  try {
+    while (hasMorePages && currentPage <= maxPages) {
+      console.log(`[Enrichment:Clockwork] Fetching page ${currentPage}...`);
+      
+      // Build URL with pagination - include all statuses
+      const url = new URL(`${config.baseUrl}/projects`);
+      url.searchParams.set('page', String(currentPage));
+      url.searchParams.set('per_page', '100'); // Request max per page
+      // Include all project statuses (open, closed, retained, special)
+      url.searchParams.set('include_closed', 'true');
+      url.searchParams.set('include_all_statuses', 'true');
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'X-API-Key': config.apiKey,
+          'X-API-Secret': config.apiSecret,
+          'X-Firm-Key': config.firmKey,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Enrichment:Clockwork] API error (${response.status}): ${errorText}`);
+        throw new Error(`Clockwork API returned ${response.status}: ${errorText}`);
+      }
+      
+      const data: ClockworkAPIPaginatedResponse = await response.json();
+      
+      // Extract projects from various possible response formats
+      const projects = data.data || data.projects || data.items || [];
+      
+      if (Array.isArray(projects)) {
+        const transformed = projects.map(transformAPIProject);
+        allProjects.push(...transformed);
+        console.log(`[Enrichment:Clockwork] Page ${currentPage}: Found ${projects.length} projects`);
+      }
+      
+      // Check for more pages using various pagination formats
+      const totalPages = data.meta?.total_pages || data.pagination?.pages || data.total_pages;
+      const totalCount = data.meta?.total_count || data.pagination?.total || data.total;
+      
+      if (totalPages !== undefined) {
+        hasMorePages = currentPage < totalPages;
+      } else if (totalCount !== undefined) {
+        // Calculate if more pages based on total count
+        const perPage = data.meta?.per_page || data.pagination?.per_page || 100;
+        hasMorePages = allProjects.length < totalCount;
+      } else {
+        // If no pagination info, check if we got a full page
+        hasMorePages = projects.length >= 100;
+      }
+      
+      currentPage++;
+    }
+    
+    // Log summary
+    console.log(`[Enrichment:Clockwork] Fetched ${allProjects.length} total projects across ${currentPage - 1} page(s)`);
+    
+    // Count by status for debugging
+    const statusCounts = allProjects.reduce((acc, p) => {
+      acc[p.status] = (acc[p.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    console.log(`[Enrichment:Clockwork] Project status breakdown:`, statusCounts);
+    
+    // Warning if very few projects
+    if (allProjects.length === 0) {
+      console.warn('[Enrichment:Clockwork] WARNING: Zero projects returned from API - check credentials and permissions');
+    } else if (allProjects.length < 5) {
+      console.warn(`[Enrichment:Clockwork] WARNING: Only ${allProjects.length} projects returned - this may indicate pagination or permission issues`);
+    }
+    
+    return allProjects;
+    
+  } catch (error) {
+    console.error('[Enrichment:Clockwork] Failed to fetch projects:', error);
+    console.error('[Enrichment:Clockwork] Returning empty array - no demo/fallback data');
+    return [];
+  }
 }
 
 export function isEnrichmentEnabled(sourceType: string): boolean {

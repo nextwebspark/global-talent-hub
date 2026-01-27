@@ -3,13 +3,19 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-import { Loader2, X, Database, Check } from 'lucide-react';
+import { Loader2, X, Database, Check, Lock, AlertCircle } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 
 interface ClockworkProject {
   id: string;
   name: string;
-  description?: string;
-  executiveCount: number;
+  clientCompany?: string;
+  status: 'open' | 'closed' | 'retained' | 'special' | 'unknown';
+  type?: string;
+  candidateCount?: number;
+  restricted?: boolean;
+  restrictionReason?: string;
 }
 
 interface ClockworkProjectSelectorProps {
@@ -17,6 +23,24 @@ interface ClockworkProjectSelectorProps {
   onClose: () => void;
   onSelect: (projectId: string) => void;
   currentProjectId?: string | null;
+}
+
+function StatusBadge({ status }: { status: ClockworkProject['status'] }) {
+  const config = {
+    open: { label: 'Open', className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
+    closed: { label: 'Closed', className: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' },
+    retained: { label: 'Retained', className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' },
+    special: { label: 'Special', className: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200' },
+    unknown: { label: 'Unknown', className: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' }
+  };
+  
+  const { label, className } = config[status] || config.unknown;
+  
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${className}`}>
+      {label}
+    </span>
+  );
 }
 
 export default function ClockworkProjectSelector({
@@ -96,37 +120,74 @@ export default function ClockworkProjectSelector({
             </div>
           ) : projects.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              No Clockwork projects available
+              <AlertCircle className="h-8 w-8 mx-auto mb-2 text-amber-500" />
+              <p>No Clockwork projects available</p>
+              <p className="text-xs mt-2">Check your API credentials or permissions</p>
             </div>
           ) : (
-            <RadioGroup value={selectedId || ''} onValueChange={setSelectedId} className="space-y-2">
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                    selectedId === project.id 
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
-                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                  onClick={() => setSelectedId(project.id)}
-                  data-testid={`project-option-${project.id}`}
-                >
-                  <RadioGroupItem value={project.id} id={project.id} className="mr-3" />
-                  <Label htmlFor={project.id} className="flex-1 cursor-pointer">
-                    <div className="font-medium">{project.name}</div>
-                    {project.description && (
-                      <div className="text-sm text-gray-500">{project.description}</div>
+            <TooltipProvider>
+              <RadioGroup value={selectedId || ''} onValueChange={(val) => {
+                const proj = projects.find(p => p.id === val);
+                if (!proj?.restricted) setSelectedId(val);
+              }} className="space-y-2 max-h-[400px] overflow-y-auto">
+                {projects.map((project) => (
+                  <Tooltip key={project.id}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className={`flex items-start p-3 border rounded-lg transition-colors ${
+                          project.restricted 
+                            ? 'border-gray-300 bg-gray-100 dark:bg-gray-800 opacity-60 cursor-not-allowed'
+                            : selectedId === project.id 
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 cursor-pointer' 
+                              : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer'
+                        }`}
+                        onClick={() => !project.restricted && setSelectedId(project.id)}
+                        data-testid={`project-option-${project.id}`}
+                      >
+                        <RadioGroupItem 
+                          value={project.id} 
+                          id={project.id} 
+                          className="mr-3 mt-1" 
+                          disabled={project.restricted}
+                        />
+                        <Label htmlFor={project.id} className="flex-1 cursor-pointer">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">{project.name}</span>
+                            <StatusBadge status={project.status} />
+                            {project.type && (
+                              <Badge variant="outline" className="text-xs">
+                                {project.type}
+                              </Badge>
+                            )}
+                            {project.restricted && (
+                              <Lock className="h-3 w-3 text-gray-400" />
+                            )}
+                          </div>
+                          {project.clientCompany && (
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                              {project.clientCompany}
+                            </div>
+                          )}
+                          {project.candidateCount !== undefined && project.candidateCount > 0 && (
+                            <div className="text-xs text-gray-400 mt-1">
+                              {project.candidateCount} candidates
+                            </div>
+                          )}
+                        </Label>
+                        {selectedId === project.id && !project.restricted && (
+                          <Check className="h-4 w-4 text-blue-600 mt-1" />
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    {project.restricted && (
+                      <TooltipContent>
+                        <p>{project.restrictionReason || 'Insufficient permissions for this project'}</p>
+                      </TooltipContent>
                     )}
-                    <div className="text-xs text-gray-400 mt-1">
-                      {project.executiveCount} executives
-                    </div>
-                  </Label>
-                  {selectedId === project.id && (
-                    <Check className="h-4 w-4 text-blue-600" />
-                  )}
-                </div>
-              ))}
-            </RadioGroup>
+                  </Tooltip>
+                ))}
+              </RadioGroup>
+            </TooltipProvider>
           )}
         </div>
 

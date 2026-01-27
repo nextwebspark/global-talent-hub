@@ -137,6 +137,13 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(executives).where(eq(executives.companyId, companyId));
   }
 
+  async getCompanyWithExecutives(id: number): Promise<(Company & { executives: Executive[] }) | undefined> {
+    const company = await this.getCompany(id);
+    if (!company) return undefined;
+    const companyExecutives = await this.getExecutivesByCompany(id);
+    return { ...company, executives: companyExecutives };
+  }
+
   async getExecutive(id: number): Promise<Executive | undefined> {
     const [executive] = await db.select().from(executives).where(eq(executives.id, id));
     return executive;

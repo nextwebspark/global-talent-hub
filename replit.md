@@ -51,16 +51,40 @@ Preferred communication style: Simple, everyday language.
 │   ├── src/
 │   │   ├── components/  # UI components (shadcn + custom)
 │   │   ├── pages/       # Route pages (Landing, Dashboard)
-│   │   ├── lib/         # API hooks, store, utilities
+│   │   ├── lib/         # API hooks, store, utilities, orchestration
 │   │   └── hooks/       # Custom React hooks
 ├── server/           # Express backend
-│   ├── routes.ts     # API route definitions
-│   ├── storage.ts    # Database access layer
-│   └── db.ts         # Database connection
+│   ├── routes.ts     # API route orchestration (thin layer)
+│   ├── storage.ts    # Database access layer (Persistence Layer)
+│   ├── db.ts         # Database connection
+│   └── services/     # Service layer modules
+│       ├── discovery.ts    # Discovery Layer: LLM search logic
+│       └── enrichment.ts   # Enrichment Layer: Clockwork integration (placeholder)
 ├── shared/           # Shared code between client/server
 │   └── schema.ts     # Drizzle database schema
 └── migrations/       # Database migrations (drizzle-kit)
 ```
+
+### Layered Architecture (CRITICAL - Maintain Separation)
+The backend follows a clean layered architecture:
+
+1. **Discovery Layer** (`server/services/discovery.ts`): 
+   - All LLM-related search logic (OpenAI/OpenRouter clients, model management, query parsing)
+   - Runs ONCE per search, never re-runs unless user explicitly re-searches
+   - Contains: parseSearchQuery, discoverCompaniesAndExecutives, fetchAvailableModels
+
+2. **Enrichment Layer** (`server/services/enrichment.ts`):
+   - Placeholder for Clockwork API integration
+   - Runs ONLY when user explicitly triggers enrichment
+   - NEVER auto-runs, NEVER replaces LLM-discovered data
+
+3. **Persistence Layer** (`server/storage.ts`):
+   - Database is single source of truth
+   - All edits persist permanently via Drizzle ORM
+
+4. **Routes Layer** (`server/routes.ts`):
+   - Thin orchestration layer that coordinates services
+   - No business logic - delegates to discovery/enrichment/storage
 
 ### AI Research Engine
 - Server-side AI processing using OpenAI for natural language parsing

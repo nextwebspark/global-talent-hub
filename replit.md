@@ -91,10 +91,15 @@ The backend follows a clean layered architecture with strict ownership rules:
    - **Clockwork API Behavior** (as of Jan 2026):
      - Endpoint: `/people?project_id={id}` with pagination (page, per_page)
      - API returns only 10 items per page despite `per_page=100` request
-     - Rate limiting: 429 error after ~30 rapid requests; use 100ms delay between pages
-     - **Data Limitation**: `/people` endpoint returns only basic person data (id, name, biography)
-     - Title/company NOT provided inline; would require separate position API calls
-     - Matching works on name only; enrichment can still populate email/linkedin fields
+     - Rate limiting: 100-150ms delays between requests to avoid 429 errors
+     - **Position Fetching**: `/people/{person_id}/positions` returns `personPositions` array with title and nested company
+     - Position data includes: `title`, `company.name`, `isCurrent`, `companyId`
+     - Deduplication by Clockwork ID handles API returning same records across pages
+   - **Candidate Import with AI Research**:
+     - When importing a Clockwork candidate, if their company doesn't exist in search results:
+     - `researchCompanyDetails(companyName)` uses AI to find real company data
+     - Researches: revenue (USD), location (GPS coordinates), employees, sector, street address
+     - Creates properly researched company instead of placeholder data
 
 3. **Match Review UI** (`client/src/components/panels/MatchReviewPanel.tsx`):
    - Displays orchestration results in confirmed/possible/no_match sections

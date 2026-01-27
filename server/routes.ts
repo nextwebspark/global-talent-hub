@@ -13,7 +13,8 @@ import {
   enrichExecutive, 
   enrichCompany, 
   getAvailableSources,
-  orchestrateEnrichmentMatching 
+  orchestrateEnrichmentMatching,
+  researchCompanyDetails
 } from "./services/enrichment";
 
 export async function registerRoutes(
@@ -831,21 +832,28 @@ export async function registerRoutes(
       );
 
       if (!targetCompany && companyName) {
-        // Create a new company for this Clockwork candidate
+        // Research company details using AI before creating
+        console.log(`[Import] Researching company details for: ${companyName}`);
+        const researchedData = await researchCompanyDetails(companyName);
+        
+        // Create a new company with researched data
         targetCompany = await storage.createCompanyManual({
-          name: companyName,
-          sector: 'From Clockwork',
-          region: 'Unknown',
-          country: 'Unknown',
-          latitude: '0',
-          longitude: '0',
-          revenue: '0',
-          employees: 0,
-          confidence: 5,
+          name: researchedData.name,
+          sector: researchedData.sector,
+          region: researchedData.region,
+          country: researchedData.country,
+          streetAddress: researchedData.streetAddress || null,
+          latitude: String(researchedData.latitude),
+          longitude: String(researchedData.longitude),
+          revenue: String(researchedData.revenue),
+          revenueSource: researchedData.revenueSource,
+          employees: researchedData.employees,
+          employeesSource: researchedData.employeesSource,
+          confidence: researchedData.confidence,
           color: '#6366f1',
           searchQueryId: searchIdNum
         });
-        console.log(`[Import] Created new company: ${companyName} (ID: ${targetCompany.id})`);
+        console.log(`[Import] Created researched company: ${researchedData.name} (ID: ${targetCompany.id}, Revenue: $${researchedData.revenue}, Location: ${researchedData.country})`);
       } else if (!targetCompany) {
         // Use first company in search as fallback
         targetCompany = companiesInSearch[0];

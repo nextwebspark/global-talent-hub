@@ -6,6 +6,7 @@ import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plu
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
+import L from 'leaflet';
 
 interface CountryData {
   name: string;
@@ -247,7 +248,39 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         next.delete(countryName);
       } else {
         next.add(countryName);
+        
+        // Pan and zoom map to this country
+        const country = countriesData.find(c => c.name === countryName);
+        if (country && country.companies.length > 0) {
+          const map = (window as any).leafletMap;
+          if (map) {
+            const validCoords = country.companies
+              .filter(c => c.lat !== 0 || c.lng !== 0)
+              .map(c => [c.lat, c.lng] as [number, number]);
+              
+            if (validCoords.length > 0) {
+              const bounds = L.latLngBounds(validCoords);
+              map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8, animate: true });
+            }
+          }
+        }
       }
+      
+      // If no countries are expanded, zoom out to fit all companies
+      if (next.size === 0) {
+        const map = (window as any).leafletMap;
+        if (map && companies.length > 0) {
+          const validCoords = companies
+            .filter(c => c.lat !== 0 || c.lng !== 0)
+            .map(c => [c.lat, c.lng] as [number, number]);
+            
+          if (validCoords.length > 0) {
+            const bounds = L.latLngBounds(validCoords);
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+          }
+        }
+      }
+      
       return next;
     });
   };

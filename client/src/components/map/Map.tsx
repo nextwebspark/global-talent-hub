@@ -27,6 +27,9 @@ function MapUpdater() {
   const hasFitBounds = useRef(false);
 
   useEffect(() => {
+    // Expose map to window for panel access
+    (window as any).leafletMap = map;
+    
     // Only fit bounds once when companies are loaded to avoid jumping around during drag
     const validCompanies = companies.filter(c => isValidCoordinate(c.lat, c.lng));
     if (validCompanies.length > 0 && !hasFitBounds.current) {
@@ -196,7 +199,7 @@ export default function MapComponent() {
 
       {/* Logo in bottom right */}
       <div className="absolute bottom-4 right-4 z-[400]">
-        <img src={logoImage} alt="ALAC Partners" className="h-24 w-auto opacity-40 mix-blend-multiply" />
+        <img src={logoImage} alt="ALAC Partners" className="h-48 w-auto opacity-30 mix-blend-multiply" />
       </div>
 
       {/* Color Picker Overlay */}

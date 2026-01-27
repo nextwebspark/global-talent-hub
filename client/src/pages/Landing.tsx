@@ -133,7 +133,7 @@ export default function Landing() {
         className="z-10 w-full max-w-2xl px-6 text-center"
       >
         <div className="mb-8 flex justify-center">
-          <img src={logoImage} alt="ALAC Partners" className="h-24 w-auto mix-blend-multiply dark:mix-blend-screen dark:invert" />
+          <img src={logoImage} alt="ALAC Partners" className="h-28 w-auto mix-blend-multiply" />
         </div>
         
         <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-foreground mb-4">

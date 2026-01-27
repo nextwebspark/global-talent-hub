@@ -766,6 +766,59 @@ interface ClockworkFetchResult {
 }
 
 /**
+ * Fetch positions for a specific person from Clockwork API
+ * Returns the primary/current position with title and company
+ */
+async function fetchPersonPositions(
+  personId: string,
+  config: { baseUrl: string; firmSlug: string; firmKey: string; authToken: string },
+  enrichmentRunId: string
+): Promise<{ title: string; company: string } | null> {
+  try {
+    const url = `${config.baseUrl}/${config.firmSlug}/people/${personId}/positions`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Token ${config.authToken}`,
+        'X-API-Key': config.firmKey,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      console.warn(`[Enrichment:${enrichmentRunId}] Position fetch for ${personId} returned ${response.status}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log(`[Enrichment:${enrichmentRunId}] Position response for ${personId}: ${JSON.stringify(data).substring(0, 300)}`);
+    
+    // Clockwork API returns positions in 'personPositions' field
+    const positions = data.personPositions || data.data || data.positions || [];
+    
+    if (!Array.isArray(positions) || positions.length === 0) {
+      return null;
+    }
+    
+    // Find primary or current position (prefer current, then first)
+    const primaryPos = positions.find((pos: any) => pos.isCurrent) || positions[0];
+    
+    // Extract title from position
+    const title = primaryPos?.title || primaryPos?.positionTitle || '';
+    
+    // Extract company name from nested company object
+    const company = primaryPos?.company?.name || primaryPos?.companyName || 
+                    primaryPos?.organization?.name || '';
+    
+    return { title, company };
+  } catch (err) {
+    console.warn(`[Enrichment:${enrichmentRunId}] Failed to fetch positions for person ${personId}: ${err}`);
+    return null;
+  }
+}
+
+/**
  * Transform a raw person record to ClockworkExecutive format
  * Handles both flat and nested data structures from Clockwork API
  */
@@ -1010,13 +1063,48 @@ async function fetchClockworkExecutives(
       }
     }
     
-    // If we got candidates from this endpoint, return them
+    // If we got candidates from this endpoint, enrich with position data and deduplicate
     if (allCandidates.length > 0 || (currentPage > 1 && totalRawCandidates > 0)) {
       console.log(`[Enrichment:${enrichmentRunId}] INFO - Total pages fetched: ${currentPage}, raw candidates: ${totalRawCandidates}, valid candidates: ${allCandidates.length}`);
       
+      // Deduplicate by Clockwork ID
+      const seenIds = new Set<string>();
+      const uniqueCandidates: ClockworkExecutive[] = [];
+      for (const candidate of allCandidates) {
+        if (!seenIds.has(candidate.id)) {
+          seenIds.add(candidate.id);
+          uniqueCandidates.push(candidate);
+        }
+      }
+      
+      if (uniqueCandidates.length < allCandidates.length) {
+        console.log(`[Enrichment:${enrichmentRunId}] INFO - Deduplicated: ${allCandidates.length} -> ${uniqueCandidates.length} candidates`);
+      }
+      
+      // Fetch position data for candidates without title (limit to first 50 to avoid rate limits)
+      const candidatesNeedingPositions = uniqueCandidates.filter(c => !c.title).slice(0, 50);
+      if (candidatesNeedingPositions.length > 0) {
+        console.log(`[Enrichment:${enrichmentRunId}] INFO - Fetching positions for ${candidatesNeedingPositions.length} candidates...`);
+        
+        let positionsFetched = 0;
+        for (const candidate of candidatesNeedingPositions) {
+          // Add delay to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 150));
+          
+          const positionData = await fetchPersonPositions(candidate.id, config, enrichmentRunId);
+          if (positionData) {
+            candidate.title = positionData.title;
+            candidate.company = positionData.company;
+            positionsFetched++;
+          }
+        }
+        
+        console.log(`[Enrichment:${enrichmentRunId}] INFO - Successfully fetched ${positionsFetched} positions`);
+      }
+      
       return {
-        candidates: allCandidates,
-        status: allCandidates.length > 0 ? 'success' : 'no_candidates',
+        candidates: uniqueCandidates,
+        status: uniqueCandidates.length > 0 ? 'success' : 'no_candidates',
         paginationUsed,
         pagesFetched: currentPage,
         totalRawCandidates,

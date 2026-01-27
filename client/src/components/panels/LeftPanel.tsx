@@ -17,6 +17,8 @@ interface CountryData {
     employees: number;
     confidence: number;
     hq_city: string;
+    lat: number;
+    lng: number;
     executives: {
       id: string;
       name: string;
@@ -204,6 +206,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         employees: company.employees,
         confidence: company.confidence,
         hq_city: company.hq_city,
+        lat: company.lat,
+        lng: company.lng,
         executives: companyExecs
       });
     });
@@ -255,12 +259,16 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           const map = (window as any).leafletMap;
           if (map) {
             const validCoords = country.companies
-              .filter(c => c.lat !== 0 || c.lng !== 0)
-              .map(c => [c.lat, c.lng] as [number, number]);
+              .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)
+              .map(c => [Number(c.lat), Number(c.lng)] as [number, number]);
               
             if (validCoords.length > 0) {
-              const bounds = L.latLngBounds(validCoords);
-              map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8, animate: true });
+              try {
+                const bounds = L.latLngBounds(validCoords);
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8, animate: true });
+              } catch (e) {
+                console.error('Error fitting bounds:', e);
+              }
             }
           }
         }
@@ -271,12 +279,16 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         const map = (window as any).leafletMap;
         if (map && companies.length > 0) {
           const validCoords = companies
-            .filter(c => c.lat !== 0 || c.lng !== 0)
-            .map(c => [c.lat, c.lng] as [number, number]);
+            .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)
+            .map(c => [Number(c.lat), Number(c.lng)] as [number, number]);
             
           if (validCoords.length > 0) {
-            const bounds = L.latLngBounds(validCoords);
-            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+            try {
+              const bounds = L.latLngBounds(validCoords);
+              map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+            } catch (e) {
+              console.error('Error fitting bounds:', e);
+            }
           }
         }
       }

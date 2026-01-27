@@ -220,98 +220,38 @@ export function useLoadSearchResults() {
   });
 }
 
+export interface ExecutiveMatchItem {
+  localExecutiveId: number;
+  localExecutiveName: string;
+  localExecutiveTitle: string;
+  localCompanyName: string;
+  clockworkExecutiveId: number | null;
+  clockworkExecutiveName: string | null;
+  clockworkExecutiveTitle: string | null;
+  classification: 'confirmed' | 'possible' | 'no_match';
+  confidence: number;
+  matchDetails: {
+    nameScore: number;
+    titleScore: number;
+    companyScore: number;
+  };
+}
+
 export interface EnrichmentMatchResult {
   searchId: number;
   clockworkProjectId: string;
-  confirmed: Array<{
-    localExecutive: {
-      id: number;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      companyId: number;
-      companyName?: string;
-    };
-    clockworkExecutive: {
-      id: string;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      company?: string;
-    };
-    nameMatchScore: number;
-    titleMatchScore: number;
-    companyMatchScore: number;
-    overallConfidence: number;
-  }>;
-  possible: Array<{
-    localExecutive: {
-      id: number;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      companyId: number;
-      companyName?: string;
-    };
-    clockworkExecutive: {
-      id: string;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      company?: string;
-    };
-    nameMatchScore: number;
-    titleMatchScore: number;
-    companyMatchScore: number;
-    overallConfidence: number;
-  }>;
-  noMatch: {
-    localExecutives: Array<{
-      id: number;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      companyId: number;
-      companyName?: string;
-    }>;
-    unmatchedClockwork: Array<{
-      id: string;
-      name: string;
-      title: string;
-      email?: string;
-      phone?: string;
-      linkedin?: string;
-      profileUrl?: string;
-      imageUrl?: string;
-      company?: string;
-    }>;
+  timestamp: string;
+  totalLocalExecutives: number;
+  totalClockworkExecutives: number;
+  matches: {
+    confirmed: ExecutiveMatchItem[];
+    possible: ExecutiveMatchItem[];
+    noMatch: ExecutiveMatchItem[];
   };
   summary: {
-    totalLocalExecutives: number;
-    totalClockworkExecutives: number;
-    confirmedMatches: number;
-    possibleMatches: number;
-    noMatches: number;
+    confirmedCount: number;
+    possibleCount: number;
+    noMatchCount: number;
   };
 }
 

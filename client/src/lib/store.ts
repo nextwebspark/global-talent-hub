@@ -100,6 +100,7 @@ export interface Project {
   name: string;
   search_string: string;
   created_at: Date;
+  clockworkProjectId?: string | null;
 }
 
 export interface ExecutiveDetails {

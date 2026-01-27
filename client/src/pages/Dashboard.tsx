@@ -6,6 +6,7 @@ import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
+import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
 import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,7 @@ export default function Dashboard() {
   
   const [showMatchReview, setShowMatchReview] = useState(false);
   const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
+  const [showProjectSelector, setShowProjectSelector] = useState(false);
   const enrichmentMatch = useEnrichmentMatch();
   const { refetch: refetchCompanies } = useCompanies();
 
@@ -166,12 +168,26 @@ export default function Dashboard() {
       return;
     }
 
+    // Check if a Clockwork project is already selected for this search
+    if (!currentProject.clockworkProjectId) {
+      // Show project selector modal
+      setShowProjectSelector(true);
+      return;
+    }
+
+    // Proceed with enrichment using the selected project
+    await runEnrichmentWithProject(currentProject.clockworkProjectId);
+  };
+
+  const runEnrichmentWithProject = async (clockworkProjectId: string) => {
+    if (!currentProject?.id) return;
+
     setShowMatchReview(true);
     try {
       toast.loading('Analyzing matches...', { id: 'enrichment' });
       const result = await enrichmentMatch.mutateAsync({
         searchId: parseInt(currentProject.id),
-        clockworkProjectId: 'demo-project'
+        clockworkProjectId
       });
       toast.dismiss('enrichment');
       setMatchReviewData(result);
@@ -180,6 +196,36 @@ export default function Dashboard() {
       toast.error('Failed to analyze matches');
       setShowMatchReview(false);
       console.error('Enrichment error:', error);
+    }
+  };
+
+  const handleClockworkProjectSelect = async (projectId: string) => {
+    if (!currentProject?.id) return;
+
+    try {
+      // Persist the selection to the database
+      const response = await fetch(`/api/search/${currentProject.id}/clockwork-project`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clockworkProjectId: projectId })
+      });
+
+      if (!response.ok) throw new Error('Failed to save project selection');
+
+      // Update the local project state
+      setProject({
+        ...currentProject,
+        clockworkProjectId: projectId
+      });
+
+      setShowProjectSelector(false);
+      toast.success('Clockwork project selected');
+
+      // Now run the enrichment
+      await runEnrichmentWithProject(projectId);
+    } catch (error) {
+      console.error('Error selecting Clockwork project:', error);
+      toast.error('Failed to select Clockwork project');
     }
   };
 
@@ -473,6 +519,13 @@ export default function Dashboard() {
           onRefreshData={handleRefreshAfterEnrichment}
         />
       )}
+
+      <ClockworkProjectSelector
+        isOpen={showProjectSelector}
+        onClose={() => setShowProjectSelector(false)}
+        onSelect={handleClockworkProjectSelect}
+        currentProjectId={currentProject?.clockworkProjectId}
+      />
     </div>
   );
 }

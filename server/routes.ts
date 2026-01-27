@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
-import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema } from "@shared/schema";
+import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -297,6 +297,199 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting executive:", error);
       res.status(500).json({ error: "Failed to delete executive" });
+    }
+  });
+
+  // Executive Details API
+  app.get("/api/executives/:id/details", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const details = await storage.getExecutiveDetails(id);
+      if (!details) {
+        return res.status(404).json({ error: "Executive not found" });
+      }
+      
+      // Get company info for the executive
+      const company = await storage.getCompany(details.executive.companyId);
+      
+      res.json({
+        ...details,
+        company: company ? {
+          id: company.id,
+          name: company.name,
+          country: company.country,
+          revenue: company.revenue,
+          employees: company.employees
+        } : null
+      });
+    } catch (error) {
+      console.error("Error fetching executive details:", error);
+      res.status(500).json({ error: "Failed to fetch executive details" });
+    }
+  });
+
+  // Career History endpoints
+  app.get("/api/executives/:id/career-history", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const careerHistory = await storage.getCareerHistory(id);
+      res.json(careerHistory);
+    } catch (error) {
+      console.error("Error fetching career history:", error);
+      res.status(500).json({ error: "Failed to fetch career history" });
+    }
+  });
+
+  app.post("/api/executives/:id/career-history", async (req, res) => {
+    try {
+      const executiveId = parseInt(String(req.params.id));
+      const validated = insertCareerHistorySchema.parse({ ...req.body, executiveId });
+      const entry = await storage.createCareerHistory(validated);
+      res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error creating career history:", error);
+      res.status(400).json({ error: "Invalid career history data" });
+    }
+  });
+
+  app.patch("/api/career-history/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const entry = await storage.updateCareerHistory(id, req.body);
+      res.json(entry);
+    } catch (error) {
+      console.error("Error updating career history:", error);
+      res.status(500).json({ error: "Failed to update career history" });
+    }
+  });
+
+  app.delete("/api/career-history/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      await storage.deleteCareerHistory(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting career history:", error);
+      res.status(500).json({ error: "Failed to delete career history" });
+    }
+  });
+
+  // Education endpoints
+  app.get("/api/executives/:id/education", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const educationData = await storage.getEducation(id);
+      res.json(educationData);
+    } catch (error) {
+      console.error("Error fetching education:", error);
+      res.status(500).json({ error: "Failed to fetch education" });
+    }
+  });
+
+  app.post("/api/executives/:id/education", async (req, res) => {
+    try {
+      const executiveId = parseInt(String(req.params.id));
+      const validated = insertEducationSchema.parse({ ...req.body, executiveId });
+      const entry = await storage.createEducation(validated);
+      res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error creating education:", error);
+      res.status(400).json({ error: "Invalid education data" });
+    }
+  });
+
+  app.patch("/api/education/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const entry = await storage.updateEducation(id, req.body);
+      res.json(entry);
+    } catch (error) {
+      console.error("Error updating education:", error);
+      res.status(500).json({ error: "Failed to update education" });
+    }
+  });
+
+  app.delete("/api/education/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      await storage.deleteEducation(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting education:", error);
+      res.status(500).json({ error: "Failed to delete education" });
+    }
+  });
+
+  // Remuneration endpoints
+  app.get("/api/executives/:id/remuneration", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const remunerationData = await storage.getRemuneration(id);
+      res.json(remunerationData);
+    } catch (error) {
+      console.error("Error fetching remuneration:", error);
+      res.status(500).json({ error: "Failed to fetch remuneration" });
+    }
+  });
+
+  app.post("/api/executives/:id/remuneration", async (req, res) => {
+    try {
+      const executiveId = parseInt(String(req.params.id));
+      const validated = insertRemunerationSchema.parse({ ...req.body, executiveId });
+      const entry = await storage.createRemuneration(validated);
+      res.status(201).json(entry);
+    } catch (error) {
+      console.error("Error creating remuneration:", error);
+      res.status(400).json({ error: "Invalid remuneration data" });
+    }
+  });
+
+  app.patch("/api/remuneration/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const entry = await storage.updateRemuneration(id, req.body);
+      res.json(entry);
+    } catch (error) {
+      console.error("Error updating remuneration:", error);
+      res.status(500).json({ error: "Failed to update remuneration" });
+    }
+  });
+
+  app.delete("/api/remuneration/:id", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      await storage.deleteRemuneration(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting remuneration:", error);
+      res.status(500).json({ error: "Failed to delete remuneration" });
+    }
+  });
+
+  // Executive Notes endpoint
+  app.get("/api/executives/:id/notes", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const notes = await storage.getExecutiveNotes(id);
+      res.json(notes || { content: '' });
+    } catch (error) {
+      console.error("Error fetching executive notes:", error);
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  app.put("/api/executives/:id/notes", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const { content } = req.body;
+      if (typeof content !== 'string') {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      const notes = await storage.upsertExecutiveNotes(id, content);
+      res.json(notes);
+    } catch (error) {
+      console.error("Error updating executive notes:", error);
+      res.status(500).json({ error: "Failed to update notes" });
     }
   });
 

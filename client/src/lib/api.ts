@@ -219,3 +219,112 @@ export function useLoadSearchResults() {
     },
   });
 }
+
+export interface EnrichmentMatchResult {
+  searchId: number;
+  clockworkProjectId: string;
+  confirmed: Array<{
+    localExecutive: {
+      id: number;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      companyId: number;
+      companyName?: string;
+    };
+    clockworkExecutive: {
+      id: string;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      company?: string;
+    };
+    nameMatchScore: number;
+    titleMatchScore: number;
+    companyMatchScore: number;
+    overallConfidence: number;
+  }>;
+  possible: Array<{
+    localExecutive: {
+      id: number;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      companyId: number;
+      companyName?: string;
+    };
+    clockworkExecutive: {
+      id: string;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      company?: string;
+    };
+    nameMatchScore: number;
+    titleMatchScore: number;
+    companyMatchScore: number;
+    overallConfidence: number;
+  }>;
+  noMatch: {
+    localExecutives: Array<{
+      id: number;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      companyId: number;
+      companyName?: string;
+    }>;
+    unmatchedClockwork: Array<{
+      id: string;
+      name: string;
+      title: string;
+      email?: string;
+      phone?: string;
+      linkedin?: string;
+      profileUrl?: string;
+      imageUrl?: string;
+      company?: string;
+    }>;
+  };
+  summary: {
+    totalLocalExecutives: number;
+    totalClockworkExecutives: number;
+    confirmedMatches: number;
+    possibleMatches: number;
+    noMatches: number;
+  };
+}
+
+export function useEnrichmentMatch() {
+  return useMutation<EnrichmentMatchResult, Error, { searchId: number; clockworkProjectId: string }>({
+    mutationFn: async ({ searchId, clockworkProjectId }) => {
+      const response = await fetch('/api/enrichment/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchId, clockworkProjectId }),
+      });
+      if (!response.ok) throw new Error('Failed to fetch enrichment matches');
+      return response.json();
+    },
+  });
+}

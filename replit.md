@@ -84,7 +84,13 @@ The backend follows a clean layered architecture with strict ownership rules:
    - **Match Classification**: confirmed (>85% name match), possible (60-85%), no_match (<60%)
    - **API Endpoint**: `POST /api/enrichment/match` - returns structured match results without persisting
 
-3. **Persistence Layer** (`server/storage.ts`):
+3. **Match Review UI** (`client/src/components/panels/MatchReviewPanel.tsx`):
+   - Displays orchestration results in confirmed/possible/no_match sections
+   - User can confirm & enrich, skip, or create new executive from Clockwork
+   - Enrichment only persists when explicitly confirmed by user
+   - Integrated into Dashboard via "Enrich Data" button
+
+4. **Persistence Layer** (`server/storage.ts`):
    - Database is single source of truth
    - **ENFORCES** write restrictions per layer via layer-aware methods
    - All edits persist permanently via Drizzle ORM

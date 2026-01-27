@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults } from '@/lib/api';
+import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
+import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import { useLocation } from 'wouter';
-import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2 } from 'lucide-react';
+import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -33,6 +34,11 @@ export default function Dashboard() {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+  
+  const [showMatchReview, setShowMatchReview] = useState(false);
+  const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
+  const enrichmentMatch = useEnrichmentMatch();
+  const { refetch: refetchCompanies } = useCompanies();
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isResizingLeft) {
@@ -153,6 +159,38 @@ export default function Dashboard() {
     }
   };
 
+
+  const handleStartEnrichment = async () => {
+    if (!currentProject?.id) {
+      toast.error('Please run a search first');
+      return;
+    }
+
+    setShowMatchReview(true);
+    try {
+      toast.loading('Analyzing matches...', { id: 'enrichment' });
+      const result = await enrichmentMatch.mutateAsync({
+        searchId: parseInt(currentProject.id),
+        clockworkProjectId: 'demo-project'
+      });
+      toast.dismiss('enrichment');
+      setMatchReviewData(result);
+    } catch (error) {
+      toast.dismiss('enrichment');
+      toast.error('Failed to analyze matches');
+      setShowMatchReview(false);
+      console.error('Enrichment error:', error);
+    }
+  };
+
+  const handleCloseMatchReview = () => {
+    setShowMatchReview(false);
+    setMatchReviewData(null);
+  };
+
+  const handleRefreshAfterEnrichment = () => {
+    refetchCompanies();
+  };
 
   const handleNewSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,6 +400,19 @@ export default function Dashboard() {
                 <Trash2 className="h-4 w-4 mr-1" />
                 Clear Results
               </Button>
+              
+              <Button 
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleStartEnrichment}
+                disabled={!currentProject?.id || enrichmentMatch.isPending}
+                className="h-10 rounded-full px-4 text-sm shadow-lg border-blue-500/50 text-blue-600 hover:bg-blue-500 hover:text-white"
+                data-testid="button-enrich-data"
+              >
+                {enrichmentMatch.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                Enrich Data
+              </Button>
             </div>
           </form>
         </div>
@@ -412,6 +463,15 @@ export default function Dashboard() {
           </div>
           <RightPanel width={rightPanelWidth} />
         </>
+      )}
+      
+      {showMatchReview && (
+        <MatchReviewPanel
+          matchData={matchReviewData}
+          isLoading={enrichmentMatch.isPending && !matchReviewData}
+          onClose={handleCloseMatchReview}
+          onRefreshData={handleRefreshAfterEnrichment}
+        />
       )}
     </div>
   );

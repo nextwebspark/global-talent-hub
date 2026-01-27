@@ -78,11 +78,16 @@ The backend follows a clean layered architecture with strict ownership rules:
 2. **Enrichment Layer** (`server/services/enrichment.ts`):
    - Clockwork API integration with fuzzy matching orchestration
    - Runs ONLY when user explicitly triggers enrichment
+   - **READ-ONLY**: All Clockwork API calls are strictly read-only (no create/update/sync)
    - **OWNERSHIP**: May enrich EMPTY fields only, never overwrites existing data, never deletes records
    - Uses: `storage.enrichExecutiveEmptyFields()`, `storage.enrichCompanyEmptyFields()`
    - **Orchestration**: `orchestrateEnrichmentMatching(searchId, clockworkProjectId)` - deterministic, side-effect free matching
    - **Match Classification**: confirmed (>85% name match), possible (60-85%), no_match (<60%)
-   - **API Endpoint**: `POST /api/enrichment/match` - returns structured match results without persisting
+   - **API Endpoints**: 
+     - `POST /api/enrichment/match` - returns structured match results without persisting
+     - `GET /api/clockwork/projects` - fetch available Clockwork projects
+     - `PATCH /api/search/:searchId/clockwork-project` - persist project selection
+   - **Project Scoping**: Each search stores its selected clockworkProjectId; user must select project before enrichment
 
 3. **Match Review UI** (`client/src/components/panels/MatchReviewPanel.tsx`):
    - Displays orchestration results in confirmed/possible/no_match sections

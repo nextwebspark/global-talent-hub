@@ -575,5 +575,118 @@ export async function registerRoutes(
     }
   });
 
+  // ENRICHMENT LAYER: Confirm and persist enrichment for a single executive
+  // User-triggered only - enriches empty fields and stores metadata
+  app.post("/api/enrichment/confirm", async (req, res) => {
+    try {
+      const { executiveId, clockworkData, confidence, clockworkId } = req.body;
+      
+      if (!executiveId || !clockworkData) {
+        return res.status(400).json({ 
+          error: "executiveId and clockworkData are required" 
+        });
+      }
+
+      const execIdNum = parseInt(String(executiveId));
+      if (isNaN(execIdNum)) {
+        return res.status(400).json({ error: "Invalid executiveId" });
+      }
+
+      const executive = await storage.getExecutive(execIdNum);
+      if (!executive) {
+        return res.status(404).json({ error: "Executive not found" });
+      }
+
+      // Enrich empty fields with Clockwork data and store metadata
+      const { updated, enrichedFields } = await storage.enrichExecutiveEmptyFields(
+        execIdNum,
+        {
+          email: clockworkData.email,
+          phone: clockworkData.phone,
+          linkedin: clockworkData.linkedin,
+          profileUrl: clockworkData.profileUrl,
+          imageUrl: clockworkData.imageUrl
+        },
+        {
+          source: 'clockwork',
+          confidence: confidence || 0,
+          clockworkId: clockworkId
+        }
+      );
+
+      res.json({
+        success: true,
+        executive: updated,
+        enrichedFields,
+        metadata: {
+          source: 'clockwork',
+          confidence,
+          clockworkId,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error("Error confirming enrichment:", error);
+      res.status(500).json({ error: "Failed to confirm enrichment" });
+    }
+  });
+
+  // ENRICHMENT LAYER: Create new executive from Clockwork data
+  // User-triggered only - creates a new executive when no local match exists
+  app.post("/api/enrichment/create-from-clockwork", async (req, res) => {
+    try {
+      const { companyId, clockworkData, confidence, clockworkId } = req.body;
+      
+      if (!companyId || !clockworkData || !clockworkId) {
+        return res.status(400).json({ 
+          error: "companyId, clockworkData, and clockworkId are required" 
+        });
+      }
+
+      const companyIdNum = parseInt(String(companyId));
+      if (isNaN(companyIdNum)) {
+        return res.status(400).json({ error: "Invalid companyId" });
+      }
+
+      const company = await storage.getCompany(companyIdNum);
+      if (!company) {
+        return res.status(404).json({ error: "Company not found" });
+      }
+
+      // Create new executive from Clockwork data
+      const newExecutive = await storage.createExecutiveFromClockwork(
+        {
+          companyId: companyIdNum,
+          name: clockworkData.name,
+          title: clockworkData.title || 'Executive',
+          email: clockworkData.email,
+          phone: clockworkData.phone,
+          linkedin: clockworkData.linkedin,
+          profileUrl: clockworkData.profileUrl,
+          imageUrl: clockworkData.imageUrl,
+          confidence: confidence || 0
+        },
+        {
+          confidence: confidence || 0,
+          clockworkId
+        }
+      );
+
+      res.json({
+        success: true,
+        executive: newExecutive,
+        metadata: {
+          source: 'clockwork',
+          confidence,
+          clockworkId,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error("Error creating executive from Clockwork:", error);
+      res.status(500).json({ error: "Failed to create executive from Clockwork" });
+    }
+  });
+
   return httpServer;
 }

@@ -53,7 +53,8 @@ export interface IStorage {
   // Layer-aware methods with ownership enforcement
   createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive>;
   createExecutiveManual(executive: InsertExecutive): Promise<Executive>;
-  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>): Promise<{ updated: Executive; enrichedFields: string[] }>;
+  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>, metadata?: { source: string; confidence: number; clockworkId?: string }): Promise<{ updated: Executive; enrichedFields: string[] }>;
+  createExecutiveFromClockwork(executive: InsertExecutive, metadata: { confidence: number; clockworkId: string }): Promise<Executive>;
   updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
   
   // Company layer-aware methods
@@ -229,10 +230,12 @@ export class DatabaseStorage implements IStorage {
    * - Must never overwrite existing data
    * - Must never delete executives
    * - Returns list of actually enriched fields
+   * - Stores enrichment metadata (source, confidence, timestamp, clockworkId)
    */
   async enrichExecutiveEmptyFields(
     id: number, 
-    data: Partial<InsertExecutive>
+    data: Partial<InsertExecutive>,
+    metadata?: { source: string; confidence: number; clockworkId?: string }
   ): Promise<{ updated: Executive; enrichedFields: string[] }> {
     const existing = await this.getExecutive(id);
     if (!existing) {
@@ -244,7 +247,7 @@ export class DatabaseStorage implements IStorage {
 
     // Only update fields that are currently null or empty
     const fieldsToCheck: (keyof InsertExecutive)[] = [
-      'email', 'linkedin', 'profileUrl', 'imageUrl', 'source'
+      'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl'
     ];
 
     for (const field of fieldsToCheck) {
@@ -260,9 +263,19 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    if (enrichedFields.length === 0) {
+    if (enrichedFields.length === 0 && !metadata) {
       console.log(`[Storage:Enrichment] No empty fields to enrich for executive ${id}`);
       return { updated: existing, enrichedFields: [] };
+    }
+
+    // Store enrichment metadata if provided
+    if (metadata) {
+      (updateData as any).enrichmentSource = metadata.source;
+      (updateData as any).enrichmentConfidence = metadata.confidence;
+      (updateData as any).enrichmentTimestamp = sql`CURRENT_TIMESTAMP`;
+      if (metadata.clockworkId) {
+        (updateData as any).clockworkId = metadata.clockworkId;
+      }
     }
 
     const [updated] = await db
@@ -273,6 +286,28 @@ export class DatabaseStorage implements IStorage {
 
     console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for executive ${id}: ${enrichedFields.join(', ')}`);
     return { updated, enrichedFields };
+  }
+
+  /**
+   * ENRICHMENT LAYER: Create new executive from Clockwork data.
+   * - Used when user explicitly confirms creating a new executive from Clockwork match
+   * - Source is marked as 'clockwork'
+   * - Stores enrichment metadata
+   */
+  async createExecutiveFromClockwork(
+    executive: InsertExecutive,
+    metadata: { confidence: number; clockworkId: string }
+  ): Promise<Executive> {
+    console.log(`[Storage:Enrichment] Creating executive from Clockwork: ${executive.name}`);
+    const [newExecutive] = await db.insert(executives).values({
+      ...executive,
+      source: 'clockwork',
+      enrichmentSource: 'clockwork',
+      enrichmentConfidence: metadata.confidence,
+      enrichmentTimestamp: sql`CURRENT_TIMESTAMP`,
+      clockworkId: metadata.clockworkId
+    }).returning();
+    return newExecutive;
   }
 
   /**

@@ -41,6 +41,10 @@ export const executives = pgTable("executives", {
   imageUrl: text("image_url"),
   source: text("source"),
   confidence: integer("confidence").default(5),
+  enrichmentSource: text("enrichment_source"),
+  enrichmentConfidence: integer("enrichment_confidence"),
+  enrichmentTimestamp: timestamp("enrichment_timestamp"),
+  clockworkId: text("clockwork_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

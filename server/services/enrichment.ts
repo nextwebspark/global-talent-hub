@@ -176,17 +176,65 @@ export async function getClockworkProjects(): Promise<ClockworkProject[]> {
   const maxPages = 100; // Safety limit
   
   try {
-    while (hasMorePages && currentPage <= maxPages) {
-      console.log(`[Enrichment:Clockwork] Fetching page ${currentPage}...`);
+    // Try multiple endpoint names since Clockwork API docs are not public
+    const endpointsToTry = ['positions', 'projects', 'searches'];
+    
+    for (const endpoint of endpointsToTry) {
+      console.log(`[Enrichment:Clockwork] Trying endpoint: /${config.firmSlug}/${endpoint}`);
       
-      // Build URL with pagination - include all statuses
-      // Clockwork API format: /v3.0/{firm_slug}/searches (searches = projects)
-      // Alternative endpoints to try: /searches, /positions, /projects
-      const url = new URL(`${config.baseUrl}/${config.firmSlug}/searches`);
+      const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpoint}`);
+      url.searchParams.set('page', '1');
+      url.searchParams.set('per_page', '100');
+      
+      console.log(`[Enrichment:Clockwork] Requesting URL: ${url.toString()}`);
+      
+      try {
+        const testResponse = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Authorization': `Token ${config.authToken}`,
+            'X-API-Key': config.firmKey,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (testResponse.ok) {
+          console.log(`[Enrichment:Clockwork] SUCCESS! Endpoint /${endpoint} works`);
+          // Use this endpoint for pagination
+          return await fetchAllProjectsFromEndpoint(config, endpoint);
+        } else {
+          console.log(`[Enrichment:Clockwork] Endpoint /${endpoint} returned ${testResponse.status}`);
+        }
+      } catch (err) {
+        console.log(`[Enrichment:Clockwork] Endpoint /${endpoint} failed: ${err}`);
+      }
+    }
+    
+    console.error('[Enrichment:Clockwork] All endpoints failed - unable to fetch projects');
+    return [];
+  } catch (error) {
+    console.error('[Enrichment:Clockwork] Failed to fetch projects:', error);
+    return [];
+  }
+}
+
+async function fetchAllProjectsFromEndpoint(
+  config: { baseUrl: string; firmSlug: string; authToken: string; firmKey: string },
+  endpoint: string
+): Promise<ClockworkProject[]> {
+  const allProjects: ClockworkProject[] = [];
+  let currentPage = 1;
+  let hasMorePages = true;
+  const maxPages = 100;
+  
+  try {
+    while (hasMorePages && currentPage <= maxPages) {
+      console.log(`[Enrichment:Clockwork] Fetching page ${currentPage} from /${endpoint}...`);
+      
+      const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpoint}`);
       url.searchParams.set('page', String(currentPage));
-      url.searchParams.set('per_page', '100'); // Request max per page
-      // Include all project statuses (open, closed, retained, special)
-      url.searchParams.set('status', 'all'); // Request all statuses
+      url.searchParams.set('per_page', '100');
       
       console.log(`[Enrichment:Clockwork] Requesting URL: ${url.toString()}`);
       

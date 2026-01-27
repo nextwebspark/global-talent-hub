@@ -236,21 +236,32 @@ export default function Dashboard() {
 
   const handleRefreshAfterEnrichment = async () => {
     // Reload the current search results to update map and panels
+    console.log('[Refresh] Starting refresh after enrichment, currentProject:', currentProject?.id);
     if (currentProject?.id) {
       try {
-        const results = await loadSearchResults.mutateAsync(parseInt(currentProject.id));
+        const searchId = parseInt(currentProject.id);
+        console.log('[Refresh] Loading search results for ID:', searchId);
+        const results = await loadSearchResults.mutateAsync(searchId);
+        console.log('[Refresh] Got results, companies:', results.companies?.length);
+        
         const companies = results.companies.map((c: any) => transformAPICompany(c));
-        const executives = results.companies.flatMap((c: any) => 
-          (c.executives || []).map((e: any) => transformAPIExecutive(e, String(c.id)))
-        );
+        const executives = results.companies.flatMap((c: any) => {
+          const execs = (c.executives || []).map((e: any) => transformAPIExecutive(e, String(c.id)));
+          console.log(`[Refresh] Company ${c.name} has ${execs.length} executives`);
+          return execs;
+        });
+        
+        console.log('[Refresh] Total executives after transform:', executives.length);
         setCompanies(companies);
         setExecutives(executives);
+        console.log('[Refresh] Store updated');
       } catch (error) {
-        console.error('Failed to refresh after enrichment:', error);
+        console.error('[Refresh] Failed to refresh after enrichment:', error);
         // Fallback to simple refetch
         refetchCompanies();
       }
     } else {
+      console.log('[Refresh] No currentProject, falling back to refetchCompanies');
       refetchCompanies();
     }
   };

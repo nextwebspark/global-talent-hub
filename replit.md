@@ -88,6 +88,13 @@ The backend follows a clean layered architecture with strict ownership rules:
      - `GET /api/clockwork/projects` - fetch available Clockwork projects
      - `PATCH /api/search/:searchId/clockwork-project` - persist project selection
    - **Project Scoping**: Each search stores its selected clockworkProjectId; user must select project before enrichment
+   - **Clockwork API Behavior** (as of Jan 2026):
+     - Endpoint: `/people?project_id={id}` with pagination (page, per_page)
+     - API returns only 10 items per page despite `per_page=100` request
+     - Rate limiting: 429 error after ~30 rapid requests; use 100ms delay between pages
+     - **Data Limitation**: `/people` endpoint returns only basic person data (id, name, biography)
+     - Title/company NOT provided inline; would require separate position API calls
+     - Matching works on name only; enrichment can still populate email/linkedin fields
 
 3. **Match Review UI** (`client/src/components/panels/MatchReviewPanel.tsx`):
    - Displays orchestration results in confirmed/possible/no_match sections

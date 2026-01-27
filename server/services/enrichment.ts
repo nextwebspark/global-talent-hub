@@ -767,19 +767,58 @@ interface ClockworkFetchResult {
 
 /**
  * Transform a raw person record to ClockworkExecutive format
+ * Handles both flat and nested data structures from Clockwork API
  */
 function transformToClockworkExecutive(p: any): ClockworkExecutive | null {
   const id = p.id || p.uuid || p.person_id;
   if (!id) {
     return null;
   }
+  
+  // Try to extract title from various possible locations
+  let title = p.title || p.position || p.current_title || '';
+  let company = p.company || p.current_company || p.organization || '';
+  
+  // Check for nested positions array or current_position object
+  if (!title && p.positions && Array.isArray(p.positions) && p.positions.length > 0) {
+    const primaryPosition = p.positions.find((pos: any) => pos.is_primary || pos.isPrimary) || p.positions[0];
+    title = primaryPosition?.title || primaryPosition?.position_title || '';
+    company = company || primaryPosition?.company || primaryPosition?.organization || primaryPosition?.company_name || '';
+  }
+  
+  if (!title && p.current_position) {
+    title = p.current_position.title || p.current_position.position_title || '';
+    company = company || p.current_position.company || p.current_position.organization || '';
+  }
+  
+  // Check for primaryPosition object
+  if (!title && p.primaryPosition) {
+    title = p.primaryPosition.title || '';
+    company = company || p.primaryPosition.company || p.primaryPosition.organization || '';
+  }
+  
+  // Extract email and linkedin from various locations
+  let email = p.email || p.primary_email || '';
+  let linkedin = p.linkedin || p.linkedin_url || '';
+  
+  // Check for nested email addresses
+  if (!email && p.emailAddresses && Array.isArray(p.emailAddresses) && p.emailAddresses.length > 0) {
+    const primaryEmail = p.emailAddresses.find((e: any) => e.is_primary || e.isPrimary) || p.emailAddresses[0];
+    email = primaryEmail?.address || primaryEmail?.email || '';
+  }
+  
+  // Check for nested linkedin URLs
+  if (!linkedin && p.linkedinUrls && Array.isArray(p.linkedinUrls) && p.linkedinUrls.length > 0) {
+    linkedin = p.linkedinUrls[0]?.url || p.linkedinUrls[0]?.address || '';
+  }
+  
   return {
     id: String(id),
     name: p.name || p.full_name || `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
-    title: p.title || p.position || p.current_title || '',
-    company: p.company || p.current_company || p.organization || '',
-    email: p.email || p.primary_email || '',
-    linkedin: p.linkedin || p.linkedin_url || '',
+    title,
+    company,
+    email,
+    linkedin,
     imageUrl: p.image_url || p.photo_url || p.avatar_url || ''
   };
 }
@@ -813,16 +852,29 @@ async function fetchClockworkExecutives(
   }
   
   // Try multiple endpoint patterns for fetching project candidates
+  // Based on Clockwork API documentation, the /people endpoint is at the root level
+  // The project filter may be a query parameter, not a path segment
   const endpointsToTry = [
-    `projects/${clockworkProjectId}/people`,
-    `projects/${clockworkProjectId}/candidates`,
-    `positions/${clockworkProjectId}/people`,
-    `positions/${clockworkProjectId}/candidates`,
+    // Root-level people endpoint with project filter
+    { path: 'people', queryParams: { project_id: clockworkProjectId } },
+    { path: 'people', queryParams: { position_id: clockworkProjectId } },
+    // Try without project filter to see if the endpoint works at all
+    { path: 'people', queryParams: {} },
+    // Legacy nested patterns as fallback
+    { path: `projects/${clockworkProjectId}/people`, queryParams: {} },
+    { path: `projects/${clockworkProjectId}/candidates`, queryParams: {} },
+    { path: `positions/${clockworkProjectId}/people`, queryParams: {} },
+    { path: `positions/${clockworkProjectId}/candidates`, queryParams: {} },
   ];
   
   const errors: Array<{ endpoint: string; status: number | null; message: string }> = [];
   
-  for (const endpoint of endpointsToTry) {
+  for (const endpointConfig of endpointsToTry) {
+    const { path: endpointPath, queryParams } = endpointConfig;
+    const endpointDesc = Object.keys(queryParams).length > 0 
+      ? `${endpointPath}?${Object.entries(queryParams).map(([k, v]) => `${k}=${v}`).join('&')}` 
+      : endpointPath;
+    
     const allCandidates: ClockworkExecutive[] = [];
     let currentPage = 1;
     let hasMorePages = true;
@@ -832,9 +884,21 @@ async function fetchClockworkExecutives(
     let paginationUsed = false;
     
     while (hasMorePages && currentPage <= maxPages) {
-      const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpoint}`);
+      // Add small delay between requests to avoid rate limiting (100ms)
+      if (currentPage > 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpointPath}`);
+      // Add any custom query params (e.g., project_id filter)
+      for (const [key, value] of Object.entries(queryParams)) {
+        if (value) url.searchParams.set(key, String(value));
+      }
       url.searchParams.set('page', String(currentPage));
       url.searchParams.set('per_page', String(perPage));
+      // Try to include position/company data in the response
+      url.searchParams.set('include', 'positions,current_position');
+      url.searchParams.set('expand', 'positions,current_position');
       
       console.log(`[Enrichment:${enrichmentRunId}] Trying: ${url.toString()} (page ${currentPage})`);
       
@@ -853,11 +917,18 @@ async function fetchClockworkExecutives(
           const data = await response.json();
           
           if (currentPage === 1) {
-            console.log(`[Enrichment:${enrichmentRunId}] SUCCESS! Endpoint ${endpoint} works`);
+            console.log(`[Enrichment:${enrichmentRunId}] SUCCESS! Endpoint ${endpointDesc} works`);
           }
           
           // Extract people/candidates from various response formats
           const people = data.data || data.people || data.candidates || data.items || [];
+          
+          // Debug: Log first person's raw structure to understand available fields
+          if (currentPage === 1 && people.length > 0) {
+            const firstPerson = people[0];
+            console.log(`[Enrichment:${enrichmentRunId}] DEBUG - Raw person fields: ${Object.keys(firstPerson).join(', ')}`);
+            console.log(`[Enrichment:${enrichmentRunId}] DEBUG - Sample person: ${JSON.stringify(firstPerson).substring(0, 500)}`);
+          }
           
           if (Array.isArray(people)) {
             totalRawCandidates += people.length;
@@ -901,13 +972,15 @@ async function fetchClockworkExecutives(
             }
             
             // Determine if there are more pages
-            // Continue if: we haven't reached totalPages AND we got a full page of results
+            // Trust totalPages from API over items-per-page heuristic
+            // Clockwork API may return fewer items than requested per_page
             if (currentPage >= totalPages) {
               hasMorePages = false;
-            } else if (people.length < perPage) {
-              // Received fewer items than requested - this was the last page
+            } else if (people.length === 0) {
+              // Empty page means we're done
               hasMorePages = false;
             } else {
+              // There are more pages according to API, continue fetching
               currentPage++;
             }
           } else {
@@ -915,9 +988,9 @@ async function fetchClockworkExecutives(
           }
         } else {
           const errorBody = await response.text().catch(() => '(no body)');
-          console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpoint} returned ${response.status}: ${errorBody.substring(0, 200)}`);
+          console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpointDesc} returned ${response.status}: ${errorBody.substring(0, 200)}`);
           errors.push({
-            endpoint,
+            endpoint: endpointDesc,
             status: response.status,
             message: `HTTP ${response.status}: ${response.statusText}`
           });
@@ -926,9 +999,9 @@ async function fetchClockworkExecutives(
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpoint} failed: ${errMsg}`);
+        console.error(`[Enrichment:${enrichmentRunId}] ERROR - Endpoint ${endpointDesc} failed: ${errMsg}`);
         errors.push({
-          endpoint,
+          endpoint: endpointDesc,
           status: null,
           message: errMsg
         });
@@ -947,7 +1020,7 @@ async function fetchClockworkExecutives(
         paginationUsed,
         pagesFetched: currentPage,
         totalRawCandidates,
-        successEndpoint: endpoint
+        successEndpoint: endpointDesc
       };
     }
   }

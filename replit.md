@@ -76,10 +76,13 @@ The backend follows a clean layered architecture with strict ownership rules:
    - Uses: `storage.createCompanyFromDiscovery()`, `storage.createExecutiveFromDiscovery()`
 
 2. **Enrichment Layer** (`server/services/enrichment.ts`):
-   - Placeholder for Clockwork API integration
+   - Clockwork API integration with fuzzy matching orchestration
    - Runs ONLY when user explicitly triggers enrichment
    - **OWNERSHIP**: May enrich EMPTY fields only, never overwrites existing data, never deletes records
    - Uses: `storage.enrichExecutiveEmptyFields()`, `storage.enrichCompanyEmptyFields()`
+   - **Orchestration**: `orchestrateEnrichmentMatching(searchId, clockworkProjectId)` - deterministic, side-effect free matching
+   - **Match Classification**: confirmed (>85% name match), possible (60-85%), no_match (<60%)
+   - **API Endpoint**: `POST /api/enrichment/match` - returns structured match results without persisting
 
 3. **Persistence Layer** (`server/storage.ts`):
    - Database is single source of truth

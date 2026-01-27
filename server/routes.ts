@@ -9,7 +9,12 @@ import {
   generateSearchUniqueKey,
   AVAILABLE_MODELS 
 } from "./services/discovery";
-import { enrichExecutive, enrichCompany, getAvailableSources } from "./services/enrichment";
+import { 
+  enrichExecutive, 
+  enrichCompany, 
+  getAvailableSources,
+  orchestrateEnrichmentMatching 
+} from "./services/enrichment";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -531,6 +536,42 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error loading search results:", error);
       res.status(500).json({ error: "Failed to load search results" });
+    }
+  });
+
+  // ENRICHMENT LAYER: Orchestrate matching between local executives and Clockwork project
+  // This endpoint is deterministic and side-effect free - it only returns match results
+  app.post("/api/enrichment/match", async (req, res) => {
+    try {
+      const { searchId, clockworkProjectId } = req.body;
+      
+      if (!searchId || !clockworkProjectId) {
+        return res.status(400).json({ 
+          error: "Both searchId and clockworkProjectId are required" 
+        });
+      }
+
+      const searchIdNum = parseInt(String(searchId));
+      if (isNaN(searchIdNum)) {
+        return res.status(400).json({ error: "Invalid searchId" });
+      }
+
+      // Verify the search exists
+      const searchQuery = await storage.getSearchQuery(searchIdNum);
+      if (!searchQuery) {
+        return res.status(404).json({ error: "Search not found" });
+      }
+
+      // Run the orchestration (read-only, no side effects)
+      const matchResult = await orchestrateEnrichmentMatching(
+        searchIdNum,
+        String(clockworkProjectId)
+      );
+
+      res.json(matchResult);
+    } catch (error) {
+      console.error("Error in enrichment matching:", error);
+      res.status(500).json({ error: "Failed to orchestrate enrichment matching" });
     }
   });
 

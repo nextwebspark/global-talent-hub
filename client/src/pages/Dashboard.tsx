@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult } from '@/lib/api';
+import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult, streamingSearch } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
@@ -41,6 +41,22 @@ export default function Dashboard() {
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const enrichmentMatch = useEnrichmentMatch();
   const { refetch: refetchCompanies } = useCompanies();
+  
+  // Streaming search state
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchProgress, setSearchProgress] = useState(0);
+  const [searchStatus, setSearchStatus] = useState('');
+  const searchCleanupRef = useRef<(() => void) | null>(null);
+  const searchSessionRef = useRef<number>(0);
+  
+  // Cleanup streaming connection on unmount
+  useEffect(() => {
+    return () => {
+      if (searchCleanupRef.current) {
+        searchCleanupRef.current();
+      }
+    };
+  }, []);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isResizingLeft) {
@@ -273,39 +289,84 @@ export default function Dashboard() {
       return;
     }
     
+    // Cancel any existing search
+    if (searchCleanupRef.current) {
+      searchCleanupRef.current();
+      searchCleanupRef.current = null;
+    }
+    
+    // Increment session to ignore late events from cancelled searches
+    searchSessionRef.current++;
+    const currentSession = searchSessionRef.current;
+    
     setShowHistory(false);
+    setIsSearching(true);
+    setSearchProgress(0);
+    setSearchStatus('Starting search...');
     
     // Clear existing results before new search
     setCompanies([]);
     setExecutives([]);
     
-    try {
-      toast.loading('Searching for companies and executives...', { id: 'search' });
-      const result = await searchMutation.mutateAsync({ query: searchInput, model: selectedModel });
-      toast.dismiss('search');
-      
-      if (!result.results || result.results.length === 0) {
-        toast.error('No results found. Try a different search query.');
-        return;
+    let companyCount = 0;
+    
+    const cleanup = streamingSearch(searchInput, selectedModel, {
+      onStatus: (message, progress) => {
+        if (searchSessionRef.current !== currentSession) return;
+        setSearchStatus(message);
+        setSearchProgress(progress);
+      },
+      onSearchCreated: (data) => {
+        if (searchSessionRef.current !== currentSession) return;
+        setProject({
+          id: String(data.searchQueryId),
+          name: searchInput,
+          search_string: searchInput,
+          created_at: new Date()
+        });
+        setSearchStatus('Discovering companies...');
+      },
+      onCompany: (company) => {
+        if (searchSessionRef.current !== currentSession) return;
+        companyCount++;
+        // Transform and add company progressively
+        const transformedCompany = transformAPICompany(company);
+        useAppStore.getState().addCompany(transformedCompany);
+        
+        // Add executives for this company
+        if (company.executives) {
+          company.executives.forEach((exec: any) => {
+            const transformedExec = transformAPIExecutive(exec, String(company.id));
+            useAppStore.getState().addExecutive(transformedExec);
+          });
+        }
+        setSearchStatus(`Found ${companyCount} companies...`);
+      },
+      onComplete: (total, searchQueryId) => {
+        if (searchSessionRef.current !== currentSession) return;
+        setIsSearching(false);
+        setSearchProgress(100);
+        setSearchStatus('');
+        searchCleanupRef.current = null;
+        refetchHistory();
+        refetchCompanies(); // Sync with server state
+        if (total === 0) {
+          toast.error('No results found. Try a different search query.');
+        } else {
+          toast.success(`Found ${total} companies matching your criteria`);
+        }
+      },
+      onError: (message) => {
+        if (searchSessionRef.current !== currentSession) return;
+        setIsSearching(false);
+        setSearchProgress(0);
+        setSearchStatus('');
+        searchCleanupRef.current = null;
+        toast.error(message || 'Search failed. Please try again.');
       }
-      
-      setProject({
-        id: String(result.searchQueryId),
-        name: searchInput,
-        search_string: searchInput,
-        created_at: new Date()
-      });
-      
-      loadFromAPI(result.results);
-      refetchHistory();
-      
-      toast.success(`Found ${result.results.length} companies matching your criteria`);
-    } catch (error: any) {
-      toast.dismiss('search');
-      const message = error?.message || 'Search failed. Please try again.';
-      toast.error(message);
-      console.error('Search error:', error);
-    }
+    });
+    
+    searchCleanupRef.current = cleanup;
   };
 
   if (!currentProject) return null;
@@ -361,18 +422,41 @@ export default function Dashboard() {
                   onFocus={() => setShowHistory(true)}
                   placeholder="Enter new search query..." 
                   className="border-0 shadow-none focus-visible:ring-0 h-12 text-sm bg-transparent px-3 flex-1"
-                  disabled={searchMutation.isPending}
+                  disabled={isSearching}
                   data-testid="input-new-search"
                   title={searchInput}
                 />
-                <button 
-                  type="button"
-                  onClick={() => setShowHistory(!showHistory)}
-                  className="p-2 mr-2 hover:bg-muted rounded-full transition-colors"
-                >
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
-                </button>
+                {isSearching ? (
+                  <div className="flex items-center gap-2 px-3">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-xs text-muted-foreground">{searchProgress}%</span>
+                  </div>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="p-2 mr-2 hover:bg-muted rounded-full transition-colors"
+                  >
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
               </div>
+              
+              {isSearching && (
+                <div className="bg-background/95 backdrop-blur-sm shadow-lg rounded-full border border-border overflow-hidden mt-2 px-4 py-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-primary transition-all duration-300 ease-out rounded-full"
+                        style={{ width: `${searchProgress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap min-w-[120px]">
+                      {searchStatus}
+                    </span>
+                  </div>
+                </div>
+              )}
               
               {showHistory && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-background/98 backdrop-blur-md border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">

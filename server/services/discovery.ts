@@ -793,3 +793,250 @@ export function generateSearchUniqueKey(query: string, criteria: SearchCriteria)
   const sectorsKey = criteria.sectors.sort().join(',').toLowerCase();
   return `${normalizedQuery}|regions:${regionsKey}|sectors:${sectorsKey}`;
 }
+
+export async function* discoverCompaniesStreaming(
+  criteria: SearchCriteria, 
+  searchQueryId: number, 
+  selectedModel: string = "replit"
+): AsyncGenerator<{ type: 'company' | 'status' | 'error' | 'complete', data: any }> {
+  const limit = criteria.limit || 10;
+  
+  const isOpenRouter = selectedModel !== "replit";
+  const client = isOpenRouter ? openrouter : openai;
+  const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+  
+  console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
+  
+  yield { type: 'status', data: { message: 'Parsing search criteria...', progress: 5 } };
+  
+  const roleInstructions = buildExecutiveRoleInstructions(criteria);
+  
+  const messages = [
+    {
+      role: "system" as const,
+      content: `You are an expert market research analyst specializing in executive search and company intelligence. Your task is to identify REAL companies and their leadership based on specific criteria.
+
+===== DATA QUALITY REQUIREMENTS =====
+
+REVENUE & EMPLOYEE ESTIMATES:
+- For PUBLIC companies: Use most recent annual report figures
+- For PRIVATE companies: Provide reasonable industry estimates based on:
+  * Market position and known market share
+  * Industry benchmarks (revenue per employee, typical margins)
+  * LinkedIn employee counts as baseline
+  * Press mentions of scale/size
+  
+CRITICAL: NEVER return 0 for revenue or employees for established companies. 
+Every real company has revenue and employees. If exact figures are unavailable:
+- Use industry-appropriate estimates with conservative lower bounds
+- A mid-size FMCG distributor: $100M-$500M revenue, 500-2000 employees
+- A large regional distributor: $500M-$2B revenue, 2000-8000 employees  
+- A major market leader: $1B-$5B revenue, 5000-15000 employees
+
+SOURCING & CONFIDENCE:
+- revenueSource: Describe basis (e.g., "Industry estimate based on UAE FMCG market share")
+- employeesSource: Describe basis (e.g., "LinkedIn company size indicator: 1,001-5,000")
+- Confidence 7-10: Verified official data
+- Confidence 4-6: Industry estimates, LinkedIn data
+- Confidence 1-3: Rough market-based estimates
+
+===== OUTPUT FORMAT =====
+
+Return a JSON object with this EXACT structure:
+{
+  "companies": [
+    {
+      "name": "Actual Company Name",
+      "sector": "Industry Sector",
+      "region": "Geographic Region", 
+      "country": "Country Name",
+      "city": "Headquarters City",
+      "streetAddress": "123 Main Street, Suite 100",
+      "latitude": 25.2048,
+      "longitude": 55.2708,
+      "revenue": 500000000,
+      "revenueSource": "Industry estimate based on UAE FMCG market position",
+      "employees": 3000,
+      "employeesSource": "LinkedIn company size: 1,001-5,000",
+      "confidence": 5,
+      "executives": [
+        {
+          "name": "Real Executive Name",
+          "title": "Exact Title",
+          "source": "Company Website",
+          "profileUrl": "https://linkedin.com/in/executive-name",
+          "imageUrl": null,
+          "confidence": 7
+        }
+      ]
+    }
+  ]
+}
+
+${roleInstructions}
+
+===== EXECUTIVE DATA =====
+
+Find executives from these sources (in priority order):
+1. Company Website - Official leadership/about pages
+2. LinkedIn - Current position holders
+3. Press releases - Recent announcements
+
+===== COMPANY REQUIREMENTS =====
+
+1. Return ONLY real, existing companies - NO fictional companies
+2. HEADQUARTERS: Provide exact street address and GPS coordinates of main office
+3. REVENUE: Always provide a reasonable estimate - NEVER return 0
+4. EMPLOYEES: Always provide a reasonable estimate - NEVER return 0
+5. Match sectors: ${criteria.sectors?.join(', ') || 'any sector'}
+6. Match regions: ${criteria.regions?.join(', ') || 'any region'}
+7. Return exactly ${limit} companies, ranked by estimated revenue (highest first)`
+    },
+    {
+      role: "user" as const,
+      content: `Find the top ${limit} companies matching: ${JSON.stringify(criteria)}
+
+For each company, provide:
+- Real company name and accurate HQ location
+- Revenue estimate (use industry benchmarks if private company)
+- Employee count estimate (use LinkedIn data if available)
+- Key executives with current titles
+
+Return ONLY the JSON object, no additional text.`
+    }
+  ];
+
+  const requestOptions: any = {
+    model: modelName,
+    messages,
+    max_tokens: 8000,
+    temperature: 0.2
+  };
+  
+  if (!isOpenRouter) {
+    requestOptions.response_format = { type: "json_object" };
+    requestOptions.max_completion_tokens = 8000;
+    delete requestOptions.max_tokens;
+  }
+
+  yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };
+
+  let response;
+  try {
+    response = await client.chat.completions.create(requestOptions);
+  } catch (apiError: any) {
+    console.error("[Discovery Streaming] LLM API error:", apiError.message);
+    yield { type: 'error', data: { message: `AI model error: ${apiError.message}` } };
+    return;
+  }
+
+  const content = response.choices[0]?.message?.content || "{}";
+  console.log("[Discovery Streaming] LLM response received, length:", content.length);
+  
+  yield { type: 'status', data: { message: 'Processing results...', progress: 40 } };
+  
+  const data = extractJSON(content);
+  if (!data) {
+    console.error("[Discovery Streaming] Failed to parse LLM response as JSON");
+    yield { type: 'error', data: { message: 'Failed to parse AI response' } };
+    return;
+  }
+  
+  let companiesData: any[] = [];
+  if (Array.isArray(data)) {
+    companiesData = data;
+  } else if (data.companies && Array.isArray(data.companies)) {
+    companiesData = data.companies;
+  } else if (data.results && Array.isArray(data.results)) {
+    companiesData = data.results;
+  } else if (data.data && Array.isArray(data.data)) {
+    companiesData = data.data;
+  } else {
+    const arrayProp = Object.values(data).find(v => Array.isArray(v));
+    if (arrayProp) {
+      companiesData = arrayProp as any[];
+    }
+  }
+  
+  if (companiesData.length === 0) {
+    console.warn("[Discovery Streaming] No companies found in LLM response");
+    yield { type: 'complete', data: { total: 0 } };
+    return;
+  }
+
+  console.log(`[Discovery Streaming] Processing ${companiesData.length} companies`);
+  let processed = 0;
+  
+  for (const rawCompanyData of companiesData) {
+    try {
+      const validatedData = validateCompanyData(rawCompanyData);
+      
+      if (!validatedData.name || validatedData.name === 'Unknown Company') {
+        console.warn("[Discovery Streaming] Skipping company with invalid name");
+        continue;
+      }
+      
+      const company = await storage.createCompanyFromDiscovery({
+        name: validatedData.name,
+        sector: validatedData.sector,
+        region: validatedData.region,
+        country: validatedData.country,
+        streetAddress: validatedData.streetAddress || null,
+        latitude: String(validatedData.latitude),
+        longitude: String(validatedData.longitude),
+        revenue: String(validatedData.revenue),
+        revenueSource: validatedData.revenueSource,
+        employees: validatedData.employees,
+        employeesSource: validatedData.employeesSource,
+        confidence: validatedData.confidence,
+        color: "#1e3a8a",
+        searchQueryId
+      });
+
+      const validatedExecs = validatedData.executives.filter((e: any) => e !== null);
+      const filteredExecs = filterExecutivesByRole(validatedExecs, criteria);
+      
+      const executives = [];
+      for (const rawExec of filteredExecs) {
+        try {
+          const validatedExec = validateExecutiveData(rawExec);
+          if (!validatedExec) continue;
+          
+          const executive = await storage.createExecutiveFromDiscovery({
+            companyId: company.id,
+            name: validatedExec.name,
+            title: validatedExec.title,
+            email: validatedExec.email,
+            linkedin: validatedExec.linkedin,
+            profileUrl: validatedExec.profileUrl,
+            imageUrl: validatedExec.imageUrl,
+            source: validatedExec.source || 'discovery',
+            confidence: validatedExec.confidence
+          });
+          executives.push(executive);
+        } catch (execError: any) {
+          console.warn("[Discovery Streaming] Failed to create executive:", execError.message);
+        }
+      }
+
+      processed++;
+      const progress = 40 + Math.round((processed / companiesData.length) * 55);
+      
+      yield { 
+        type: 'company', 
+        data: { 
+          company: { ...company, executives },
+          progress,
+          current: processed,
+          total: companiesData.length
+        } 
+      };
+      
+    } catch (companyError: any) {
+      console.warn("[Discovery Streaming] Failed to create company:", companyError.message);
+    }
+  }
+
+  console.log(`[Discovery Streaming] Complete: ${processed} companies created`);
+  yield { type: 'complete', data: { total: processed } };
+}

@@ -24,18 +24,76 @@ function isValidCoordinate(lat: number, lng: number): boolean {
 function MapUpdater() {
   const companies = useAppStore(state => state.companies);
   const map = useMap();
-  const hasFitBounds = useRef(false);
+  const prevCountRef = useRef(0);
+  const lastFitTimeRef = useRef(0);
+  const isUserInteractingRef = useRef(false);
+  const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Expose map to window for panel access
     (window as any).leafletMap = map;
     
-    // Only fit bounds once when companies are loaded to avoid jumping around during drag
+    // Track user interactions to pause auto-fit
+    const handleInteractionStart = () => {
+      isUserInteractingRef.current = true;
+      if (interactionTimeoutRef.current) {
+        clearTimeout(interactionTimeoutRef.current);
+      }
+    };
+    
+    const handleInteractionEnd = () => {
+      // Resume auto-fit after 2 seconds of no interaction
+      interactionTimeoutRef.current = setTimeout(() => {
+        isUserInteractingRef.current = false;
+      }, 2000);
+    };
+    
+    map.on('dragstart', handleInteractionStart);
+    map.on('zoomstart', handleInteractionStart);
+    map.on('dragend', handleInteractionEnd);
+    map.on('zoomend', handleInteractionEnd);
+    
+    return () => {
+      map.off('dragstart', handleInteractionStart);
+      map.off('zoomstart', handleInteractionStart);
+      map.off('dragend', handleInteractionEnd);
+      map.off('zoomend', handleInteractionEnd);
+      if (interactionTimeoutRef.current) {
+        clearTimeout(interactionTimeoutRef.current);
+      }
+    };
+  }, [map]);
+
+  useEffect(() => {
     const validCompanies = companies.filter(c => isValidCoordinate(c.lat, c.lng));
-    if (validCompanies.length > 0 && !hasFitBounds.current) {
-      const bounds = L.latLngBounds(validCompanies.map(c => [c.lat, c.lng]));
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
-      hasFitBounds.current = true;
+    const now = Date.now();
+    
+    // Skip auto-fit if user is actively interacting with the map
+    if (isUserInteractingRef.current) {
+      prevCountRef.current = validCompanies.length;
+      return;
+    }
+    
+    // Auto-fit bounds when:
+    // 1. New companies are added (streaming search)
+    // 2. At least 500ms since last fit (debounce)
+    // 3. Company count changed
+    if (validCompanies.length > 0 && validCompanies.length !== prevCountRef.current) {
+      const timeSinceLastFit = now - lastFitTimeRef.current;
+      
+      // For the first company, fit immediately. For subsequent, debounce to 500ms
+      if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
+        const bounds = L.latLngBounds(validCompanies.map(c => [c.lat, c.lng]));
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true, duration: 0.5 });
+        lastFitTimeRef.current = now;
+      }
+      
+      prevCountRef.current = validCompanies.length;
+    }
+    
+    // Reset when companies are cleared (new search starting)
+    if (validCompanies.length === 0) {
+      prevCountRef.current = 0;
     }
   }, [companies, map]);
 

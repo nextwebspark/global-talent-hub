@@ -186,6 +186,63 @@ export function useSearch() {
   });
 }
 
+export interface StreamingSearchCallbacks {
+  onStatus?: (message: string, progress: number) => void;
+  onCompany?: (company: Company) => void;
+  onSearchCreated?: (data: { searchQueryId: number; query: string; interpretation: string }) => void;
+  onComplete?: (total: number, searchQueryId: number) => void;
+  onError?: (message: string) => void;
+}
+
+export function streamingSearch(
+  query: string,
+  model: string,
+  callbacks: StreamingSearchCallbacks
+): () => void {
+  const url = `/api/search/stream?query=${encodeURIComponent(query)}&model=${encodeURIComponent(model)}`;
+  const eventSource = new EventSource(url);
+  
+  eventSource.addEventListener('status', (e) => {
+    const data = JSON.parse(e.data);
+    callbacks.onStatus?.(data.message, data.progress);
+  });
+  
+  eventSource.addEventListener('search_created', (e) => {
+    const data = JSON.parse(e.data);
+    callbacks.onSearchCreated?.(data);
+  });
+  
+  eventSource.addEventListener('company', (e) => {
+    const data = JSON.parse(e.data);
+    if (data.company) {
+      callbacks.onCompany?.(data.company);
+    }
+  });
+  
+  eventSource.addEventListener('complete', (e) => {
+    const data = JSON.parse(e.data);
+    callbacks.onComplete?.(data.total, data.searchQueryId);
+    eventSource.close();
+  });
+  
+  eventSource.addEventListener('error', (e) => {
+    if (e instanceof MessageEvent) {
+      const data = JSON.parse(e.data);
+      callbacks.onError?.(data.message);
+    } else {
+      callbacks.onError?.('Connection error');
+    }
+    eventSource.close();
+  });
+  
+  eventSource.onerror = () => {
+    callbacks.onError?.('Connection lost');
+    eventSource.close();
+  };
+  
+  return () => eventSource.close();
+}
+
 export interface SearchHistoryItem {
   id: number;
   query: string;

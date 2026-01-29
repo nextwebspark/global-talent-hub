@@ -5,6 +5,7 @@ import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, in
 import { 
   parseSearchQuery, 
   discoverCompaniesAndExecutives, 
+  discoverCompaniesStreaming,
   fetchAvailableModels,
   generateSearchUniqueKey,
   AVAILABLE_MODELS 
@@ -442,6 +443,88 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[Routes] Error processing search:", error);
       res.status(500).json({ error: "Failed to process search. Please try again." });
+    }
+  });
+
+  // Streaming search endpoint using Server-Sent Events
+  app.get("/api/search/stream", async (req, res) => {
+    const query = req.query.query as string;
+    const model = (req.query.model as string) || "replit";
+    
+    if (!query) {
+      res.status(400).json({ error: "Search query is required" });
+      return;
+    }
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      console.log(`[Routes SSE] Starting streaming search: "${query}" with model: ${model}`);
+      
+      sendEvent('status', { message: 'Starting search...', progress: 0 });
+      
+      // Step 1: Parse the search query
+      const { criteria, interpretation } = await parseSearchQuery(query, model);
+      sendEvent('status', { message: 'Criteria parsed', progress: 10, interpretation });
+
+      // Step 2: Generate unique key
+      const uniqueKey = generateSearchUniqueKey(query, criteria);
+
+      // Step 3: Persist search query
+      const searchQuery = await storage.upsertSearchQuery({
+        uniqueKey,
+        query,
+        parsedCriteria: JSON.stringify(criteria),
+        resultCount: 0
+      });
+      
+      sendEvent('search_created', { 
+        searchQueryId: searchQuery.id, 
+        query, 
+        interpretation, 
+        criteria 
+      });
+
+      // Step 4: Clear previous results
+      await storage.deleteCompaniesBySearchQuery(searchQuery.id);
+
+      // Step 5: Stream companies as they're discovered
+      let companyCount = 0;
+      for await (const event of discoverCompaniesStreaming(criteria, searchQuery.id, model)) {
+        if (event.type === 'company') {
+          companyCount++;
+          sendEvent('company', event.data);
+        } else if (event.type === 'status') {
+          sendEvent('status', event.data);
+        } else if (event.type === 'error') {
+          sendEvent('error', event.data);
+        } else if (event.type === 'complete') {
+          // Update result count
+          await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
+          sendEvent('complete', { 
+            ...event.data,
+            searchQueryId: searchQuery.id 
+          });
+        }
+      }
+
+      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies`);
+      res.end();
+      
+    } catch (error: any) {
+      console.error("[Routes SSE] Error:", error);
+      sendEvent('error', { message: error.message || 'Search failed' });
+      res.end();
     }
   });
 

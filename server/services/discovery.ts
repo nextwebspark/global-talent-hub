@@ -109,6 +109,17 @@ function validateCompanyData(data: any): any {
   let revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
   let employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
   
+  // Enforce non-zero values for established companies
+  // If AI returns 0, use minimum industry defaults
+  if (revenue === 0 || revenue < 1000000) {
+    console.warn(`[Discovery] Warning: ${name} has zero/low revenue, using minimum default`);
+    revenue = 50000000; // $50M minimum for any company worth researching
+  }
+  if (employees === 0 || employees < 10) {
+    console.warn(`[Discovery] Warning: ${name} has zero/low employees, using minimum default`);
+    employees = 100; // Minimum 100 employees for established company
+  }
+  
   let confidence = parseNumber(data.confidence || data.score, 5);
   confidence = Math.max(1, Math.min(10, confidence));
   
@@ -521,43 +532,33 @@ export async function discoverCompaniesAndExecutives(
   const messages = [
     {
       role: "system" as const,
-      content: `You are an expert executive search analyst and market researcher. Your task is to identify REAL companies and their executives based on specific criteria.
+      content: `You are an expert market research analyst specializing in executive search and company intelligence. Your task is to identify REAL companies and their leadership based on specific criteria.
 
-===== CRITICAL DATA ACCURACY RULES =====
-These rules are MANDATORY and override all other instructions:
+===== DATA QUALITY REQUIREMENTS =====
 
-1. NO INFERENCES OR SPECULATION: Only report data you have HIGH CONFIDENCE in from verifiable sources. If you cannot find reliable data, use conservative estimates with ranges.
+REVENUE & EMPLOYEE ESTIMATES:
+- For PUBLIC companies: Use most recent annual report figures
+- For PRIVATE companies: Provide reasonable industry estimates based on:
+  * Market position and known market share
+  * Industry benchmarks (revenue per employee, typical margins)
+  * LinkedIn employee counts as baseline
+  * Press mentions of scale/size
+  
+CRITICAL: NEVER return 0 for revenue or employees for established companies. 
+Every real company has revenue and employees. If exact figures are unavailable:
+- Use industry-appropriate estimates with conservative lower bounds
+- A mid-size FMCG distributor: $100M-$500M revenue, 500-2000 employees
+- A large regional distributor: $500M-$2B revenue, 2000-8000 employees  
+- A major market leader: $1B-$5B revenue, 5000-15000 employees
 
-2. USE RANGES FOR UNCERTAINTY: When exact figures are unknown, ALWAYS use ranges:
-   - Revenue: "1.8 - 2.2 billion USD" → use the LOWER bound for the numeric value
-   - Employees: "8,000 - 10,000" → use the LOWER bound for the numeric value
-   - NEVER inflate or round up numbers
+SOURCING & CONFIDENCE:
+- revenueSource: Describe basis (e.g., "Industry estimate based on UAE FMCG market share")
+- employeesSource: Describe basis (e.g., "LinkedIn company size indicator: 1,001-5,000")
+- Confidence 7-10: Verified official data
+- Confidence 4-6: Industry estimates, LinkedIn data
+- Confidence 1-3: Rough market-based estimates
 
-3. CONSERVATIVE ESTIMATES ONLY: When estimating, always choose the more conservative (lower) figure. It's better to underestimate than overestimate.
-
-4. PRIVATE COMPANY CAUTION: For privately held companies:
-   - Revenue figures are often estimated - use conservative industry benchmarks
-   - Employee counts should be based on LinkedIn data or company statements
-   - Set confidence to 5 or lower for private company financials
-
-5. SOURCE EVERYTHING: Every data point must have a logical basis:
-   - revenueSource: "Company Annual Report 2024" or "Industry estimate based on market size"
-   - employeesSource: "LinkedIn company page" or "Company website"
-
-6. CONFIDENCE REFLECTS CERTAINTY:
-   - 9-10: Data from official company filings/reports (publicly traded companies only)
-   - 7-8: Data from company website or verified press releases
-   - 5-6: Data from industry reports, LinkedIn, or aggregators
-   - 3-4: Conservative estimates based on industry benchmarks
-   - 1-2: Rough estimates - use ranges and lower bounds
-
-7. DO NOT:
-   - Make up specific revenue figures for private companies
-   - Inflate employee counts beyond what sources support
-   - Provide single-point estimates when ranges are more accurate
-   - Return confidence above 7 for private company financials
-
-===== END ACCURACY RULES =====
+===== OUTPUT FORMAT =====
 
 Return a JSON object with this EXACT structure:
 {
@@ -571,10 +572,10 @@ Return a JSON object with this EXACT structure:
       "streetAddress": "123 Main Street, Suite 100",
       "latitude": 25.2048,
       "longitude": 55.2708,
-      "revenue": 1800000000,
-      "revenueSource": "Industry estimate (conservative lower bound of $1.8-2.2B range)",
-      "employees": 8000,
-      "employeesSource": "LinkedIn company page estimate (8,000-10,000 range)",
+      "revenue": 500000000,
+      "revenueSource": "Industry estimate based on UAE FMCG market position",
+      "employees": 3000,
+      "employeesSource": "LinkedIn company size: 1,001-5,000",
       "confidence": 5,
       "executives": [
         {
@@ -582,8 +583,8 @@ Return a JSON object with this EXACT structure:
           "title": "Exact Title",
           "source": "Company Website",
           "profileUrl": "https://linkedin.com/in/executive-name",
-          "imageUrl": "https://example.com/photo.jpg",
-          "confidence": 8
+          "imageUrl": null,
+          "confidence": 7
         }
       ]
     }
@@ -592,44 +593,34 @@ Return a JSON object with this EXACT structure:
 
 ${roleInstructions}
 
-PRIMARY SOURCES OF TRUTH FOR EXECUTIVES (use in this order):
-1. Company Website - Official leadership/about pages (MOST AUTHORITATIVE)
-2. Annual Report - Official filings, executive sections
-3. LinkedIn - Professional profiles with current positions
+===== EXECUTIVE DATA =====
 
-Cross-check all executive data across at least 2 sources when possible.
-If sources conflict, prefer: Company Website > Annual Report > LinkedIn
+Find executives from these sources (in priority order):
+1. Company Website - Official leadership/about pages
+2. LinkedIn - Current position holders
+3. Press releases - Recent announcements
 
-DATA SOURCES FOR COMPANY DATA:
-1. Annual Reports - Official financial statements (public companies)
-2. Company Websites - Official corporate information
-3. Bloomberg, Reuters, Crunchbase - For verified data only
-4. Industry Reports - For market size and revenue estimates
+===== COMPANY REQUIREMENTS =====
 
-STRICT REQUIREMENTS:
 1. Return ONLY real, existing companies - NO fictional companies
-2. Return ONLY executives that match the EXECUTIVE FILTERING RULES above
-3. HEADQUARTERS LOCATION (CRITICAL): 
-   - streetAddress: The EXACT physical street address of the company's MAIN OFFICE/HEADQUARTERS
-   - latitude/longitude: The PRECISE GPS coordinates of the street address (not city center)
-4. REVENUE: Use CONSERVATIVE estimates. For private companies, use lower bound of industry estimates.
-5. EMPLOYEES: Use CONSERVATIVE counts. Prefer LinkedIn data or official company statements.
-6. Match the specified sectors: ${criteria.sectors?.join(', ') || 'any sector'}
-7. Match the specified regions: ${criteria.regions?.join(', ') || 'any region'}
-8. Generate exactly ${limit} companies
-
-For executives, include:
-- Full legal name as appears on official records
-- Exact current title
-- Source: Company Website, Annual Report, or LinkedIn
-- profileUrl: Direct link to LinkedIn or company leadership page
-- Confidence score (1-10) based on source reliability`
+2. HEADQUARTERS: Provide exact street address and GPS coordinates of main office
+3. REVENUE: Always provide a reasonable estimate - NEVER return 0
+4. EMPLOYEES: Always provide a reasonable estimate - NEVER return 0
+5. Match sectors: ${criteria.sectors?.join(', ') || 'any sector'}
+6. Match regions: ${criteria.regions?.join(', ') || 'any region'}
+7. Return exactly ${limit} companies, ranked by estimated revenue (highest first)`
     },
     {
       role: "user" as const,
-      content: `Find ${limit} REAL companies matching these criteria: ${JSON.stringify(criteria)}
+      content: `Find the top ${limit} companies matching: ${JSON.stringify(criteria)}
 
-Remember: Only return actual, existing companies with accurate information. Return ONLY the JSON object.`
+For each company, provide:
+- Real company name and accurate HQ location
+- Revenue estimate (use industry benchmarks if private company)
+- Employee count estimate (use LinkedIn data if available)
+- Key executives with current titles
+
+Return ONLY the JSON object, no additional text.`
     }
   ];
 

@@ -547,6 +547,23 @@ export async function registerRoutes(
     }
   });
 
+  // CLOCKWORK DIAGNOSTICS
+  // Test Clockwork connectivity and return detailed diagnostic info
+  app.get("/api/clockwork/diagnostics", async (_req, res) => {
+    try {
+      const { runClockworkDiagnostics } = await import("./services/enrichment");
+      const diagnostics = await runClockworkDiagnostics();
+      res.json(diagnostics);
+    } catch (error) {
+      console.error("Error running Clockwork diagnostics:", error);
+      res.status(500).json({ 
+        ok: false,
+        error: "Failed to run Clockwork diagnostics",
+        details: String(error)
+      });
+    }
+  });
+
   // CLOCKWORK PROJECT MANAGEMENT
   // Fetch available Clockwork projects (READ-ONLY)
   app.get("/api/clockwork/projects", async (_req, res) => {
@@ -557,6 +574,27 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching Clockwork projects:", error);
       res.status(500).json({ error: "Failed to fetch Clockwork projects" });
+    }
+  });
+
+  // Fetch people from a specific Clockwork project (READ-ONLY)
+  // Returns detailed results with endpoint verification and warnings
+  app.get("/api/clockwork/projects/:projectId/people", async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      
+      const { fetchClockworkProjectPeople } = await import("./services/enrichment");
+      const result = await fetchClockworkProjectPeople(projectId);
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching Clockwork project people:", error);
+      res.status(500).json({ 
+        error: "Failed to fetch Clockwork project people",
+        details: String(error)
+      });
     }
   });
 

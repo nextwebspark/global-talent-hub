@@ -48,6 +48,14 @@ interface ExecutiveMatchItem {
   };
 }
 
+interface EndpointTried {
+  endpoint: string;
+  status: number | null;
+  success: boolean;
+  candidateCount: number;
+  samplePerson?: { id: string; name: string; company: string };
+}
+
 interface MatchReviewData {
   enrichmentRunId?: string;
   searchId: number;
@@ -56,6 +64,7 @@ interface MatchReviewData {
   timestamp: string;
   totalLocalExecutives: number;
   totalClockworkExecutives: number;
+  totalRawCandidates?: number;
   clockworkCandidates?: ClockworkExecutive[];
   matches: {
     confirmed: ExecutiveMatchItem[];
@@ -67,12 +76,17 @@ interface MatchReviewData {
     possibleCount: number;
     noMatchCount: number;
   };
-  fetchStatus?: 'success' | 'error' | 'no_candidates';
+  fetchStatus?: 'success' | 'error' | 'no_candidates' | 'invalid_data';
   fetchError?: {
     message: string;
     status?: number;
     endpoint?: string;
   };
+  endpointsTried?: EndpointTried[];
+  warnings?: string[];
+  successEndpoint?: string;
+  paginationUsed?: boolean;
+  pagesFetched?: number;
 }
 
 interface MatchReviewPanelProps {
@@ -96,7 +110,8 @@ export default function MatchReviewPanel({
     possible: true,
     noMatch: false,
     unmatchedClockwork: false,
-    clockworkCandidates: true
+    clockworkCandidates: true,
+    clockworkDebug: false
   });
 
   const toggleSection = (section: string) => {
@@ -341,6 +356,83 @@ export default function MatchReviewPanel({
               </div>
             </div>
           )}
+
+          {/* Invalid Data Banner - Show when API returns system accounts / wrong data */}
+          {matchData.fetchStatus === 'invalid_data' && (
+            <div className="p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg" data-testid="invalid-data-banner">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-semibold text-orange-800 dark:text-orange-200">Clockwork API returned invalid data</h3>
+                  <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                    The API returned system/test accounts instead of project candidates.
+                    The project filter may not be working correctly on Clockwork's side.
+                  </p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                    Please contact Clockwork support to report this issue.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Warnings Banner - Show any API warnings */}
+          {matchData.warnings && matchData.warnings.length > 0 && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg" data-testid="warnings-banner">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-medium text-amber-800 dark:text-amber-200 text-sm">Warnings</h4>
+                  <ul className="text-xs text-amber-700 dark:text-amber-300 mt-1 list-disc ml-4">
+                    {matchData.warnings.map((warning, idx) => (
+                      <li key={idx}>{warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Clockwork Debug Section - Expandable details about API calls */}
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() => toggleSection('clockworkDebug')}
+              className="w-full p-2 bg-gray-50 dark:bg-gray-800 flex items-center justify-between text-sm"
+              data-testid="toggle-clockwork-debug"
+            >
+              <span className="font-medium text-gray-600 dark:text-gray-400">
+                Clockwork Debug Info
+              </span>
+              {expandedSections.clockworkDebug ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {expandedSections.clockworkDebug && (
+              <div className="p-3 bg-gray-50/50 dark:bg-gray-900/50 text-xs font-mono space-y-2">
+                <div><span className="text-gray-500">Firm Slug:</span> {matchData.clockworkFirmSlug || 'N/A'}</div>
+                <div><span className="text-gray-500">Project ID:</span> {matchData.clockworkProjectId}</div>
+                <div><span className="text-gray-500">Run ID:</span> {matchData.enrichmentRunId || 'N/A'}</div>
+                <div><span className="text-gray-500">Fetch Status:</span> <span className={matchData.fetchStatus === 'success' ? 'text-green-600' : 'text-red-600'}>{matchData.fetchStatus || 'N/A'}</span></div>
+                <div><span className="text-gray-500">Success Endpoint:</span> {matchData.successEndpoint || 'N/A'}</div>
+                <div><span className="text-gray-500">Pages Fetched:</span> {matchData.pagesFetched ?? 'N/A'}</div>
+                <div><span className="text-gray-500">Raw Candidates:</span> {matchData.totalRawCandidates ?? 'N/A'}</div>
+                <div><span className="text-gray-500">Filtered Candidates:</span> {clockworkCandidates.length}</div>
+                
+                {matchData.endpointsTried && matchData.endpointsTried.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div className="text-gray-500 mb-1">Endpoints Tried:</div>
+                    {matchData.endpointsTried.map((ep, idx) => (
+                      <div key={idx} className={`ml-2 ${ep.success ? 'text-green-600' : 'text-red-500'}`}>
+                        {ep.success ? '✓' : '✗'} {ep.endpoint} ({ep.status}) - {ep.candidateCount} candidates
+                        {ep.samplePerson && (
+                          <span className="text-gray-400 ml-2">Sample: {ep.samplePerson.name}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-2 border-blue-200 dark:border-blue-800">
               <div className="text-2xl font-bold text-blue-600">{clockworkCandidates.length}</div>

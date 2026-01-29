@@ -139,9 +139,56 @@ interface ClockworkAPIPaginatedResponse {
 }
 
 /**
+ * Clockwork configuration type
+ */
+interface ClockworkConfig {
+  apiKey: string;
+  apiSecret: string;
+  firmKey: string;
+  firmSlug: string;
+  baseUrl: string;
+  authToken: string;
+}
+
+/**
+ * Clockwork diagnostics result
+ */
+export interface ClockworkDiagnosticsResult {
+  ok: boolean;
+  timestamp: string;
+  credentials: {
+    hasApiKey: boolean;
+    hasApiSecret: boolean;
+    hasFirmKey: boolean;
+    hasFirmSlug: boolean;
+    firmSlug: string | null;
+    baseUrl: string;
+  };
+  connectivity: {
+    tested: boolean;
+    endpoint: string | null;
+    httpStatus: number | null;
+    httpStatusText: string | null;
+    responseTime: number | null;
+  };
+  projects: {
+    count: number;
+    sample: Array<{ id: string; name: string; status: string }>;
+  };
+  errors: string[];
+  endpointsTried: Array<{
+    url: string;
+    status: number | null;
+    statusText: string | null;
+    success: boolean;
+    responseSnippet?: string;
+  }>;
+}
+
+/**
  * Get Clockwork API configuration
  */
-function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: string; firmSlug: string; baseUrl: string; authToken: string } | null {
+function getClockworkConfig(): ClockworkConfig | null {
   const apiKey = process.env.CLOCKWORK_API_KEY;
   const apiSecret = process.env.CLOCKWORK_API_SECRET;
   const firmKey = process.env.CLOCKWORK_FIRM_KEY;
@@ -161,6 +208,116 @@ function getClockworkConfig(): { apiKey: string; apiSecret: string; firmKey: str
   console.log(`[Enrichment:Clockwork] Using firm slug: ${firmSlug} with base URL: ${baseUrl}`);
   
   return { apiKey, apiSecret, firmKey, firmSlug: firmSlug || firmKey, baseUrl, authToken };
+}
+
+/**
+ * Run Clockwork connectivity and scope diagnostics
+ * Returns detailed info about credentials, connectivity, and available projects
+ */
+export async function runClockworkDiagnostics(): Promise<ClockworkDiagnosticsResult> {
+  const startTime = Date.now();
+  const result: ClockworkDiagnosticsResult = {
+    ok: false,
+    timestamp: new Date().toISOString(),
+    credentials: {
+      hasApiKey: !!process.env.CLOCKWORK_API_KEY,
+      hasApiSecret: !!process.env.CLOCKWORK_API_SECRET,
+      hasFirmKey: !!process.env.CLOCKWORK_FIRM_KEY,
+      hasFirmSlug: !!process.env.CLOCKWORK_FIRM_SLUG,
+      firmSlug: process.env.CLOCKWORK_FIRM_SLUG || process.env.CLOCKWORK_FIRM_KEY || null,
+      baseUrl: process.env.CLOCKWORK_API_URL || 'https://api.clockworkrecruiting.com/v3.0'
+    },
+    connectivity: {
+      tested: false,
+      endpoint: null,
+      httpStatus: null,
+      httpStatusText: null,
+      responseTime: null
+    },
+    projects: {
+      count: 0,
+      sample: []
+    },
+    errors: [],
+    endpointsTried: []
+  };
+
+  const config = getClockworkConfig();
+  
+  if (!config) {
+    result.errors.push('Missing required credentials: CLOCKWORK_API_KEY, CLOCKWORK_API_SECRET, or CLOCKWORK_FIRM_KEY');
+    return result;
+  }
+
+  // Try different project endpoints
+  const endpointsToTry = ['positions', 'projects', 'searches'];
+  
+  for (const endpoint of endpointsToTry) {
+    const url = `${config.baseUrl}/${config.firmSlug}/${endpoint}?page=1&per_page=10`;
+    const endpointResult: ClockworkDiagnosticsResult['endpointsTried'][0] = {
+      url,
+      status: null,
+      statusText: null,
+      success: false
+    };
+    
+    try {
+      const reqStart = Date.now();
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Token ${config.authToken}`,
+          'X-API-Key': config.firmKey,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const responseTime = Date.now() - reqStart;
+      endpointResult.status = response.status;
+      endpointResult.statusText = response.statusText;
+      
+      if (response.ok) {
+        endpointResult.success = true;
+        result.connectivity.tested = true;
+        result.connectivity.endpoint = url;
+        result.connectivity.httpStatus = response.status;
+        result.connectivity.httpStatusText = response.statusText;
+        result.connectivity.responseTime = responseTime;
+        
+        const data = await response.json();
+        endpointResult.responseSnippet = JSON.stringify(data).substring(0, 200);
+        
+        // Extract projects
+        const projects = data.data || data.projects || data.items || data.positions || [];
+        if (Array.isArray(projects)) {
+          result.projects.count = data.meta?.total_count || data.pagination?.total || projects.length;
+          result.projects.sample = projects.slice(0, 3).map((p: any) => ({
+            id: String(p.id),
+            name: p.name || p.title || 'Unknown',
+            status: p.status || 'unknown'
+          }));
+        }
+        
+        result.ok = true;
+        result.endpointsTried.push(endpointResult);
+        break; // Found a working endpoint
+      } else {
+        const errorText = await response.text();
+        endpointResult.responseSnippet = errorText.substring(0, 200);
+      }
+    } catch (err) {
+      endpointResult.statusText = String(err);
+    }
+    
+    result.endpointsTried.push(endpointResult);
+  }
+
+  if (!result.ok) {
+    result.errors.push('All Clockwork API endpoints failed. Check credentials and permissions.');
+  }
+
+  return result;
 }
 
 /**
@@ -560,7 +717,7 @@ export interface EnrichmentMatchResult {
     possibleCount: number;
     noMatchCount: number;
   };
-  fetchStatus: 'success' | 'error' | 'no_candidates';
+  fetchStatus: 'success' | 'error' | 'no_candidates' | 'invalid_data';
   fetchError?: {
     message: string;
     status?: number;
@@ -568,6 +725,21 @@ export interface EnrichmentMatchResult {
   };
   paginationUsed: boolean;
   pagesFetched: number;
+  endpointsTried: ClockworkFetchResult['endpointsTried'];
+  warnings: string[];
+  successEndpoint?: string;
+}
+
+/**
+ * Fetch Clockwork project people - exported for direct API access
+ * Returns detailed results including endpoint verification and system account detection
+ */
+export async function fetchClockworkProjectPeople(
+  projectId: string
+): Promise<ClockworkFetchResult> {
+  const enrichmentRunId = randomUUID().substring(0, 8);
+  console.log(`[Enrichment:${enrichmentRunId}] Fetching project people for direct API access: ${projectId}`);
+  return fetchClockworkExecutives(projectId, enrichmentRunId);
 }
 
 /**
@@ -757,9 +929,13 @@ function findBestMatch(
 /**
  * Result from fetching Clockwork candidates
  */
-interface ClockworkFetchResult {
+/**
+ * Detailed result from fetching Clockwork project people
+ * Includes endpoint verification and system account detection
+ */
+export interface ClockworkFetchResult {
   candidates: ClockworkExecutive[];
-  status: 'success' | 'error' | 'no_candidates';
+  status: 'success' | 'error' | 'no_candidates' | 'invalid_data';
   error?: {
     message: string;
     status?: number;
@@ -769,6 +945,73 @@ interface ClockworkFetchResult {
   pagesFetched: number;
   totalRawCandidates: number;
   successEndpoint?: string;
+  endpointsTried: Array<{
+    endpoint: string;
+    status: number | null;
+    success: boolean;
+    candidateCount: number;
+    samplePerson?: { id: string; name: string; company: string };
+  }>;
+  warnings: string[];
+  projectId: string;
+  firmSlug: string;
+}
+
+/**
+ * System/test account names to detect invalid data
+ */
+const SYSTEM_ACCOUNT_PATTERNS = [
+  /^clockwork\s*admin$/i,
+  /^data$/i,
+  /^test\s*user$/i,
+  /^admin$/i,
+  /^system$/i,
+  /^clockwork$/i,
+  /^api\s*user$/i,
+  /^support$/i,
+];
+
+/**
+ * Check if a name appears to be a system/test account
+ */
+function isSystemAccount(name: string): boolean {
+  return SYSTEM_ACCOUNT_PATTERNS.some(pattern => pattern.test(name.trim()));
+}
+
+/**
+ * Verify that fetched data looks like real project candidates
+ * Returns validation result with warnings
+ */
+function validateFetchedCandidates(candidates: ClockworkExecutive[]): {
+  valid: boolean;
+  warnings: string[];
+  systemAccountCount: number;
+} {
+  const systemAccountCount = candidates.filter(c => isSystemAccount(c.name)).length;
+  const warnings: string[] = [];
+  
+  if (candidates.length === 0) {
+    return { valid: true, warnings: [], systemAccountCount: 0 };
+  }
+  
+  // More than 50% system accounts suggests the project filter isn't working
+  if (systemAccountCount > candidates.length * 0.5) {
+    warnings.push(`Found ${systemAccountCount}/${candidates.length} system/test accounts - project filter may not be working`);
+    return { valid: false, warnings, systemAccountCount };
+  }
+  
+  // All candidates have identical names suggests duplicate data
+  const uniqueNames = new Set(candidates.map(c => c.name.toLowerCase()));
+  if (candidates.length > 5 && uniqueNames.size < candidates.length * 0.3) {
+    warnings.push(`Found many duplicate names (${uniqueNames.size} unique out of ${candidates.length}) - API may be returning incorrect data`);
+  }
+  
+  // Warn about system accounts but don't invalidate if < 50%
+  if (systemAccountCount > 0 && systemAccountCount <= candidates.length * 0.5) {
+    warnings.push(`Found ${systemAccountCount} system/test accounts that will be filtered out`);
+  }
+  
+  return { valid: true, warnings, systemAccountCount };
 }
 
 /**
@@ -1028,9 +1271,16 @@ async function fetchClockworkExecutives(
       },
       paginationUsed: false,
       pagesFetched: 0,
-      totalRawCandidates: 0
+      totalRawCandidates: 0,
+      endpointsTried: [],
+      warnings: ['Clockwork API credentials not configured'],
+      projectId: clockworkProjectId,
+      firmSlug: 'unknown'
     };
   }
+  
+  const endpointsTriedDetails: ClockworkFetchResult['endpointsTried'] = [];
+  const allWarnings: string[] = [];
   
   // Try multiple endpoint patterns for fetching project candidates
   // Based on Clockwork API documentation, the /people endpoint is at the root level
@@ -1230,13 +1480,38 @@ async function fetchClockworkExecutives(
         console.log(`[Enrichment:${enrichmentRunId}] INFO - Successfully fetched ${positionsFetched} positions`);
       }
       
+      // Validate that we got real candidates, not just system accounts
+      const validation = validateFetchedCandidates(uniqueCandidates);
+      allWarnings.push(...validation.warnings);
+      
+      // Filter out system accounts from final results
+      const filteredCandidates = uniqueCandidates.filter(c => !isSystemAccount(c.name));
+      
+      endpointsTriedDetails.push({
+        endpoint: endpointDesc,
+        status: 200,
+        success: true,
+        candidateCount: filteredCandidates.length,
+        samplePerson: filteredCandidates[0] ? {
+          id: filteredCandidates[0].id,
+          name: filteredCandidates[0].name,
+          company: filteredCandidates[0].company || ''
+        } : undefined
+      });
+      
       return {
-        candidates: uniqueCandidates,
-        status: uniqueCandidates.length > 0 ? 'success' : 'no_candidates',
+        candidates: filteredCandidates,
+        status: validation.valid 
+          ? (filteredCandidates.length > 0 ? 'success' : 'no_candidates')
+          : 'invalid_data',
         paginationUsed,
         pagesFetched: currentPage,
         totalRawCandidates,
-        successEndpoint: endpointDesc
+        successEndpoint: endpointDesc,
+        endpointsTried: endpointsTriedDetails,
+        warnings: allWarnings,
+        projectId: clockworkProjectId,
+        firmSlug: config.firmSlug
       };
     }
   }
@@ -1255,7 +1530,11 @@ async function fetchClockworkExecutives(
     },
     paginationUsed: false,
     pagesFetched: 0,
-    totalRawCandidates: 0
+    totalRawCandidates: 0,
+    endpointsTried: endpointsTriedDetails,
+    warnings: allWarnings,
+    projectId: clockworkProjectId,
+    firmSlug: config.firmSlug
   };
 }
 
@@ -1399,7 +1678,10 @@ export async function orchestrateEnrichmentMatching(
     fetchStatus: fetchResult.status,
     fetchError: fetchResult.error,
     paginationUsed: fetchResult.paginationUsed,
-    pagesFetched: fetchResult.pagesFetched
+    pagesFetched: fetchResult.pagesFetched,
+    endpointsTried: fetchResult.endpointsTried,
+    warnings: fetchResult.warnings,
+    successEndpoint: fetchResult.successEndpoint
   };
   
   console.log(`[Enrichment:${enrichmentRunId}] INFO - Match results: confirmed=${result.summary.confirmedCount}, possible=${result.summary.possibleCount}, no_match=${result.summary.noMatchCount}`);

@@ -1,0 +1,70 @@
+You are refactoring and fixing the Clockwork enrichment feature.
+
+GOAL
+When user clicks “Enrich Data” and selects a Clockwork Project, the app must fetch the FULL list of people/candidates associated with that selected project from Clockwork, show how many were fetched, and then run fuzzy matching against the current search executives. The UI must allow importing unmatched Clockwork candidates into the current search results (append to map/list), without modifying Clockwork data.
+
+NON-NEGOTIABLES
+1) Never silently fail. If Clockwork returns 0 results, show the exact reason (HTTP status, endpoint used, firm slug used, response snippet).
+2) Do not fall back to “only LLM executives” without a visible warning banner.
+3) Selected Clockwork project must be persisted per-search (search_id) and must be included in every enrichment request.
+4) Read-only integration: NEVER write back to Clockwork. Any edits happen only in our DB.
+5) Support pagination and rate limits; show progress (page x of y) or “next cursor” if applicable.
+
+ARCHITECTURE / BOUNDARIES
+- server/services/discovery.ts: LLM-only. Creates records only.
+- server/services/enrichment.ts: Clockwork-only. Can fill empty fields + can add new executives from Clockwork if user confirms import. Must not overwrite manual edits.
+- server/storage.ts (or db layer): single source of truth; enforce “manual overrides imported”.
+- server/routes.ts: thin routes only.
+
+IMPLEMENTATION TASKS (DO IN THIS ORDER)
+
+A) Add a Clockwork “Connectivity & Scope” diagnostic endpoint:
+   GET /api/clockwork/diagnostics
+   It must:
+   - call a “list projects” endpoint
+   - return: firmSlug used, endpoint URLs called, HTTP status codes, count of projects returned, and first 3 project records (id + title only).
+   - if non-200 or empty, return a clear error object and do not proceed.
+
+B) Fix project picker to use live data:
+   - Project selection modal must call /api/clockwork/projects
+   - Populate the modal list from actual API results (id + title + status if available).
+   - Remove any hardcoded/demo projects.
+   - Store selected projectId on the current search record (search_id) and in UI state.
+
+C) Implement “fetch people by project” with explicit endpoint strategy + verification:
+   - Create a single function: fetchClockworkProjectPeople(projectId)
+   - It must try the documented/primary project-people route.
+   - If the API returns unfiltered/global people or obviously wrong “system” records, treat as failure and try alternative endpoint(s) that Clockwork uses for project candidates.
+   - For each attempted endpoint, record: url, params, status, count, and an example person {id, name, company}.
+   - Return the first endpoint that returns a plausible project-scoped dataset.
+   - If none succeed, stop and return a detailed error report to the UI (do not run matching).
+
+D) Update Enrich Data flow UI:
+   - After fetching project people, show:
+     “Fetched N Clockwork people from project <title>”
+     plus a table split into:
+       - Confirmed matches (>=0.85)
+       - Possible (0.60–0.85)
+       - No match (<0.60)
+   - Also add a new panel: “Clockwork Import Candidates” listing the fetched Clockwork people who are not matched, allowing user to import selected ones into the search results.
+
+E) Add robust logging & error surfaces:
+   - Log every Clockwork request server-side with correlation_id and search_id.
+   - UI must show a “Clockwork Debug” expandable section with:
+     endpoints tried, statuses, counts, and the top-level error message.
+
+CONFIG / SECRETS
+Use Replit Secrets only:
+- CLOCKWORK_API_KEY
+- CLOCKWORK_API_SECRET
+- CLOCKWORK_FIRM_SERVICE_KEY (if required by API)
+- CLOCKWORK_FIRM_SLUG (e.g., derived from the firm subdomain)
+- CLOCKWORK_BASE_URL (single source)
+Never hardcode credentials.
+
+ACCEPTANCE TESTS
+1) Run a search returning 5 LLM executives.
+2) Click Enrich Data → select a real Clockwork project.
+3) System fetches >0 Clockwork people (unless project is empty). UI shows fetched count.
+4) Unmatched Clockwork people appear in “Clockwork Import Candidates” and can be imported (creating new executives on our side only).
+5) Reload search later: selected project persists; enrichment results reproduce; manual edits persist and override imported data.

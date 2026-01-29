@@ -106,11 +106,47 @@ function validateCompanyData(data: any): any {
   
   const coords = validateCoordinates(data.latitude || data.lat, data.longitude || data.lng || data.lon, region, country);
   
-  const revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
-  const employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
+  let revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
+  let employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
   
   let confidence = parseNumber(data.confidence || data.score, 5);
   confidence = Math.max(1, Math.min(10, confidence));
+  
+  // Track data quality warnings for transparency
+  const dataQualityWarnings: string[] = [];
+  
+  // Detect if company appears to be publicly traded based on revenue source
+  const revenueSource = String(data.revenueSource || data.revenue_source || 'Unknown').trim();
+  const isLikelyPublic = /annual report|10-k|sec filing|quarterly report|investor relations/i.test(revenueSource);
+  
+  // Sanity check: validate revenue/employee ratio to catch inflated figures
+  // Typical revenue per employee ranges from $50K to $2M depending on industry
+  if (revenue > 0 && employees > 0) {
+    const revenuePerEmployee = revenue / employees;
+    const MIN_REASONABLE_RATIO = 30000;   // $30K per employee (very labor-intensive)
+    const MAX_REASONABLE_RATIO = 3000000; // $3M per employee (very capital-intensive like finance)
+    
+    if (revenuePerEmployee > MAX_REASONABLE_RATIO) {
+      // Revenue seems inflated - likely an order of magnitude error
+      console.warn(`[Discovery] Warning: ${name} has unusually high revenue/employee ratio: $${Math.round(revenuePerEmployee).toLocaleString()}/employee. Adjusting confidence.`);
+      dataQualityWarnings.push(`High revenue/employee ratio ($${Math.round(revenuePerEmployee/1000)}K/employee) may indicate inflated revenue`);
+      confidence = Math.min(confidence, 3); // Cap confidence at 3 for suspicious data
+    } else if (revenuePerEmployee < MIN_REASONABLE_RATIO && employees > 100) {
+      // Very low ratio for a larger company - may indicate missing revenue data
+      console.warn(`[Discovery] Warning: ${name} has low revenue/employee ratio: $${Math.round(revenuePerEmployee).toLocaleString()}/employee`);
+      dataQualityWarnings.push(`Low revenue/employee ratio may indicate incomplete data`);
+      confidence = Math.min(confidence, 4);
+    }
+  }
+  
+  // For private companies, flag extremely large revenues (>$30B is rare for private)
+  // Only apply this check for companies without public filing sources
+  const MAX_PRIVATE_COMPANY_REVENUE = 30000000000; // $30B
+  if (revenue > MAX_PRIVATE_COMPANY_REVENUE && !isLikelyPublic) {
+    console.warn(`[Discovery] Warning: Private company ${name} has very high revenue ($${(revenue / 1000000000).toFixed(1)}B) - may be inflated`);
+    dataQualityWarnings.push(`Revenue figure ($${(revenue / 1000000000).toFixed(1)}B) unusually high for a private company`);
+    confidence = Math.min(confidence, 4);
+  }
   
   const rawExecutives = Array.isArray(data.executives) ? data.executives : [];
   const executives = rawExecutives.map(validateExecutiveData).filter((e: any) => e !== null);
@@ -125,11 +161,12 @@ function validateCompanyData(data: any): any {
     latitude: coords.lat,
     longitude: coords.lng,
     revenue,
-    revenueSource: String(data.revenueSource || data.revenue_source || 'Unknown').trim(),
+    revenueSource,
     employees,
     employeesSource: String(data.employeesSource || data.employees_source || 'Unknown').trim(),
     confidence,
-    executives
+    executives,
+    dataQualityWarnings: dataQualityWarnings.length > 0 ? dataQualityWarnings : undefined
   };
 }
 

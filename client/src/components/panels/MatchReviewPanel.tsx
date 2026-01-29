@@ -363,14 +363,25 @@ export default function MatchReviewPanel({
               <div className="flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
                 <div>
-                  <h3 className="font-semibold text-orange-800 dark:text-orange-200">Clockwork API returned invalid data</h3>
+                  <h3 className="font-semibold text-orange-800 dark:text-orange-200">Clockwork API Limitation Detected</h3>
                   <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
-                    The API returned system/test accounts instead of project candidates.
-                    The project filter may not be working correctly on Clockwork's side.
+                    <strong>Issue:</strong> The Clockwork API is returning all firm contacts instead of project-specific candidates.
+                    The <code className="bg-orange-100 dark:bg-orange-900 px-1 rounded">project_id</code> filter is being ignored.
                   </p>
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
-                    Please contact Clockwork support to report this issue.
-                  </p>
+                  <div className="text-sm text-orange-700 dark:text-orange-300 mt-2">
+                    <strong>What this means:</strong>
+                    <ul className="list-disc ml-4 mt-1">
+                      <li>The candidates shown are from your entire Clockwork database, not your selected project</li>
+                      <li>This is a known limitation in Clockwork API v3.0</li>
+                    </ul>
+                  </div>
+                  <div className="text-sm text-orange-700 dark:text-orange-300 mt-2">
+                    <strong>Recommended action:</strong> Contact Clockwork support to ask about:
+                    <ul className="list-disc ml-4 mt-1">
+                      <li>The correct API endpoint for project-specific candidates</li>
+                      <li>Access to a newer API version with this feature</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>

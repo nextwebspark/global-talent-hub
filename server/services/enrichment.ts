@@ -1157,7 +1157,7 @@ function validateFetchedCandidates(candidates: ClockworkExecutive[]): {
   
   // More than 50% system accounts suggests the project filter isn't working
   if (systemAccountCount > candidates.length * 0.5) {
-    warnings.push(`Found ${systemAccountCount}/${candidates.length} system/test accounts - project filter may not be working`);
+    warnings.push(`CLOCKWORK API LIMITATION: Found ${systemAccountCount}/${candidates.length} system/test accounts. The Clockwork API v3.0 ignores the project_id filter and returns all firm contacts instead of project-specific candidates. Contact Clockwork support for the correct endpoint.`);
     return { valid: false, warnings, systemAccountCount };
   }
   

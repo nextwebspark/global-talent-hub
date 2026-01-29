@@ -1565,37 +1565,57 @@ async function fetchClockworkExecutives(
             // Get total count from various sources
             const totalCount = meta.total_count || meta.total || data.total_count || data.total || 0;
             
-            // Get total pages - either explicit or computed from total_count / per_page
-            let totalPages = meta.total_pages || meta.pages || data.total_pages || data.pages || 0;
-            
-            // If total_count is provided but total_pages is not, compute it
-            if (totalPages === 0 && totalCount > 0) {
-              totalPages = Math.ceil(totalCount / perPage);
-            }
-            
-            // Fallback: if still no pagination info, assume single page if we got fewer items than requested
-            if (totalPages === 0) {
-              totalPages = people.length >= perPage ? currentPage + 1 : 1;
-            }
-            
-            console.log(`[Enrichment:${enrichmentRunId}] INFO - Pagination: page ${currentPage}, totalPages=${totalPages}, totalCount=${totalCount}, perPage=${perPage}, received=${people.length}`);
-            
-            if (totalPages > 1 || totalCount > perPage) {
-              paginationUsed = true;
-            }
-            
-            // Determine if there are more pages
-            // Trust totalPages from API over items-per-page heuristic
-            // Clockwork API may return fewer items than requested per_page
-            if (currentPage >= totalPages) {
-              hasMorePages = false;
-            } else if (people.length === 0) {
-              // Empty page means we're done
-              hasMorePages = false;
+            // Handle pagination differently for candidacies (offset/limit) vs people (page/per_page)
+            if (isCandidacies) {
+              // Candidacies uses offset/limit pagination
+              // Determine if there are more items based on count received
+              console.log(`[Enrichment:${enrichmentRunId}] INFO - Candidacies offset ${currentOffset}, received ${people.length}, totalCount=${totalCount}`);
+              
+              currentOffset += people.length;
+              
+              if (people.length === 0) {
+                // Empty response means we're done
+                hasMorePages = false;
+              } else if (totalCount > 0 && currentOffset >= totalCount) {
+                // We've fetched all items based on total_count
+                hasMorePages = false;
+              } else if (people.length < perPage) {
+                // Received fewer items than requested, likely last page
+                hasMorePages = false;
+              } else {
+                // Full page received, there might be more
+                paginationUsed = true;
+                currentPage++;
+              }
             } else {
-              // There are more pages according to API, continue fetching
-              currentPage++;
-              currentOffset += people.length; // Update offset for candidacies endpoint
+              // Page-based pagination for /people endpoint
+              // Get total pages - either explicit or computed from total_count / per_page
+              let totalPages = meta.total_pages || meta.pages || data.total_pages || data.pages || 0;
+              
+              // If total_count is provided but total_pages is not, compute it
+              if (totalPages === 0 && totalCount > 0) {
+                totalPages = Math.ceil(totalCount / perPage);
+              }
+              
+              // Fallback: if still no pagination info, assume single page if we got fewer items than requested
+              if (totalPages === 0) {
+                totalPages = people.length >= perPage ? currentPage + 1 : 1;
+              }
+              
+              console.log(`[Enrichment:${enrichmentRunId}] INFO - Pagination: page ${currentPage}, totalPages=${totalPages}, totalCount=${totalCount}, perPage=${perPage}, received=${people.length}`);
+              
+              if (totalPages > 1 || totalCount > perPage) {
+                paginationUsed = true;
+              }
+              
+              // Determine if there are more pages
+              if (currentPage >= totalPages) {
+                hasMorePages = false;
+              } else if (people.length === 0) {
+                hasMorePages = false;
+              } else {
+                currentPage++;
+              }
             }
           } else {
             hasMorePages = false;

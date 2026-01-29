@@ -11,15 +11,18 @@ const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
+// Default model - DeepSeek V3 via OpenRouter
+export const DEFAULT_MODEL = "deepseek/deepseek-chat";
+
 export const AVAILABLE_MODELS = [
+  { id: "deepseek/deepseek-chat", name: "DeepSeek V3 (Default)", provider: "DeepSeek" },
   { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-  { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
   { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
-  { id: "anthropic/claude-3-opus", name: "Claude 3 Opus", provider: "Anthropic" },
-  { id: "google/gemini-pro-1.5", name: "Gemini Pro 1.5", provider: "Google" },
-  { id: "meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", provider: "Meta" },
-  { id: "mistralai/mixtral-8x22b-instruct", name: "Mixtral 8x22B", provider: "Mistral" },
-  { id: "replit", name: "Replit AI (Default)", provider: "Replit" },
+  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic" },
+  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google" },
+  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Meta" },
+  { id: "mistralai/mistral-large-2411", name: "Mistral Large", provider: "Mistral" },
 ];
 
 const REGION_COORDINATES: Record<string, { lat: number; lng: number }> = {
@@ -403,10 +406,9 @@ export function filterExecutivesByRole(executives: any[], criteria: SearchCriter
   });
 }
 
-export async function parseSearchQuery(query: string, selectedModel: string = "replit"): Promise<ParsedSearchResult> {
-  const isOpenRouter = selectedModel !== "replit";
-  const client = isOpenRouter ? openrouter : openai;
-  const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+export async function parseSearchQuery(query: string, selectedModel: string = DEFAULT_MODEL): Promise<ParsedSearchResult> {
+  const client = openrouter;
+  const modelName = selectedModel || DEFAULT_MODEL;
 
   console.log(`[Discovery] Parsing search query: "${query}" with model: ${modelName}`);
 
@@ -460,12 +462,6 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
     max_tokens: 1000,
     temperature: 0.2
   };
-  
-  if (!isOpenRouter) {
-    requestOptions.response_format = { type: "json_object" };
-    requestOptions.max_completion_tokens = 1000;
-    delete requestOptions.max_tokens;
-  }
 
   let parsed: any = null;
   
@@ -517,13 +513,12 @@ Revenue should be in USD (convert if needed). Extract ONLY explicit criteria fro
 export async function discoverCompaniesAndExecutives(
   criteria: SearchCriteria, 
   searchQueryId: number, 
-  selectedModel: string = "replit"
+  selectedModel: string = DEFAULT_MODEL
 ): Promise<any[]> {
   const limit = criteria.limit || 10;
   
-  const isOpenRouter = selectedModel !== "replit";
-  const client = isOpenRouter ? openrouter : openai;
-  const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+  const client = openrouter;
+  const modelName = selectedModel || DEFAULT_MODEL;
   
   console.log(`[Discovery] Generating results for ${limit} companies with model: ${modelName}`);
   
@@ -630,12 +625,6 @@ Return ONLY the JSON object, no additional text.`
     max_tokens: 8000,
     temperature: 0.2
   };
-  
-  if (!isOpenRouter) {
-    requestOptions.response_format = { type: "json_object" };
-    requestOptions.max_completion_tokens = 8000;
-    delete requestOptions.max_tokens;
-  }
 
   let response;
   try {
@@ -777,10 +766,13 @@ export async function fetchAvailableModels(): Promise<any[]> {
         pricing: model.pricing
       })) || [];
     
-    return [
-      { id: "replit", name: "Replit AI (Default)", provider: "Replit" },
+    // Add DeepSeek V3 at the top if not already present
+    const hasDeepseek = models.some((m: any) => m.id === DEFAULT_MODEL);
+    const sortedModels = hasDeepseek ? models : [
+      { id: DEFAULT_MODEL, name: "DeepSeek V3 (Default)", provider: "DeepSeek" },
       ...models
     ];
+    return sortedModels;
   } catch (error) {
     console.error("[Discovery] Error fetching models:", error);
     return AVAILABLE_MODELS;
@@ -797,13 +789,12 @@ export function generateSearchUniqueKey(query: string, criteria: SearchCriteria)
 export async function* discoverCompaniesStreaming(
   criteria: SearchCriteria, 
   searchQueryId: number, 
-  selectedModel: string = "replit"
+  selectedModel: string = DEFAULT_MODEL
 ): AsyncGenerator<{ type: 'company' | 'status' | 'error' | 'complete', data: any }> {
   const limit = criteria.limit || 10;
   
-  const isOpenRouter = selectedModel !== "replit";
-  const client = isOpenRouter ? openrouter : openai;
-  const modelName = isOpenRouter ? selectedModel : "gpt-5.1";
+  const client = openrouter;
+  const modelName = selectedModel || DEFAULT_MODEL;
   
   console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
   
@@ -912,12 +903,6 @@ Return ONLY the JSON object, no additional text.`
     max_tokens: 8000,
     temperature: 0.2
   };
-  
-  if (!isOpenRouter) {
-    requestOptions.response_format = { type: "json_object" };
-    requestOptions.max_completion_tokens = 8000;
-    delete requestOptions.max_tokens;
-  }
 
   yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };
 

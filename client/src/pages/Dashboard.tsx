@@ -23,7 +23,7 @@ export default function Dashboard() {
   const { data: searchHistory, refetch: refetchHistory } = useSearchHistory();
   const loadSearchResults = useLoadSearchResults();
   const [searchInput, setSearchInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('replit');
+  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-chat');
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);

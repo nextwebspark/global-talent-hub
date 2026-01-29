@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 
 export default function Landing() {
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('replit');
+  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-chat');
   const [showHistory, setShowHistory] = useState(false);
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);

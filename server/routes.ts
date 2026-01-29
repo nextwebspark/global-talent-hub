@@ -14,7 +14,8 @@ import {
   enrichCompany, 
   getAvailableSources,
   orchestrateEnrichmentMatching,
-  researchCompanyDetails
+  researchCompanyDetails,
+  exploreClockworkProjectEndpoints
 } from "./services/enrichment";
 
 export async function registerRoutes(
@@ -666,6 +667,30 @@ export async function registerRoutes(
       res.status(500).json({ 
         ok: false,
         error: "Failed to run diagnostics",
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // EXPLORATION ENDPOINT: Find the correct Clockwork API endpoint for project candidates
+  // Tests multiple endpoint patterns and reports which ones work
+  app.get("/api/clockwork/explore/:clockworkProjectId", async (req, res) => {
+    try {
+      const { clockworkProjectId } = req.params;
+      
+      if (!clockworkProjectId) {
+        return res.status(400).json({ error: "clockworkProjectId is required" });
+      }
+      
+      console.log(`[API] Exploring Clockwork endpoints for project: ${clockworkProjectId}`);
+      const result = await exploreClockworkProjectEndpoints(clockworkProjectId);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error exploring Clockwork endpoints:", error);
+      res.status(500).json({ 
+        success: false,
+        error: "Failed to explore endpoints",
         errorMessage: error instanceof Error ? error.message : String(error)
       });
     }

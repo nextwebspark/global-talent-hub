@@ -1444,31 +1444,27 @@ async function fetchClockworkExecutives(
   const allWarnings: string[] = [];
   
   // Try multiple endpoint patterns for fetching project candidates
-  // Based on Clockwork API documentation, the /people endpoint is at the root level
-  // The project filter may be a query parameter, not a path segment
+  // Based on Clockwork API v3.0 documentation:
+  // GET /projects/{project_id}/candidacies returns project-specific candidates
+  // Use ?include=person to embed person data in the response
   const endpointsToTry = [
-    // Root-level people endpoint with project filter
-    { path: 'people', queryParams: { project_id: clockworkProjectId } },
-    { path: 'people', queryParams: { position_id: clockworkProjectId } },
-    // Try without project filter to see if the endpoint works at all
-    { path: 'people', queryParams: {} },
-    // Legacy nested patterns as fallback
-    { path: `projects/${clockworkProjectId}/people`, queryParams: {} },
-    { path: `projects/${clockworkProjectId}/candidates`, queryParams: {} },
-    { path: `positions/${clockworkProjectId}/people`, queryParams: {} },
-    { path: `positions/${clockworkProjectId}/candidates`, queryParams: {} },
+    // PRIMARY: The correct endpoint for project-specific candidates
+    { path: `projects/${clockworkProjectId}/candidacies`, queryParams: { include: 'person' }, isCandidacies: true },
+    // FALLBACK: Root-level people endpoint (returns all firm contacts, not project-specific)
+    { path: 'people', queryParams: {}, isCandidacies: false },
   ];
   
   const errors: Array<{ endpoint: string; status: number | null; message: string }> = [];
   
   for (const endpointConfig of endpointsToTry) {
-    const { path: endpointPath, queryParams } = endpointConfig;
+    const { path: endpointPath, queryParams, isCandidacies } = endpointConfig as { path: string; queryParams: Record<string, string>; isCandidacies?: boolean };
     const endpointDesc = Object.keys(queryParams).length > 0 
       ? `${endpointPath}?${Object.entries(queryParams).map(([k, v]) => `${k}=${v}`).join('&')}` 
       : endpointPath;
     
     const allCandidates: ClockworkExecutive[] = [];
     let currentPage = 1;
+    let currentOffset = 0;
     let hasMorePages = true;
     const maxPages = 50; // Safety limit
     const perPage = 100;
@@ -1482,15 +1478,22 @@ async function fetchClockworkExecutives(
       }
       
       const url = new URL(`${config.baseUrl}/${config.firmSlug}/${endpointPath}`);
-      // Add any custom query params (e.g., project_id filter)
+      // Add any custom query params (e.g., include=person for candidacies)
       for (const [key, value] of Object.entries(queryParams)) {
         if (value) url.searchParams.set(key, String(value));
       }
-      url.searchParams.set('page', String(currentPage));
-      url.searchParams.set('per_page', String(perPage));
-      // Try to include position/company data in the response
-      url.searchParams.set('include', 'positions,current_position');
-      url.searchParams.set('expand', 'positions,current_position');
+      
+      // Candidacies endpoint uses offset/limit pagination, others use page/per_page
+      if (isCandidacies) {
+        url.searchParams.set('limit', String(perPage));
+        url.searchParams.set('offset', String(currentOffset));
+      } else {
+        url.searchParams.set('page', String(currentPage));
+        url.searchParams.set('per_page', String(perPage));
+        // Try to include position/company data in the response for /people endpoint
+        url.searchParams.set('include', 'positions,current_position');
+        url.searchParams.set('expand', 'positions,current_position');
+      }
       
       console.log(`[Enrichment:${enrichmentRunId}] Trying: ${url.toString()} (page ${currentPage})`);
       
@@ -1513,7 +1516,25 @@ async function fetchClockworkExecutives(
           }
           
           // Extract people/candidates from various response formats
-          const people = data.data || data.people || data.candidates || data.items || [];
+          // For candidacies endpoint, extract person from each candidacy object
+          let people: any[] = [];
+          if (data.candidacies && Array.isArray(data.candidacies)) {
+            // Candidacies response: extract person from each candidacy
+            people = data.candidacies
+              .filter((c: any) => c.person)
+              .map((c: any) => ({
+                ...c.person,
+                // Include candidacy-level data that may be useful
+                candidacyId: c.id,
+                projectId: c.projectId,
+                rank: c.rank,
+                stoplightStatus: c.stoplightStatus,
+              }));
+            console.log(`[Enrichment:${enrichmentRunId}] INFO - Parsed ${people.length} persons from candidacies response`);
+          } else {
+            // Standard people/candidates response
+            people = data.data || data.people || data.candidates || data.items || [];
+          }
           
           // Debug: Log first person's raw structure to understand available fields
           if (currentPage === 1 && people.length > 0) {
@@ -1574,6 +1595,7 @@ async function fetchClockworkExecutives(
             } else {
               // There are more pages according to API, continue fetching
               currentPage++;
+              currentOffset += people.length; // Update offset for candidacies endpoint
             }
           } else {
             hasMorePages = false;

@@ -221,8 +221,26 @@ function validateExecutiveData(data: any): any {
     return null;
   }
   
+  // Filter out placeholder names (titles without real names)
+  const placeholderPatterns = ['Managing Director', 'CEO', 'CFO', 'COO', 'CTO', 'Director', 'Manager', 'Founder', 'Owner', 'President', 'Chairman'];
+  const isPlaceholder = placeholderPatterns.some(p => 
+    name.toLowerCase() === p.toLowerCase() || 
+    name.toLowerCase().replace(/\s+/g, '') === p.toLowerCase().replace(/\s+/g, '')
+  );
+  if (isPlaceholder) {
+    console.warn(`[Discovery] Filtering out placeholder executive name: "${name}"`);
+    return null;
+  }
+  
   let confidence = parseNumber(data.confidence || data.score, 5);
   confidence = Math.max(1, Math.min(10, confidence));
+  
+  // Only return high-confidence executives (confidence >= 6)
+  const MIN_CONFIDENCE = 6;
+  if (confidence < MIN_CONFIDENCE) {
+    console.warn(`[Discovery] Filtering out low-confidence executive: "${name}" (confidence: ${confidence})`);
+    return null;
+  }
   
   return {
     name,
@@ -360,6 +378,32 @@ const WORLD_CLASS_SEARCH_PROMPT = `You are an expert market research analyst for
    - If query says "only distributors" → INCLUDE ONLY companies whose primary business is distribution
    - Even if a company does some distribution, if they're primarily a retailer, EXCLUDE them
 
+5. EXECUTIVE SEARCH MODES - CRITICAL:
+   Analyze the query to determine which executives to research:
+   
+   MODE A - FULL LEADERSHIP (Default - when NO role/position mentioned):
+   - Research and return ALL senior leadership: CEO, CFO, COO, CTO, CMO, CHRO, General Counsel
+   - Also include N-1 level: VPs, SVPs, Managing Directors, Regional Directors
+   - Example queries: "Top 10 FMCG distributors in UAE", "Luxury watch companies in Switzerland"
+   - For each company, aim to find 3-5 senior leaders
+   
+   MODE B - SPECIFIC POSITION (when exact title mentioned):
+   - Return ONLY that specific position
+   - Example: "CEOs of top banks" → only return CEO
+   - Example: "CFOs of tech companies" → only return CFO
+   - Return exactly 1 executive per company matching that position
+   
+   MODE C - FUNCTION-BASED (when a function/department mentioned):
+   - Return ALL senior leaders in that function
+   - Example: "senior finance leaders" → CFO, VP Finance, Finance Director, Treasurer, Controller
+   - Example: "operations leadership" → COO, VP Operations, Operations Director, Supply Chain Director
+   - Example: "technology leaders" → CTO, CIO, VP Engineering, Head of IT
+   - For each company, find 2-4 people in that function
+   
+   CONFIDENCE REQUIREMENT:
+   - Only return executives with confidence >= 6 (verified from official sources)
+   - Do NOT include executives you're unsure about
+
 ===== OUTPUT FORMAT =====
 
 Return a JSON object with this EXACT structure:
@@ -383,13 +427,15 @@ Return a JSON object with this EXACT structure:
       "confidence": 7,
       "executives": [
         {
-          "name": "Full Name",
-          "title": "Exact Current Title",
+          "name": "Full Name of Real Person",
+          "title": "Exact Current Title (e.g., CEO, CFO, VP Sales)",
           "source": "Where you found this (Company Website, LinkedIn, Press Release)",
           "linkedin": "https://linkedin.com/in/username",
           "confidence": 7
         }
-      ]
+      ],
+      "executiveSearchMode": "full_leadership|specific_position|function_based",
+      "executiveSearchReason": "Explain why you chose this mode based on the query"
     }
   ]
 }
@@ -501,7 +547,7 @@ IMPORTANT:
               items: {
                 type: "object" as const,
                 properties: {
-                  name: { type: "string" as const, description: "Executive full name" },
+                  name: { type: "string" as const, description: "Executive full name (real person, not a title)" },
                   title: { type: "string" as const, description: "Current job title" },
                   source: { type: "string" as const, description: "Where this info was found" },
                   linkedin: { type: "string" as const, description: "LinkedIn profile URL" },
@@ -509,9 +555,18 @@ IMPORTANT:
                 },
                 required: ["name", "title", "source", "confidence"]
               }
+            },
+            executiveSearchMode: {
+              type: "string" as const,
+              enum: ["full_leadership", "specific_position", "function_based"],
+              description: "Which executive search mode was applied based on query analysis"
+            },
+            executiveSearchReason: {
+              type: "string" as const,
+              description: "Why this mode was chosen based on the query"
             }
           },
-          required: ["name", "businessType", "relevanceReason", "sector", "country", "latitude", "longitude", "revenue", "employees", "confidence"]
+          required: ["name", "businessType", "relevanceReason", "sector", "country", "latitude", "longitude", "revenue", "employees", "confidence", "executiveSearchMode", "executiveSearchReason"]
         }
       }
     },

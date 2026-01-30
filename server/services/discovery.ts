@@ -99,6 +99,34 @@ function validateCoordinates(lat: any, lng: any, region?: string, country?: stri
 
 const VALID_BUSINESS_TYPES = ['distributor', 'retailer', 'manufacturer', 'wholesaler', 'service_provider'];
 
+// Track used coordinates to prevent overlapping map markers
+const usedCoordinates: Map<string, number> = new Map();
+
+function getUniqueCoordinates(lat: number, lng: number): { lat: number; lng: number } {
+  const key = `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+  const count = usedCoordinates.get(key) || 0;
+  usedCoordinates.set(key, count + 1);
+  
+  if (count === 0) {
+    return { lat, lng };
+  }
+  
+  // Spiral pattern offset for overlapping coordinates
+  const angle = count * (Math.PI / 4); // 45 degrees per step
+  const radius = 0.01 + (count * 0.005); // Increasing radius
+  const offsetLat = Math.cos(angle) * radius;
+  const offsetLng = Math.sin(angle) * radius;
+  
+  return { 
+    lat: lat + offsetLat, 
+    lng: lng + offsetLng 
+  };
+}
+
+function resetCoordinateTracking() {
+  usedCoordinates.clear();
+}
+
 function normalizeBusinessType(rawType: string): string {
   const normalized = rawType.toLowerCase().trim();
   if (VALID_BUSINESS_TYPES.includes(normalized)) {
@@ -372,8 +400,17 @@ Return a JSON object with this EXACT structure:
 2. Revenue/Employees: Use best available data, never return 0
    - For private companies: Use industry estimates, LinkedIn data, press mentions
    - Clearly state the source of your estimate
-3. GPS Coordinates: Must be accurate for the actual headquarters location
-4. Executives: Must be current employees with accurate titles
+3. GPS Coordinates: MUST be the EXACT coordinates of the company's headquarters street address
+   - Each company MUST have UNIQUE coordinates - never use the same coordinates for multiple companies
+   - Look up the actual street address and convert to precise GPS coordinates
+   - If you cannot find exact address, use the city center but add unique offset
+4. EXECUTIVES - CRITICAL REQUIREMENT:
+   - You MUST find and return REAL PERSON NAMES - never use placeholders like "Managing Director" or "CEO"
+   - Search the web for actual executive names from LinkedIn, company websites, press releases
+   - Each executive MUST have: full real name (e.g., "John Smith", not "Managing Director"), their actual title, and source
+   - If you cannot find any real executive names for a company, set confidence to 1 and explain in source field
+   - Examples of WRONG executive names: "Managing Director", "CEO", "Founder", "General Manager"
+   - Examples of CORRECT executive names: "Kamal Vachani", "Mohammad Baker", "Ahmed Al Ghurair"
 5. Confidence scoring:
    - 8-10: Verified from official sources (annual reports, company website)
    - 5-7: Industry data, LinkedIn, news articles
@@ -551,6 +588,9 @@ IMPORTANT:
   console.log(`[Discovery Streaming] Processing ${companiesData.length} companies`);
   let processed = 0;
   
+  // Reset coordinate tracking for each new search
+  resetCoordinateTracking();
+  
   for (const rawCompanyData of companiesData) {
     try {
       const validatedData = validateCompanyData(rawCompanyData);
@@ -560,6 +600,9 @@ IMPORTANT:
         continue;
       }
       
+      // Get unique coordinates to prevent map marker overlapping
+      const uniqueCoords = getUniqueCoordinates(validatedData.latitude, validatedData.longitude);
+      
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: validatedData.sector,
@@ -567,8 +610,8 @@ IMPORTANT:
         region: validatedData.region,
         country: validatedData.country,
         streetAddress: validatedData.streetAddress || null,
-        latitude: String(validatedData.latitude),
-        longitude: String(validatedData.longitude),
+        latitude: String(uniqueCoords.lat),
+        longitude: String(uniqueCoords.lng),
         revenue: String(validatedData.revenue),
         revenueSource: validatedData.revenueSource,
         employees: validatedData.employees,

@@ -607,28 +607,24 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-        
-        <MapComponent />
       </div>
+
+      <MapComponent />
       
-      {selectedCompanyId && (
-        <>
-          {isRightPanelOpen && (
-            <div 
-              className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
-              onMouseDown={() => setIsResizingRight(true)}
-              data-testid="resize-handle-right"
-            >
-              <div className="absolute inset-y-0 -left-1 -right-1" />
-            </div>
-          )}
-          <RightPanel 
-            width={rightPanelWidth} 
-            isOpen={isRightPanelOpen} 
-            onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
-          />
-        </>
+      {isRightPanelOpen && selectedCompanyId && (
+        <div 
+          className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
+          onMouseDown={() => setIsResizingRight(true)}
+          data-testid="resize-handle-right"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
       )}
+      <RightPanel 
+        width={rightPanelWidth} 
+        isOpen={isRightPanelOpen} 
+        onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
+      />
       
       {showMatchReview && (
         <MatchReviewPanel

@@ -410,7 +410,7 @@ export async function registerRoutes(
       const { criteria, interpretation } = await parseSearchQuery(query, selectedModel);
 
       // Step 2: Generate unique key to prevent duplicate searches
-      const uniqueKey = generateSearchUniqueKey(query, criteria);
+      const uniqueKey = generateSearchUniqueKey(query);
       console.log("[Routes] Generated unique search key:", uniqueKey);
 
       // Step 3: Persist search query (Discovery runs once, results persist)
@@ -478,7 +478,7 @@ export async function registerRoutes(
       sendEvent('status', { message: 'Criteria parsed', progress: 10, interpretation });
 
       // Step 2: Generate unique key
-      const uniqueKey = generateSearchUniqueKey(query, criteria);
+      const uniqueKey = generateSearchUniqueKey(query);
 
       // Step 3: Persist search query
       const searchQuery = await storage.upsertSearchQuery({
@@ -498,9 +498,9 @@ export async function registerRoutes(
       // Step 4: Clear previous results
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
 
-      // Step 5: Stream companies as they're discovered
+      // Step 5: Stream companies as they're discovered (pass original query for better results)
       let companyCount = 0;
-      for await (const event of discoverCompaniesStreaming(criteria, searchQuery.id, model)) {
+      for await (const event of discoverCompaniesStreaming(criteria, searchQuery.id, model, query)) {
         if (event.type === 'company') {
           companyCount++;
           sendEvent('company', event.data);

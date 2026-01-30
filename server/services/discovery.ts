@@ -1,11 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
-
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
@@ -33,6 +28,8 @@ const REGION_COORDINATES: Record<string, { lat: number; lng: number }> = {
   'asia': { lat: 35.6762, lng: 139.6503 },
   'middle east': { lat: 25.2048, lng: 55.2708 },
   'uae': { lat: 25.2048, lng: 55.2708 },
+  'dubai': { lat: 25.2048, lng: 55.2708 },
+  'abu dhabi': { lat: 24.4539, lng: 54.3773 },
   'united arab emirates': { lat: 25.2048, lng: 55.2708 },
   'saudi arabia': { lat: 24.7136, lng: 46.6753 },
   'africa': { lat: -1.2921, lng: 36.8219 },
@@ -85,7 +82,7 @@ function parseNumber(value: any, defaultValue: number = 0): number {
   return defaultValue;
 }
 
-function validateCoordinates(lat: any, lng: any, region?: string, country?: string): { lat: number; lng: number } {
+function validateCoordinates(lat: any, lng: any, region?: string, country?: string, city?: string): { lat: number; lng: number } {
   const parsedLat = parseNumber(lat);
   const parsedLng = parseNumber(lng);
   
@@ -94,7 +91,7 @@ function validateCoordinates(lat: any, lng: any, region?: string, country?: stri
     return { lat: parsedLat, lng: parsedLng };
   }
   
-  const lookupKey = (country || region || 'default').toLowerCase().trim();
+  const lookupKey = (city || country || region || 'default').toLowerCase().trim();
   const fallback = REGION_COORDINATES[lookupKey] || REGION_COORDINATES['default'];
   
   const offset = () => (Math.random() - 0.5) * 0.1;
@@ -104,61 +101,45 @@ function validateCoordinates(lat: any, lng: any, region?: string, country?: stri
 function validateCompanyData(data: any): any {
   const name = String(data.name || data.companyName || 'Unknown Company').trim();
   const sector = String(data.sector || data.industry || 'Unknown').trim();
+  const businessType = String(data.businessType || data.business_type || data.type || '').trim();
   const region = String(data.region || data.area || 'Unknown').trim();
   const country = String(data.country || data.location || region).trim();
+  const city = String(data.city || data.headquarters || data.hq || '').trim();
+  const relevanceReason = String(data.relevanceReason || data.relevance_reason || data.whyIncluded || '').trim();
   
-  const coords = validateCoordinates(data.latitude || data.lat, data.longitude || data.lng || data.lon, region, country);
+  const coords = validateCoordinates(data.latitude || data.lat, data.longitude || data.lng || data.lon, region, country, city);
   
   let revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
   let employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
   
-  // Enforce non-zero values for established companies
-  // If AI returns 0, use minimum industry defaults
   if (revenue === 0 || revenue < 1000000) {
     console.warn(`[Discovery] Warning: ${name} has zero/low revenue, using minimum default`);
-    revenue = 50000000; // $50M minimum for any company worth researching
+    revenue = 50000000;
   }
   if (employees === 0 || employees < 10) {
     console.warn(`[Discovery] Warning: ${name} has zero/low employees, using minimum default`);
-    employees = 100; // Minimum 100 employees for established company
+    employees = 100;
   }
   
   let confidence = parseNumber(data.confidence || data.score, 5);
   confidence = Math.max(1, Math.min(10, confidence));
   
-  // Track data quality warnings for transparency
-  const dataQualityWarnings: string[] = [];
-  
-  // Detect if company appears to be publicly traded based on revenue source
   const revenueSource = String(data.revenueSource || data.revenue_source || 'Unknown').trim();
   const isLikelyPublic = /annual report|10-k|sec filing|quarterly report|investor relations/i.test(revenueSource);
   
-  // Sanity check: validate revenue/employee ratio to catch inflated figures
-  // Typical revenue per employee ranges from $50K to $2M depending on industry
   if (revenue > 0 && employees > 0) {
     const revenuePerEmployee = revenue / employees;
-    const MIN_REASONABLE_RATIO = 30000;   // $30K per employee (very labor-intensive)
-    const MAX_REASONABLE_RATIO = 3000000; // $3M per employee (very capital-intensive like finance)
+    const MAX_REASONABLE_RATIO = 3000000;
     
     if (revenuePerEmployee > MAX_REASONABLE_RATIO) {
-      // Revenue seems inflated - likely an order of magnitude error
-      console.warn(`[Discovery] Warning: ${name} has unusually high revenue/employee ratio: $${Math.round(revenuePerEmployee).toLocaleString()}/employee. Adjusting confidence.`);
-      dataQualityWarnings.push(`High revenue/employee ratio ($${Math.round(revenuePerEmployee/1000)}K/employee) may indicate inflated revenue`);
-      confidence = Math.min(confidence, 3); // Cap confidence at 3 for suspicious data
-    } else if (revenuePerEmployee < MIN_REASONABLE_RATIO && employees > 100) {
-      // Very low ratio for a larger company - may indicate missing revenue data
-      console.warn(`[Discovery] Warning: ${name} has low revenue/employee ratio: $${Math.round(revenuePerEmployee).toLocaleString()}/employee`);
-      dataQualityWarnings.push(`Low revenue/employee ratio may indicate incomplete data`);
-      confidence = Math.min(confidence, 4);
+      console.warn(`[Discovery] Warning: ${name} has unusually high revenue/employee ratio`);
+      confidence = Math.min(confidence, 3);
     }
   }
   
-  // For private companies, flag extremely large revenues (>$30B is rare for private)
-  // Only apply this check for companies without public filing sources
-  const MAX_PRIVATE_COMPANY_REVENUE = 30000000000; // $30B
+  const MAX_PRIVATE_COMPANY_REVENUE = 30000000000;
   if (revenue > MAX_PRIVATE_COMPANY_REVENUE && !isLikelyPublic) {
-    console.warn(`[Discovery] Warning: Private company ${name} has very high revenue ($${(revenue / 1000000000).toFixed(1)}B) - may be inflated`);
-    dataQualityWarnings.push(`Revenue figure ($${(revenue / 1000000000).toFixed(1)}B) unusually high for a private company`);
+    console.warn(`[Discovery] Warning: Private company ${name} has very high revenue`);
     confidence = Math.min(confidence, 4);
   }
   
@@ -168,9 +149,10 @@ function validateCompanyData(data: any): any {
   return {
     name,
     sector,
+    businessType,
     region,
     country,
-    city: String(data.city || data.headquarters || data.hq || '').trim(),
+    city,
     streetAddress: String(data.streetAddress || data.street_address || data.address || '').trim(),
     latitude: coords.lat,
     longitude: coords.lng,
@@ -179,8 +161,8 @@ function validateCompanyData(data: any): any {
     employees,
     employeesSource: String(data.employeesSource || data.employees_source || 'Unknown').trim(),
     confidence,
-    executives,
-    dataQualityWarnings: dataQualityWarnings.length > 0 ? dataQualityWarnings : undefined
+    relevanceReason,
+    executives
   };
 }
 
@@ -203,532 +185,67 @@ function validateExecutiveData(data: any): any {
     name,
     title,
     email: data.email || null,
-    linkedin: data.linkedin || data.linkedIn || data.profileUrl || null,
+    linkedin: data.linkedin || data.linkedIn || null,
     profileUrl: data.profileUrl || data.profile_url || data.linkedin || null,
-    imageUrl: data.imageUrl || data.image_url || data.photo || null,
-    source: String(data.source || 'Unknown').trim(),
+    imageUrl: data.imageUrl || data.image_url || null,
+    source: data.source || 'discovery',
     confidence
   };
 }
 
-function extractJSON(content: string): any {
-  if (!content) return null;
-  
-  let cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  
-  const jsonStart = cleaned.indexOf('{');
-  const jsonEnd = cleaned.lastIndexOf('}');
-  if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-    cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
-  }
-  
+function extractJSON(text: string): any {
   try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    const fixed = cleaned
-      .replace(/,\s*}/g, '}')
-      .replace(/,\s*]/g, ']')
-      .replace(/'/g, '"')
-      .replace(/\n/g, ' ')
-      .replace(/\t/g, ' ');
-    
-    try {
-      return JSON.parse(fixed);
-    } catch (e2) {
-      console.error("Failed to parse JSON after fixes:", e2);
-      return null;
+    return JSON.parse(text);
+  } catch {
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1].trim());
+      } catch {}
     }
+    
+    const objectMatch = text.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0]);
+      } catch {}
+    }
+    
+    return null;
   }
 }
 
-function buildExecutiveRoleInstructions(criteria: SearchCriteria): string {
-  const specificRoles = Array.isArray(criteria.roles) && criteria.roles.length > 0 ? criteria.roles : [];
-  const roleFunction = criteria.roleFunction || 'all';
-  const roleLevel = criteria.roleLevel || 'all';
-  
-  if (specificRoles.length > 0) {
-    return `EXECUTIVE FILTERING RULES (CRITICAL - FOLLOW EXACTLY):
-The user has requested SPECIFIC executive roles. Return ONLY executives matching these exact titles:
-- Requested roles: ${specificRoles.join(', ')}
-
-DO NOT return any other executives. For example:
-- If "CFO" is requested, return ONLY the CFO (Chief Financial Officer) - not CEO, COO, or others
-- If "CEO" and "CFO" are requested, return ONLY those two roles
-- Match title variations (e.g., "CFO" matches "Chief Financial Officer", "VP Finance" does NOT match)`;
-  }
-  
-  const functionRoleMap: Record<string, string> = {
-    'finance': 'CFO, Chief Financial Officer, VP Finance, Treasurer, Controller, Chief Accounting Officer',
-    'operations': 'COO, Chief Operating Officer, VP Operations, Chief Supply Chain Officer, Head of Manufacturing',
-    'technology': 'CTO, Chief Technology Officer, CIO, Chief Information Officer, VP Engineering, Chief Digital Officer, Chief Data Officer',
-    'marketing': 'CMO, Chief Marketing Officer, VP Marketing, Chief Brand Officer, Head of Marketing',
-    'sales': 'CSO, Chief Sales Officer, Chief Revenue Officer, VP Sales, Head of Sales, Chief Commercial Officer',
-    'hr': 'CHRO, Chief Human Resources Officer, VP HR, Chief People Officer, Head of Talent',
-    'legal': 'General Counsel, CLO, Chief Legal Officer, VP Legal, Chief Compliance Officer',
-    'general': 'CEO, President, Chairman, Managing Director, Board Members',
-    'all': 'All C-suite and senior leadership'
-  };
-  
-  if (roleFunction !== 'all' && roleFunction !== 'general') {
-    const functionRoles = functionRoleMap[roleFunction] || functionRoleMap['all'];
-    return `EXECUTIVE FILTERING RULES (CRITICAL - FOLLOW EXACTLY):
-The user has requested executives in the ${roleFunction.toUpperCase()} function at ${roleLevel} level.
-Return ONLY executives matching these roles: ${functionRoles}
-
-DO NOT return executives from other functions. For example:
-- If "finance" function is requested, return ONLY finance-related executives (CFO, VP Finance, etc.)
-- Do NOT return CEO, COO, CMO, CTO, or other non-finance executives`;
-  }
-  
-  return `EXECUTIVE FILTERING RULES:
-No specific role filter was requested. Return ALL senior leadership (C-suite) for each company:
-- CEO/President/Managing Director
-- CFO/Chief Financial Officer
-- COO/Chief Operating Officer
-- Chairman (if different from CEO)
-- Other C-suite executives (CTO, CMO, CHRO, etc.)`;
-}
-
-function isCsuiteLevel(title: string): boolean {
-  const t = (title || '').toLowerCase();
-  
-  const excludePatterns = [
-    'chief of staff', 'chief of security', 'chief of architecture',
-    'assistant to', 'deputy to', 'office of', 'associate'
-  ];
-  if (excludePatterns.some(p => t.includes(p))) return false;
-  
-  const exactCsuiteRoles = [
-    'ceo', 'cfo', 'coo', 'cto', 'cmo', 'cio', 'chro', 'clo', 'cso', 'cdo', 'cpo', 'cro'
-  ];
-  if (exactCsuiteRoles.some(role => {
-    const regex = new RegExp(`\\b${role}\\b`, 'i');
-    return regex.test(t);
-  })) return true;
-  
-  const csuitePatterns = [
-    'chief executive officer', 'chief financial officer', 'chief operating officer',
-    'chief technology officer', 'chief marketing officer', 'chief information officer',
-    'chief human resources', 'chief people officer', 'chief legal officer',
-    'chief sales officer', 'chief revenue officer', 'chief commercial officer',
-    'chief digital officer', 'chief data officer', 'chief compliance officer',
-    'chief strategy officer', 'chief growth officer', 'chief brand officer',
-    'chief product officer', 'chief investment officer', 'chief communications officer',
-    'president', 'chairman', 'chairwoman', 'chairperson', 'managing director',
-    'general counsel', 'board member', 'founder', 'co-founder', 'group ceo'
-  ];
-  return csuitePatterns.some(p => t.includes(p));
-}
-
-function matchesLevel(title: string, level: string): boolean {
-  const t = (title || '').toLowerCase();
-  
-  const excludePatterns = ['chief of staff', 'assistant to', 'deputy to', 'intern'];
-  if (excludePatterns.some(p => t.includes(p))) return false;
-  
-  switch (level) {
-    case 'c-suite':
-      return isCsuiteLevel(t);
-    case 'senior':
-      return isCsuiteLevel(t) || 
-        /\b(svp|evp)\b/i.test(t) ||
-        t.includes('senior vice president') || t.includes('executive vice president') ||
-        t.includes('head of') || t.includes('senior director') || t.includes('group director');
-    case 'vp':
-      if (isCsuiteLevel(t)) return false;
-      return (/\b(vp|svp|evp)\b/i.test(t) || t.includes('vice president')) && 
-        !t.includes('assistant') && !t.includes('associate');
-    case 'director':
-      if (isCsuiteLevel(t)) return false;
-      if (/\b(vp|svp|evp)\b/i.test(t) || t.includes('vice president')) return false;
-      return (t.includes('director') || t.includes('head of')) && 
-        !t.includes('assistant') && !t.includes('associate');
-    case 'all':
-    default:
-      return true;
-  }
-}
-
-export function filterExecutivesByRole(executives: any[], criteria: SearchCriteria): any[] {
-  const specificRoles = Array.isArray(criteria.roles) && criteria.roles.length > 0 ? criteria.roles : [];
-  const roleFunction = criteria.roleFunction || 'all';
-  const roleLevel = criteria.roleLevel || 'all';
-  
-  if (specificRoles.length === 0 && (roleFunction === 'all' || roleFunction === 'general')) {
-    if (roleLevel === 'all') {
-      return executives;
+function extractLimitFromQuery(query: string): number {
+  const match = query.match(/(?:top|first|leading|biggest|largest|best)\s*(\d+)/i);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    if (num >= 1 && num <= 50) {
+      return num;
     }
-    if (roleLevel === 'c-suite') {
-      return executives.filter(exec => isCsuiteLevel(exec.title));
-    }
-    return executives.filter(exec => matchesLevel(exec.title, roleLevel));
   }
-  
-  const roleMappings: Record<string, string[]> = {
-    'finance': ['cfo', 'chief financial', 'vp finance', 'svp finance', 'evp finance', 'treasurer', 'controller', 'chief accounting', 'finance director', 'head of finance'],
-    'operations': ['coo', 'chief operating', 'vp operations', 'svp operations', 'evp operations', 'supply chain', 'head of manufacturing', 'operations director', 'head of operations'],
-    'technology': ['cto', 'chief technology', 'cio', 'chief information', 'vp engineering', 'svp engineering', 'evp engineering', 'chief digital', 'chief data', 'technology director', 'head of technology', 'head of engineering'],
-    'marketing': ['cmo', 'chief marketing', 'vp marketing', 'svp marketing', 'evp marketing', 'chief brand', 'head of marketing', 'marketing director', 'chief growth'],
-    'sales': ['cso', 'chief sales', 'chief revenue', 'chief commercial', 'vp sales', 'svp sales', 'evp sales', 'head of sales', 'sales director'],
-    'hr': ['chro', 'chief human', 'chief people', 'vp hr', 'svp hr', 'evp hr', 'head of talent', 'hr director', 'head of hr', 'head of people'],
-    'legal': ['general counsel', 'clo', 'chief legal', 'vp legal', 'svp legal', 'evp legal', 'chief compliance', 'legal director', 'head of legal']
-  };
-  
-  return executives.filter(exec => {
-    const title = (exec.title || '').toLowerCase();
-    
-    if (specificRoles.length > 0) {
-      const matchesRole = specificRoles.some((role: string) => {
-        const roleL = role.toLowerCase();
-        return title.includes(roleL) || 
-          (roleL === 'cfo' && title.includes('chief financial')) ||
-          (roleL === 'ceo' && (title.includes('chief executive') || title.includes('president') || title.includes('managing director'))) ||
-          (roleL === 'coo' && title.includes('chief operating')) ||
-          (roleL === 'cto' && title.includes('chief technology')) ||
-          (roleL === 'cmo' && title.includes('chief marketing')) ||
-          (roleL === 'cio' && title.includes('chief information')) ||
-          (roleL === 'chro' && (title.includes('chief human') || title.includes('chief people'))) ||
-          (roleL === 'vp finance' && (title.includes('vp finance') || title.includes('vice president') && title.includes('finance'))) ||
-          (roleL === 'vp' && title.includes('vice president'));
-      });
-      if (!matchesRole) return false;
-      return matchesLevel(title, roleLevel);
-    }
-    
-    if (roleFunction !== 'all' && roleFunction !== 'general' && roleMappings[roleFunction]) {
-      const keywords = roleMappings[roleFunction];
-      const matchesFunc = keywords.some(kw => title.includes(kw));
-      if (!matchesFunc) return false;
-      return matchesLevel(title, roleLevel);
-    }
-    
-    return matchesLevel(title, roleLevel);
-  });
+  return 10;
 }
 
 export async function parseSearchQuery(query: string, selectedModel: string = DEFAULT_MODEL): Promise<ParsedSearchResult> {
-  const client = openrouter;
-  const modelName = selectedModel || DEFAULT_MODEL;
-
-  console.log(`[Discovery] Parsing search query: "${query}" with model: ${modelName}`);
-
-  const messages = [
-    {
-      role: "system" as const,
-      content: `You are an AI assistant for an executive search platform. Parse the user's search query and extract structured criteria. Return ONLY valid JSON with this exact structure (no additional text):
-{
-  "criteria": {
-    "roles": ["array of SPECIFIC executive role titles if explicitly mentioned"],
-    "roleFunction": "finance|operations|technology|marketing|sales|hr|legal|general|all",
-    "roleLevel": "c-suite|senior|vp|director|all",
-    "sectors": ["array of industry sectors"],
-    "regions": ["array of geographic regions"],
-    "minRevenue": null,
-    "maxRevenue": null,
-    "minEmployees": null,
-    "maxEmployees": null,
-    "limit": 20
-  },
-  "interpretation": "brief summary of what you understood"
-}
-
-EXECUTIVE ROLE PARSING RULES:
-1. If user mentions SPECIFIC roles (e.g., "CFO", "Chief Financial Officer", "CEO"), add them to "roles" array and set roleFunction/roleLevel accordingly
-2. If user mentions a FUNCTION broadly (e.g., "senior finance leaders", "tech executives"), leave roles empty but set roleFunction (e.g., "finance", "technology") and roleLevel (e.g., "senior", "c-suite")
-3. If user says "all senior leaders" or similar general request, set roleLevel to "senior" and roleFunction to "all"
-4. If NO executive criteria specified, set roleLevel to "all" and roleFunction to "all" (return all executives)
-
-ROLE FUNCTION MAPPINGS:
-- finance: CFO, VP Finance, Treasurer, Controller, Chief Accounting Officer
-- operations: COO, VP Operations, Chief Supply Chain Officer, Head of Manufacturing
-- technology: CTO, CIO, VP Engineering, Chief Digital Officer, Chief Data Officer
-- marketing: CMO, VP Marketing, Chief Brand Officer, Head of Marketing
-- sales: CSO, Chief Revenue Officer, VP Sales, Head of Sales
-- hr: CHRO, VP HR, Chief People Officer, Head of Talent
-- legal: General Counsel, CLO, VP Legal, Chief Compliance Officer
-- general/all: CEO, President, Chairman, Managing Director, Board Members
-
-Revenue should be in USD (convert if needed). Extract ONLY explicit criteria from the query. IMPORTANT: Return ONLY the JSON object, no markdown, no explanation.`
-    },
-    {
-      role: "user" as const,
-      content: query
-    }
-  ];
-
-  const requestOptions: any = {
-    model: modelName,
-    messages,
-    max_tokens: 1000,
-    temperature: 0.2
-  };
-
-  let parsed: any = null;
+  const limit = extractLimitFromQuery(query);
   
-  try {
-    const response = await client.chat.completions.create(requestOptions);
-    console.log("[Discovery] LLM parsing response received");
-    
-    const content = response.choices?.[0]?.message?.content;
-    if (content) {
-      parsed = extractJSON(content);
-    }
-    
-    if (!parsed || !parsed.criteria) {
-      throw new Error("Invalid response format from LLM");
-    }
-  } catch (error: any) {
-    console.error("[Discovery] Error parsing LLM response:", error);
-    parsed = {
-      criteria: {
-        roles: [],
-        sectors: [],
-        regions: [],
-        limit: 20
-      },
-      interpretation: `Searching for: ${query}`
-    };
-    console.log("[Discovery] Using fallback criteria due to parse error");
-  }
-
   const criteria: SearchCriteria = {
-    roles: Array.isArray(parsed.criteria?.roles) ? parsed.criteria.roles : [],
-    roleFunction: typeof parsed.criteria?.roleFunction === 'string' ? parsed.criteria.roleFunction : 'all',
-    roleLevel: typeof parsed.criteria?.roleLevel === 'string' ? parsed.criteria.roleLevel : 'all',
-    sectors: Array.isArray(parsed.criteria?.sectors) ? parsed.criteria.sectors : [],
-    regions: Array.isArray(parsed.criteria?.regions) ? parsed.criteria.regions : [],
-    minRevenue: typeof parsed.criteria?.minRevenue === 'number' ? parsed.criteria.minRevenue : null,
-    maxRevenue: typeof parsed.criteria?.maxRevenue === 'number' ? parsed.criteria.maxRevenue : null,
-    minEmployees: typeof parsed.criteria?.minEmployees === 'number' ? parsed.criteria.minEmployees : null,
-    maxEmployees: typeof parsed.criteria?.maxEmployees === 'number' ? parsed.criteria.maxEmployees : null,
-    limit: typeof parsed.criteria?.limit === 'number' ? parsed.criteria.limit : 20
+    roles: [],
+    roleFunction: 'all',
+    roleLevel: 'all',
+    sectors: [],
+    regions: [],
+    minRevenue: null,
+    maxRevenue: null,
+    minEmployees: null,
+    maxEmployees: null,
+    limit
   };
-
+  
   return {
     criteria,
-    interpretation: parsed.interpretation || query
+    interpretation: query
   };
-}
-
-export async function discoverCompaniesAndExecutives(
-  criteria: SearchCriteria, 
-  searchQueryId: number, 
-  selectedModel: string = DEFAULT_MODEL
-): Promise<any[]> {
-  const limit = criteria.limit || 10;
-  
-  const client = openrouter;
-  const modelName = selectedModel || DEFAULT_MODEL;
-  
-  console.log(`[Discovery] Generating results for ${limit} companies with model: ${modelName}`);
-  
-  const roleInstructions = buildExecutiveRoleInstructions(criteria);
-  
-  const messages = [
-    {
-      role: "system" as const,
-      content: `You are an expert market research analyst specializing in executive search and company intelligence. Your task is to identify REAL companies and their leadership based on specific criteria.
-
-===== DATA QUALITY REQUIREMENTS =====
-
-REVENUE & EMPLOYEE ESTIMATES:
-- For PUBLIC companies: Use most recent annual report figures
-- For PRIVATE companies: Provide reasonable industry estimates based on:
-  * Market position and known market share
-  * Industry benchmarks (revenue per employee, typical margins)
-  * LinkedIn employee counts as baseline
-  * Press mentions of scale/size
-  
-CRITICAL: NEVER return 0 for revenue or employees for established companies. 
-Every real company has revenue and employees. If exact figures are unavailable:
-- Use industry-appropriate estimates with conservative lower bounds
-- A mid-size FMCG distributor: $100M-$500M revenue, 500-2000 employees
-- A large regional distributor: $500M-$2B revenue, 2000-8000 employees  
-- A major market leader: $1B-$5B revenue, 5000-15000 employees
-
-SOURCING & CONFIDENCE:
-- revenueSource: Describe basis (e.g., "Industry estimate based on UAE FMCG market share")
-- employeesSource: Describe basis (e.g., "LinkedIn company size indicator: 1,001-5,000")
-- Confidence 7-10: Verified official data
-- Confidence 4-6: Industry estimates, LinkedIn data
-- Confidence 1-3: Rough market-based estimates
-
-===== OUTPUT FORMAT =====
-
-Return a JSON object with this EXACT structure:
-{
-  "companies": [
-    {
-      "name": "Actual Company Name",
-      "sector": "Industry Sector",
-      "region": "Geographic Region", 
-      "country": "Country Name",
-      "city": "Headquarters City",
-      "streetAddress": "123 Main Street, Suite 100",
-      "latitude": 25.2048,
-      "longitude": 55.2708,
-      "revenue": 500000000,
-      "revenueSource": "Industry estimate based on UAE FMCG market position",
-      "employees": 3000,
-      "employeesSource": "LinkedIn company size: 1,001-5,000",
-      "confidence": 5,
-      "executives": [
-        {
-          "name": "Real Executive Name",
-          "title": "Exact Title",
-          "source": "Company Website",
-          "profileUrl": "https://linkedin.com/in/executive-name",
-          "imageUrl": null,
-          "confidence": 7
-        }
-      ]
-    }
-  ]
-}
-
-${roleInstructions}
-
-===== EXECUTIVE DATA =====
-
-Find executives from these sources (in priority order):
-1. Company Website - Official leadership/about pages
-2. LinkedIn - Current position holders
-3. Press releases - Recent announcements
-
-===== COMPANY REQUIREMENTS =====
-
-1. Return ONLY real, existing companies - NO fictional companies
-2. HEADQUARTERS: Provide exact street address and GPS coordinates of main office
-3. REVENUE: Always provide a reasonable estimate - NEVER return 0
-4. EMPLOYEES: Always provide a reasonable estimate - NEVER return 0
-5. Match sectors: ${criteria.sectors?.join(', ') || 'any sector'}
-6. Match regions: ${criteria.regions?.join(', ') || 'any region'}
-7. Return exactly ${limit} companies, ranked by estimated revenue (highest first)`
-    },
-    {
-      role: "user" as const,
-      content: `Find the top ${limit} companies matching: ${JSON.stringify(criteria)}
-
-For each company, provide:
-- Real company name and accurate HQ location
-- Revenue estimate (use industry benchmarks if private company)
-- Employee count estimate (use LinkedIn data if available)
-- Key executives with current titles
-
-Return ONLY the JSON object, no additional text.`
-    }
-  ];
-
-  const requestOptions: any = {
-    model: modelName,
-    messages,
-    max_tokens: 8000,
-    temperature: 0.2
-  };
-
-  let response;
-  try {
-    response = await client.chat.completions.create(requestOptions);
-  } catch (apiError: any) {
-    console.error("[Discovery] LLM API error:", apiError.message);
-    throw new Error(`Failed to get response from AI model: ${apiError.message}`);
-  }
-
-  const content = response.choices[0]?.message?.content || "{}";
-  console.log("[Discovery] LLM response length:", content.length);
-  
-  const data = extractJSON(content);
-  if (!data) {
-    console.error("[Discovery] Failed to parse LLM response as JSON");
-    throw new Error("Failed to parse AI response. Please try again.");
-  }
-  
-  let companiesData: any[] = [];
-  if (Array.isArray(data)) {
-    companiesData = data;
-  } else if (data.companies && Array.isArray(data.companies)) {
-    companiesData = data.companies;
-  } else if (data.results && Array.isArray(data.results)) {
-    companiesData = data.results;
-  } else if (data.data && Array.isArray(data.data)) {
-    companiesData = data.data;
-  } else {
-    const arrayProp = Object.values(data).find(v => Array.isArray(v));
-    if (arrayProp) {
-      companiesData = arrayProp as any[];
-    }
-  }
-  
-  if (companiesData.length === 0) {
-    console.warn("[Discovery] No companies found in LLM response");
-    return [];
-  }
-
-  console.log(`[Discovery] Processing ${companiesData.length} companies from LLM response`);
-  const companies = [];
-  
-  for (const rawCompanyData of companiesData) {
-    try {
-      const validatedData = validateCompanyData(rawCompanyData);
-      
-      if (!validatedData.name || validatedData.name === 'Unknown Company') {
-        console.warn("[Discovery] Skipping company with invalid name");
-        continue;
-      }
-      
-      // DISCOVERY LAYER: Create only, never update existing
-      const company = await storage.createCompanyFromDiscovery({
-        name: validatedData.name,
-        sector: validatedData.sector,
-        region: validatedData.region,
-        country: validatedData.country,
-        streetAddress: validatedData.streetAddress || null,
-        latitude: String(validatedData.latitude),
-        longitude: String(validatedData.longitude),
-        revenue: String(validatedData.revenue),
-        revenueSource: validatedData.revenueSource,
-        employees: validatedData.employees,
-        employeesSource: validatedData.employeesSource,
-        confidence: validatedData.confidence,
-        color: "#1e3a8a",
-        searchQueryId
-      });
-
-      const validatedExecs = validatedData.executives.filter((e: any) => e !== null);
-      const filteredExecs = filterExecutivesByRole(validatedExecs, criteria);
-      
-      const executives = [];
-      for (const rawExec of filteredExecs) {
-        try {
-          const validatedExec = validateExecutiveData(rawExec);
-          if (!validatedExec) continue;
-          
-          // DISCOVERY LAYER: Create only, never update existing
-          const executive = await storage.createExecutiveFromDiscovery({
-            companyId: company.id,
-            name: validatedExec.name,
-            title: validatedExec.title,
-            email: validatedExec.email,
-            linkedin: validatedExec.linkedin,
-            profileUrl: validatedExec.profileUrl,
-            imageUrl: validatedExec.imageUrl,
-            source: validatedExec.source || 'discovery',
-            confidence: validatedExec.confidence
-          });
-          executives.push(executive);
-        } catch (execError: any) {
-          console.warn("[Discovery] Failed to create executive:", execError.message);
-        }
-      }
-
-      companies.push({ ...company, executives });
-    } catch (companyError: any) {
-      console.warn("[Discovery] Failed to create company:", companyError.message);
-    }
-  }
-
-  console.log(`[Discovery] Successfully created ${companies.length} companies with executives`);
-  return companies;
 }
 
 export async function fetchAvailableModels(): Promise<any[]> {
@@ -740,33 +257,19 @@ export async function fetchAvailableModels(): Promise<any[]> {
     });
     
     if (!response.ok) {
-      console.error("[Discovery] Failed to fetch OpenRouter models");
+      console.error("[Discovery] Failed to fetch models from OpenRouter");
       return AVAILABLE_MODELS;
     }
     
     const data = await response.json();
-    const models = data.data
-      ?.filter((model: any) => {
-        const id = model.id.toLowerCase();
-        const isAudioOnly = id.includes('audio-preview') || 
-                            id.includes('tts') || 
-                            id.includes('whisper') ||
-                            id.includes('speech');
-        const isImageOnly = id.includes('dall-e') || 
-                            id.includes('midjourney') || 
-                            id.includes('stable-diffusion') ||
-                            id.includes('image');
-        return !isAudioOnly && !isImageOnly;
-      })
-      ?.map((model: any) => ({
-        id: model.id,
-        name: model.name || model.id,
-        provider: model.id.split('/')[0] || 'Unknown',
-        contextLength: model.context_length,
-        pricing: model.pricing
-      })) || [];
+    const models = data.data?.map((model: any) => ({
+      id: model.id,
+      name: model.name || model.id,
+      provider: model.id.split('/')[0] || 'Unknown',
+      contextLength: model.context_length,
+      pricing: model.pricing
+    })) || [];
     
-    // Add DeepSeek V3 at the top if not already present
     const hasDeepseek = models.some((m: any) => m.id === DEFAULT_MODEL);
     const sortedModels = hasDeepseek ? models : [
       { id: DEFAULT_MODEL, name: "DeepSeek V3 (Default)", provider: "DeepSeek" },
@@ -779,57 +282,40 @@ export async function fetchAvailableModels(): Promise<any[]> {
   }
 }
 
-export function generateSearchUniqueKey(query: string, criteria: SearchCriteria): string {
-  const normalizedQuery = query.toLowerCase().trim();
-  const regionsKey = criteria.regions.sort().join(',').toLowerCase();
-  const sectorsKey = criteria.sectors.sort().join(',').toLowerCase();
-  return `${normalizedQuery}|regions:${regionsKey}|sectors:${sectorsKey}`;
+export function generateSearchUniqueKey(query: string): string {
+  const normalizedQuery = query.toLowerCase().trim().replace(/\s+/g, ' ');
+  const timestamp = Date.now();
+  return `${normalizedQuery}|${timestamp}`;
 }
 
-export async function* discoverCompaniesStreaming(
-  criteria: SearchCriteria, 
-  searchQueryId: number, 
-  selectedModel: string = DEFAULT_MODEL
-): AsyncGenerator<{ type: 'company' | 'status' | 'error' | 'complete', data: any }> {
-  const limit = criteria.limit || 10;
-  
-  const client = openrouter;
-  const modelName = selectedModel || DEFAULT_MODEL;
-  
-  console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
-  
-  yield { type: 'status', data: { message: 'Parsing search criteria...', progress: 5 } };
-  
-  const roleInstructions = buildExecutiveRoleInstructions(criteria);
-  
-  const messages = [
-    {
-      role: "system" as const,
-      content: `You are an expert market research analyst specializing in executive search and company intelligence. Your task is to identify REAL companies and their leadership based on specific criteria.
+const WORLD_CLASS_SEARCH_PROMPT = `You are an expert market research analyst for an executive search firm. Your job is to find REAL companies that PRECISELY match what the user is looking for.
 
-===== DATA QUALITY REQUIREMENTS =====
+===== CRITICAL INSTRUCTIONS =====
 
-REVENUE & EMPLOYEE ESTIMATES:
-- For PUBLIC companies: Use most recent annual report figures
-- For PRIVATE companies: Provide reasonable industry estimates based on:
-  * Market position and known market share
-  * Industry benchmarks (revenue per employee, typical margins)
-  * LinkedIn employee counts as baseline
-  * Press mentions of scale/size
-  
-CRITICAL: NEVER return 0 for revenue or employees for established companies. 
-Every real company has revenue and employees. If exact figures are unavailable:
-- Use industry-appropriate estimates with conservative lower bounds
-- A mid-size FMCG distributor: $100M-$500M revenue, 500-2000 employees
-- A large regional distributor: $500M-$2B revenue, 2000-8000 employees  
-- A major market leader: $1B-$5B revenue, 5000-15000 employees
+1. READ THE QUERY CAREFULLY: Pay attention to EVERY word, especially:
+   - Business type specifications (distributor, retailer, manufacturer, wholesaler, etc.)
+   - Explicit EXCLUSIONS (phrases like "not retailers", "excluding manufacturers", "only distributors")
+   - Geographic constraints (specific countries, regions, cities)
+   - Industry/sector focus (FMCG, technology, healthcare, etc.)
+   - Size requirements (revenue ranges, employee counts)
 
-SOURCING & CONFIDENCE:
-- revenueSource: Describe basis (e.g., "Industry estimate based on UAE FMCG market share")
-- employeesSource: Describe basis (e.g., "LinkedIn company size indicator: 1,001-5,000")
-- Confidence 7-10: Verified official data
-- Confidence 4-6: Industry estimates, LinkedIn data
-- Confidence 1-3: Rough market-based estimates
+2. SELF-VERIFICATION: Before including ANY company, you MUST mentally verify:
+   - Does this company's PRIMARY business match what was asked for?
+   - If the query says "distributors not retailers", is this company PRIMARILY a distributor?
+   - Does this company operate in the specified region?
+   - Is this a real, established company (not fictional)?
+
+3. BUSINESS TYPE CLASSIFICATION:
+   - DISTRIBUTOR: Buys products from manufacturers and sells to retailers/businesses (B2B wholesale)
+   - RETAILER: Sells directly to consumers (B2C)
+   - MANUFACTURER: Produces/makes the products
+   - WHOLESALER: Bulk seller to businesses (similar to distributor)
+   - SERVICE_PROVIDER: Provides services rather than physical goods
+
+4. EXCLUSION HANDLING:
+   - If query says "not retailers" → EXCLUDE any company whose primary business is retail
+   - If query says "only distributors" → INCLUDE ONLY companies whose primary business is distribution
+   - Even if a company does some distribution, if they're primarily a retailer, EXCLUDE them
 
 ===== OUTPUT FORMAT =====
 
@@ -837,26 +323,27 @@ Return a JSON object with this EXACT structure:
 {
   "companies": [
     {
-      "name": "Actual Company Name",
-      "sector": "Industry Sector",
-      "region": "Geographic Region", 
+      "name": "Exact Legal Company Name",
+      "businessType": "distributor|retailer|manufacturer|wholesaler|service_provider",
+      "relevanceReason": "Why this company matches the query - be specific about how they fit the criteria",
+      "sector": "Industry Sector (e.g., FMCG, Consumer Goods, Food & Beverage)",
+      "region": "Geographic Region (e.g., Middle East, GCC)",
       "country": "Country Name",
       "city": "Headquarters City",
-      "streetAddress": "123 Main Street, Suite 100",
+      "streetAddress": "Exact street address of headquarters",
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 500000000,
-      "revenueSource": "Industry estimate based on UAE FMCG market position",
+      "revenueSource": "How you determined this (e.g., 'Industry estimate based on market position', 'Annual report 2024')",
       "employees": 3000,
-      "employeesSource": "LinkedIn company size: 1,001-5,000",
-      "confidence": 5,
+      "employeesSource": "How you determined this (e.g., 'LinkedIn company size indicator')",
+      "confidence": 7,
       "executives": [
         {
-          "name": "Real Executive Name",
-          "title": "Exact Title",
-          "source": "Company Website",
-          "profileUrl": "https://linkedin.com/in/executive-name",
-          "imageUrl": null,
+          "name": "Full Name",
+          "title": "Exact Current Title",
+          "source": "Where you found this (Company Website, LinkedIn, Press Release)",
+          "linkedin": "https://linkedin.com/in/username",
           "confidence": 7
         }
       ]
@@ -864,34 +351,58 @@ Return a JSON object with this EXACT structure:
   ]
 }
 
-${roleInstructions}
+===== DATA QUALITY REQUIREMENTS =====
 
-===== EXECUTIVE DATA =====
+1. ONLY include companies you are confident are REAL and currently operating
+2. Revenue/Employees: Use best available data, never return 0
+   - For private companies: Use industry estimates, LinkedIn data, press mentions
+   - Clearly state the source of your estimate
+3. GPS Coordinates: Must be accurate for the actual headquarters location
+4. Executives: Must be current employees with accurate titles
+5. Confidence scoring:
+   - 8-10: Verified from official sources (annual reports, company website)
+   - 5-7: Industry data, LinkedIn, news articles
+   - 1-4: Rough estimates, limited verification
 
-Find executives from these sources (in priority order):
-1. Company Website - Official leadership/about pages
-2. LinkedIn - Current position holders
-3. Press releases - Recent announcements
+===== RANKING =====
 
-===== COMPANY REQUIREMENTS =====
+Rank companies by:
+1. Relevance to the exact query (most important)
+2. Revenue/market position (within relevant companies)
+3. Data confidence/reliability`;
 
-1. Return ONLY real, existing companies - NO fictional companies
-2. HEADQUARTERS: Provide exact street address and GPS coordinates of main office
-3. REVENUE: Always provide a reasonable estimate - NEVER return 0
-4. EMPLOYEES: Always provide a reasonable estimate - NEVER return 0
-5. Match sectors: ${criteria.sectors?.join(', ') || 'any sector'}
-6. Match regions: ${criteria.regions?.join(', ') || 'any region'}
-7. Return exactly ${limit} companies, ranked by estimated revenue (highest first)`
+export async function* discoverCompaniesStreaming(
+  criteria: SearchCriteria,
+  searchQueryId: number,
+  selectedModel: string = DEFAULT_MODEL,
+  originalQuery: string = ""
+): AsyncGenerator<{ type: 'company' | 'status' | 'error' | 'complete', data: any }> {
+  const limit = criteria.limit || 10;
+  const query = originalQuery || `Find ${limit} companies`;
+  
+  const client = openrouter;
+  const modelName = selectedModel || DEFAULT_MODEL;
+  
+  console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
+  console.log(`[Discovery Streaming] Original query: "${query}"`);
+  
+  yield { type: 'status', data: { message: 'Analyzing your search request...', progress: 5 } };
+  
+  const messages = [
+    {
+      role: "system" as const,
+      content: WORLD_CLASS_SEARCH_PROMPT
     },
     {
       role: "user" as const,
-      content: `Find the top ${limit} companies matching: ${JSON.stringify(criteria)}
+      content: `USER SEARCH QUERY: "${query}"
 
-For each company, provide:
-- Real company name and accurate HQ location
-- Revenue estimate (use industry benchmarks if private company)
-- Employee count estimate (use LinkedIn data if available)
-- Key executives with current titles
+Find exactly ${limit} companies that match this query.
+
+IMPORTANT: 
+- Read the query carefully for any business type specifications or exclusions
+- Each company MUST have a "relevanceReason" explaining WHY it matches the query
+- Only include companies that PRECISELY match what was asked for
 
 Return ONLY the JSON object, no additional text.`
     }
@@ -901,7 +412,7 @@ Return ONLY the JSON object, no additional text.`
     model: modelName,
     messages,
     max_tokens: 8000,
-    temperature: 0.2
+    temperature: 0.1
   };
 
   yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };
@@ -923,6 +434,7 @@ Return ONLY the JSON object, no additional text.`
   const data = extractJSON(content);
   if (!data) {
     console.error("[Discovery Streaming] Failed to parse LLM response as JSON");
+    console.error("[Discovery Streaming] Raw content:", content.substring(0, 500));
     yield { type: 'error', data: { message: 'Failed to parse AI response' } };
     return;
   }
@@ -964,6 +476,7 @@ Return ONLY the JSON object, no additional text.`
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: validatedData.sector,
+        businessType: validatedData.businessType || null,
         region: validatedData.region,
         country: validatedData.country,
         streetAddress: validatedData.streetAddress || null,
@@ -974,15 +487,13 @@ Return ONLY the JSON object, no additional text.`
         employees: validatedData.employees,
         employeesSource: validatedData.employeesSource,
         confidence: validatedData.confidence,
+        relevanceReason: validatedData.relevanceReason || null,
         color: "#1e3a8a",
         searchQueryId
       });
 
-      const validatedExecs = validatedData.executives.filter((e: any) => e !== null);
-      const filteredExecs = filterExecutivesByRole(validatedExecs, criteria);
-      
       const executives = [];
-      for (const rawExec of filteredExecs) {
+      for (const rawExec of validatedData.executives) {
         try {
           const validatedExec = validateExecutiveData(rawExec);
           if (!validatedExec) continue;
@@ -1024,4 +535,84 @@ Return ONLY the JSON object, no additional text.`
 
   console.log(`[Discovery Streaming] Complete: ${processed} companies created`);
   yield { type: 'complete', data: { total: processed } };
+}
+
+export async function discoverCompaniesAndExecutives(
+  criteria: SearchCriteria,
+  searchQueryId: number,
+  selectedModel: string = DEFAULT_MODEL,
+  originalQuery: string = ""
+): Promise<any[]> {
+  const results: any[] = [];
+  
+  for await (const event of discoverCompaniesStreaming(criteria, searchQueryId, selectedModel, originalQuery)) {
+    if (event.type === 'company') {
+      results.push(event.data.company);
+    } else if (event.type === 'error') {
+      throw new Error(event.data.message);
+    }
+  }
+  
+  return results;
+}
+
+export async function researchCompanyDetails(companyName: string, selectedModel: string = DEFAULT_MODEL): Promise<any> {
+  console.log(`[Discovery] Researching company details for: ${companyName}`);
+  
+  const client = openrouter;
+  const modelName = selectedModel || DEFAULT_MODEL;
+  
+  const messages = [
+    {
+      role: "system" as const,
+      content: `You are a company research expert. Given a company name, find accurate details about the company including:
+- Exact headquarters location (street address, city, country, GPS coordinates)
+- Estimated annual revenue in USD
+- Estimated employee count
+- Primary industry/sector
+- Business type (manufacturer, distributor, retailer, service_provider, etc.)
+
+Return ONLY a JSON object with this structure:
+{
+  "name": "Official Company Name",
+  "sector": "Industry Sector",
+  "businessType": "distributor|retailer|manufacturer|wholesaler|service_provider",
+  "region": "Geographic Region",
+  "country": "Country",
+  "city": "Headquarters City",
+  "streetAddress": "123 Main Street",
+  "latitude": 25.2048,
+  "longitude": 55.2708,
+  "revenue": 500000000,
+  "revenueSource": "Source of revenue estimate",
+  "employees": 1000,
+  "employeesSource": "Source of employee count"
+}`
+    },
+    {
+      role: "user" as const,
+      content: `Research and provide details for this company: "${companyName}"`
+    }
+  ];
+
+  try {
+    const response = await client.chat.completions.create({
+      model: modelName,
+      messages,
+      max_tokens: 1000,
+      temperature: 0.1
+    });
+    
+    const content = response.choices[0]?.message?.content || "{}";
+    const data = extractJSON(content);
+    
+    if (data) {
+      return validateCompanyData(data);
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error("[Discovery] Company research error:", error.message);
+    return null;
+  }
 }

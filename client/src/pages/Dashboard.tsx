@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   
   const [showMatchReview, setShowMatchReview] = useState(false);
   const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
@@ -612,14 +613,20 @@ export default function Dashboard() {
       
       {selectedCompanyId && (
         <>
-          <div 
-            className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
-            onMouseDown={() => setIsResizingRight(true)}
-            data-testid="resize-handle-right"
-          >
-            <div className="absolute inset-y-0 -left-1 -right-1" />
-          </div>
-          <RightPanel width={rightPanelWidth} />
+          {isRightPanelOpen && (
+            <div 
+              className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
+              onMouseDown={() => setIsResizingRight(true)}
+              data-testid="resize-handle-right"
+            >
+              <div className="absolute inset-y-0 -left-1 -right-1" />
+            </div>
+          )}
+          <RightPanel 
+            width={rightPanelWidth} 
+            isOpen={isRightPanelOpen} 
+            onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
+          />
         </>
       )}
       

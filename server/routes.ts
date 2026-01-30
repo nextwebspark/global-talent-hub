@@ -982,32 +982,40 @@ export async function registerRoutes(
         console.log(`[Import] Researching company details for: ${companyName}`);
         const researchedData = await researchCompanyDetails(companyName);
         
-        // Create a new company with researched data
-        targetCompany = await storage.createCompanyManual({
-          name: researchedData.name,
-          sector: researchedData.sector,
-          region: researchedData.region,
-          country: researchedData.country,
-          streetAddress: researchedData.streetAddress || null,
-          latitude: String(researchedData.latitude),
-          longitude: String(researchedData.longitude),
-          revenue: String(researchedData.revenue),
-          revenueSource: researchedData.revenueSource,
-          employees: researchedData.employees,
-          employeesSource: researchedData.employeesSource,
-          confidence: researchedData.confidence,
-          color: '#6366f1',
-          searchQueryId: searchIdNum
-        });
-        console.log(`[Import] Created researched company: ${researchedData.name} (ID: ${targetCompany.id}, Revenue: $${researchedData.revenue}, Location: ${researchedData.country})`);
-      } else if (!targetCompany) {
-        // Use first company in search as fallback
+        // Check if research was successful (null means validation failed, e.g., Unknown company)
+        if (researchedData) {
+          // Create a new company with researched data
+          targetCompany = await storage.createCompanyManual({
+            name: researchedData.name,
+            sector: researchedData.sector,
+            region: researchedData.region,
+            country: researchedData.country,
+            streetAddress: researchedData.streetAddress || null,
+            latitude: String(researchedData.latitude),
+            longitude: String(researchedData.longitude),
+            revenue: String(researchedData.revenue),
+            revenueSource: researchedData.revenueSource,
+            employees: researchedData.employees,
+            employeesSource: researchedData.employeesSource,
+            confidence: researchedData.confidence,
+            color: '#6366f1',
+            searchQueryId: searchIdNum
+          });
+          console.log(`[Import] Created researched company: ${researchedData.name} (ID: ${targetCompany.id}, Revenue: $${researchedData.revenue}, Location: ${researchedData.country})`);
+        } else {
+          console.log(`[Import] Company research failed for "${companyName}" - using fallback`);
+        }
+      }
+      
+      // If no company found (research failed or no company name), use fallback
+      if (!targetCompany) {
         targetCompany = companiesInSearch[0];
         if (!targetCompany) {
           return res.status(400).json({ 
             error: "No company available to attach executive. Run a search first." 
           });
         }
+        console.log(`[Import] Using fallback company: ${targetCompany.name}`);
       }
 
       // Check if executive with this clockworkId already exists ANYWHERE in the search

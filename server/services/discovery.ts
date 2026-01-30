@@ -141,7 +141,13 @@ function normalizeBusinessType(rawType: string): string {
 }
 
 function validateCompanyData(data: any): any {
-  const name = String(data.name || data.companyName || 'Unknown Company').trim();
+  const rawName = String(data.name || data.companyName || '').trim();
+  // Filter out Unknown companies
+  if (!rawName || rawName.toLowerCase() === 'unknown' || rawName.toLowerCase() === 'unknown company') {
+    console.warn('[Discovery] Filtering out Unknown company');
+    return null as any;
+  }
+  const name = rawName;
   const sector = String(data.sector || data.industry || 'Unknown').trim();
   const rawBusinessType = String(data.businessType || data.business_type || data.type || '').trim();
   const businessType = normalizeBusinessType(rawBusinessType);
@@ -650,8 +656,9 @@ IMPORTANT:
     try {
       const validatedData = validateCompanyData(rawCompanyData);
       
-      if (!validatedData.name || validatedData.name === 'Unknown Company') {
-        console.warn("[Discovery Streaming] Skipping company with invalid name");
+      // Skip null/invalid companies (including Unknown companies)
+      if (!validatedData || !validatedData.name || validatedData.name === 'Unknown Company') {
+        console.warn("[Discovery Streaming] Skipping company with invalid or Unknown name");
         continue;
       }
       

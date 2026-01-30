@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -82,9 +82,11 @@ const EditableField = ({
 
 interface RightPanelProps {
   width?: number;
+  isOpen?: boolean;
+  onToggle?: () => void;
 }
 
-export default function RightPanel({ width = 384 }: RightPanelProps) {
+export default function RightPanel({ width = 384, isOpen = true, onToggle }: RightPanelProps) {
   const { 
     selectedCompanyId, 
     companies, 
@@ -147,7 +149,24 @@ export default function RightPanel({ width = 384 }: RightPanelProps) {
     setExecutiveDetails(null);
   };
 
+  // When no company selected, show collapsed toggle button only if onToggle is provided
   if (!company && !selectedExecutiveId) {
+    if (onToggle) {
+      return (
+        <div className="relative shrink-0">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
+            aria-label={isOpen ? "Collapse panel" : "Expand panel"}
+            data-testid="button-toggle-right-panel"
+          >
+            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        </div>
+      );
+    }
     return null;
   }
 
@@ -219,6 +238,8 @@ export default function RightPanel({ width = 384 }: RightPanelProps) {
         isLoading={isLoadingExecutiveDetails}
         onBack={handleBackToCompany}
         onRefresh={() => fetchExecutiveDetails(selectedExecutiveId)}
+        isOpen={isOpen}
+        onToggle={onToggle}
       />
     );
   }
@@ -227,9 +248,23 @@ export default function RightPanel({ width = 384 }: RightPanelProps) {
 
   return (
     <div 
-      className="h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0"
-      style={{ width }}
+      className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
+      style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
     >
+      {onToggle && (
+        <Button
+          variant="secondary"
+          size="icon"
+          onClick={onToggle}
+          className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
+          aria-label={isOpen ? "Collapse panel" : "Expand panel"}
+          data-testid="button-toggle-right-panel"
+        >
+          {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
+      )}
+      
+      <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
       <div className="p-4 border-b border-border flex justify-between items-center bg-muted/10">
         <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" data-testid="button-close-panel">
           <X className="h-4 w-4" />
@@ -397,6 +432,7 @@ export default function RightPanel({ width = 384 }: RightPanelProps) {
           </div>
         </div>
       </ScrollArea>
+      </div>
     </div>
   );
 }
@@ -406,13 +442,17 @@ function ExecutiveDetailView({
   executiveDetails, 
   isLoading, 
   onBack,
-  onRefresh
+  onRefresh,
+  isOpen = true,
+  onToggle
 }: { 
   width: number; 
   executiveDetails: ExecutiveDetails | null;
   isLoading: boolean;
   onBack: () => void;
   onRefresh: () => void;
+  isOpen?: boolean;
+  onToggle?: () => void;
 }) {
   const [notesContent, setNotesContent] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -563,20 +603,56 @@ function ExecutiveDetailView({
 
   if (isLoading) {
     return (
-      <div className="h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0" style={{ width }}>
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="mt-2 text-sm text-muted-foreground">Loading executive details...</p>
+      <div 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`} 
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+      >
+        {onToggle && (
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
+            data-testid="button-toggle-right-panel-loading"
+          >
+            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        )}
+        {isOpen && (
+          <>
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="mt-2 text-sm text-muted-foreground">Loading executive details...</p>
+          </>
+        )}
       </div>
     );
   }
 
   if (!executiveDetails) {
     return (
-      <div className="h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0" style={{ width }}>
-        <p className="text-sm text-muted-foreground">No executive data available</p>
-        <Button variant="ghost" onClick={onBack} className="mt-4">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
-        </Button>
+      <div 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`} 
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+      >
+        {onToggle && (
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
+            data-testid="button-toggle-right-panel-empty"
+          >
+            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        )}
+        {isOpen && (
+          <>
+            <p className="text-sm text-muted-foreground">No executive data available</p>
+            <Button variant="ghost" onClick={onBack} className="mt-4">
+              <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
+            </Button>
+          </>
+        )}
       </div>
     );
   }
@@ -585,9 +661,23 @@ function ExecutiveDetailView({
 
   return (
     <div 
-      className="h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0"
-      style={{ width }}
+      className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
+      style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
     >
+      {onToggle && (
+        <Button
+          variant="secondary"
+          size="icon"
+          onClick={onToggle}
+          className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
+          aria-label={isOpen ? "Collapse panel" : "Expand panel"}
+          data-testid="button-toggle-right-panel-exec"
+        >
+          {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
+      )}
+      
+      <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
       <div className="p-4 border-b border-border flex items-center gap-2 bg-muted/10">
         <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
           <ArrowLeft className="h-4 w-4" />
@@ -945,6 +1035,7 @@ function ExecutiveDetailView({
         </div>
         </div>
       </ScrollArea>
+      </div>
     </div>
   );
 }

@@ -6,16 +6,15 @@ const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-// Default model - DeepSeek V3 via OpenRouter
-export const DEFAULT_MODEL = "deepseek/deepseek-chat";
+// Default model - Claude Sonnet for best factual accuracy in company research
+export const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 
 export const AVAILABLE_MODELS = [
-  { id: "deepseek/deepseek-chat", name: "DeepSeek V3 (Default)", provider: "DeepSeek" },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Default)", provider: "Anthropic" },
   { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI" },
-  { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
+  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", provider: "DeepSeek" },
   { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic" },
-  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google" },
+  { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash", provider: "Google" },
   { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Meta" },
   { id: "mistralai/mistral-large-2411", name: "Mistral Large", provider: "Mistral" },
 ];

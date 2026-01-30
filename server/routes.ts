@@ -449,7 +449,7 @@ export async function registerRoutes(
   // Streaming search endpoint using Server-Sent Events
   app.get("/api/search/stream", async (req, res) => {
     const query = req.query.query as string;
-    const model = (req.query.model as string) || "replit";
+    const model = (req.query.model as string) || "deepseek/deepseek-chat";
     
     if (!query) {
       res.status(400).json({ error: "Search query is required" });

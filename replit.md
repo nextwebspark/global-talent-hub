@@ -33,10 +33,13 @@ Preferred communication style: Simple, everyday language.
 - **Schema Location**: `shared/schema.ts` contains all table definitions
 - **Key Tables**:
   - `users` - User accounts
-  - `companies` - Research results with geo-coordinates, street address, revenue, employees
+  - `companies` - Research results with geo-coordinates, street address, revenue, employees, businessType, relevanceReason
   - `executives` - Company leadership data linked to companies
   - `searchQueries` - Search history and parsed criteria (supports loading previous results)
   - `conversations` / `messages` - Chat functionality for AI interactions
+- **Company Fields**:
+  - `businessType` - Normalized classification: distributor, retailer, manufacturer, wholesaler, service_provider
+  - `relevanceReason` - LLM's explanation of why this company matches the search query
 
 ### Search History Feature
 - All searches are persisted in the database with linked companies and executives
@@ -69,9 +72,15 @@ Preferred communication style: Simple, everyday language.
 The backend follows a clean layered architecture with strict ownership rules:
 
 1. **Discovery Layer** (`server/services/discovery.ts`): 
-   - All LLM-related search logic (OpenAI/OpenRouter clients, model management, query parsing)
+   - All LLM-related search logic via OpenRouter (DeepSeek V3 default)
    - Runs ONCE per search, never re-runs unless user explicitly re-searches
-   - Contains: parseSearchQuery, discoverCompaniesAndExecutives, fetchAvailableModels
+   - **CRITICAL**: Original user query is passed VERBATIM to the LLM for maximum accuracy
+   - Contains: discoverCompaniesStreaming, discoverCompaniesAndExecutives, fetchAvailableModels
+   - **World-Class Prompt Design**: 
+     - LLM interprets natural language queries directly (e.g., "distributors not retailers")
+     - Self-verification: LLM must explain why each company matches via `relevanceReason` field
+     - Business type classification: distributor, retailer, manufacturer, wholesaler, service_provider
+     - Exclusion handling: Respects explicit exclusions in queries
    - **OWNERSHIP**: May CREATE records only, never updates existing executives/companies after creation
    - Uses: `storage.createCompanyFromDiscovery()`, `storage.createExecutiveFromDiscovery()`
 

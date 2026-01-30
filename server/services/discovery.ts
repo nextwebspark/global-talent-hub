@@ -98,10 +98,26 @@ function validateCoordinates(lat: any, lng: any, region?: string, country?: stri
   return { lat: fallback.lat + offset(), lng: fallback.lng + offset() };
 }
 
+const VALID_BUSINESS_TYPES = ['distributor', 'retailer', 'manufacturer', 'wholesaler', 'service_provider'];
+
+function normalizeBusinessType(rawType: string): string {
+  const normalized = rawType.toLowerCase().trim();
+  if (VALID_BUSINESS_TYPES.includes(normalized)) {
+    return normalized;
+  }
+  if (normalized.includes('distribut')) return 'distributor';
+  if (normalized.includes('retail')) return 'retailer';
+  if (normalized.includes('manufactur') || normalized.includes('producer')) return 'manufacturer';
+  if (normalized.includes('wholesale')) return 'wholesaler';
+  if (normalized.includes('service') || normalized.includes('provider')) return 'service_provider';
+  return normalized || 'unknown';
+}
+
 function validateCompanyData(data: any): any {
   const name = String(data.name || data.companyName || 'Unknown Company').trim();
   const sector = String(data.sector || data.industry || 'Unknown').trim();
-  const businessType = String(data.businessType || data.business_type || data.type || '').trim();
+  const rawBusinessType = String(data.businessType || data.business_type || data.type || '').trim();
+  const businessType = normalizeBusinessType(rawBusinessType);
   const region = String(data.region || data.area || 'Unknown').trim();
   const country = String(data.country || data.location || region).trim();
   const city = String(data.city || data.headquarters || data.hq || '').trim();
@@ -375,10 +391,15 @@ export async function* discoverCompaniesStreaming(
   criteria: SearchCriteria,
   searchQueryId: number,
   selectedModel: string = DEFAULT_MODEL,
-  originalQuery: string = ""
+  originalQuery: string
 ): AsyncGenerator<{ type: 'company' | 'status' | 'error' | 'complete', data: any }> {
+  if (!originalQuery || originalQuery.trim().length === 0) {
+    yield { type: 'error', data: { message: 'Original query is required for accurate search results' } };
+    return;
+  }
+  
   const limit = criteria.limit || 10;
-  const query = originalQuery || `Find ${limit} companies`;
+  const query = originalQuery.trim();
   
   const client = openrouter;
   const modelName = selectedModel || DEFAULT_MODEL;
@@ -541,8 +562,11 @@ export async function discoverCompaniesAndExecutives(
   criteria: SearchCriteria,
   searchQueryId: number,
   selectedModel: string = DEFAULT_MODEL,
-  originalQuery: string = ""
+  originalQuery: string
 ): Promise<any[]> {
+  if (!originalQuery || originalQuery.trim().length === 0) {
+    throw new Error('Original query is required for accurate search results');
+  }
   const results: any[] = [];
   
   for await (const event of discoverCompaniesStreaming(criteria, searchQueryId, selectedModel, originalQuery)) {

@@ -403,7 +403,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      const selectedModel = model || "replit";
+      const selectedModel = model || "deepseek/deepseek-chat";
       console.log(`[Routes] Processing search: "${query}" with model: ${selectedModel}`);
 
       // Step 1: Parse the search query using Discovery Layer
@@ -425,9 +425,9 @@ export async function registerRoutes(
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
       console.log("[Routes] Cleared previous results for search ID:", searchQuery.id);
 
-      // Step 5: Run Discovery Layer to find companies and executives
-      console.log("[Routes] Running discovery with criteria:", JSON.stringify(criteria));
-      const companies = await discoverCompaniesAndExecutives(criteria, searchQuery.id, selectedModel);
+      // Step 5: Run Discovery Layer to find companies and executives (pass original query for accuracy)
+      console.log("[Routes] Running discovery with original query:", query);
+      const companies = await discoverCompaniesAndExecutives(criteria, searchQuery.id, selectedModel, query);
       console.log(`[Routes] Discovery complete: ${companies.length} companies found`);
 
       // Step 6: Update result count in persistence layer

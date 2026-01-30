@@ -401,12 +401,15 @@ export async function* discoverCompaniesStreaming(
   const query = originalQuery.trim();
   
   const client = openrouter;
-  const modelName = selectedModel || DEFAULT_MODEL;
+  const baseModel = selectedModel || DEFAULT_MODEL;
+  // Append :online for web search - LLM will search the web for real company data
+  const modelName = `${baseModel}:online`;
   
   console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
   console.log(`[Discovery Streaming] Original query: "${query}"`);
+  console.log(`[Discovery Streaming] Web search enabled via :online suffix`);
   
-  yield { type: 'status', data: { message: 'Analyzing your search request...', progress: 5 } };
+  yield { type: 'status', data: { message: 'Searching the web for companies...', progress: 5 } };
   
   const messages = [
     {
@@ -420,19 +423,83 @@ export async function* discoverCompaniesStreaming(
 Find exactly ${limit} companies that match this query.
 
 IMPORTANT: 
+- Search the web for REAL, currently operating companies
 - Read the query carefully for any business type specifications or exclusions
 - Each company MUST have a "relevanceReason" explaining WHY it matches the query
 - Only include companies that PRECISELY match what was asked for
-
-Return ONLY the JSON object, no additional text.`
+- Verify company information from their official websites or trusted business directories`
     }
   ];
+
+  // Define structured output schema for consistent company data
+  const companySchema = {
+    type: "object" as const,
+    properties: {
+      companies: {
+        type: "array" as const,
+        items: {
+          type: "object" as const,
+          properties: {
+            name: { type: "string" as const, description: "Exact legal company name" },
+            businessType: { 
+              type: "string" as const, 
+              enum: ["distributor", "retailer", "manufacturer", "wholesaler", "service_provider"],
+              description: "Primary business type classification"
+            },
+            relevanceReason: { type: "string" as const, description: "Why this company matches the query" },
+            sector: { type: "string" as const, description: "Industry sector" },
+            region: { type: "string" as const, description: "Geographic region" },
+            country: { type: "string" as const, description: "Country name" },
+            city: { type: "string" as const, description: "Headquarters city" },
+            streetAddress: { type: "string" as const, description: "Exact street address of headquarters" },
+            latitude: { type: "number" as const, description: "GPS latitude of headquarters" },
+            longitude: { type: "number" as const, description: "GPS longitude of headquarters" },
+            revenue: { type: "number" as const, description: "Annual revenue in USD" },
+            revenueSource: { type: "string" as const, description: "Source of revenue data" },
+            employees: { type: "integer" as const, description: "Number of employees" },
+            employeesSource: { type: "string" as const, description: "Source of employee count" },
+            confidence: { type: "integer" as const, minimum: 1, maximum: 10, description: "Data confidence score 1-10" },
+            executives: {
+              type: "array" as const,
+              items: {
+                type: "object" as const,
+                properties: {
+                  name: { type: "string" as const, description: "Executive full name" },
+                  title: { type: "string" as const, description: "Current job title" },
+                  source: { type: "string" as const, description: "Where this info was found" },
+                  linkedin: { type: "string" as const, description: "LinkedIn profile URL" },
+                  confidence: { type: "integer" as const, minimum: 1, maximum: 10 }
+                },
+                required: ["name", "title", "source", "confidence"]
+              }
+            }
+          },
+          required: ["name", "businessType", "relevanceReason", "sector", "country", "latitude", "longitude", "revenue", "employees", "confidence"]
+        }
+      }
+    },
+    required: ["companies"]
+  };
 
   const requestOptions: any = {
     model: modelName,
     messages,
     max_tokens: 8000,
-    temperature: 0.1
+    temperature: 0.1,
+    // Structured outputs for consistent JSON
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "company_search_results",
+        strict: true,
+        schema: companySchema
+      }
+    },
+    // Response healing plugin to fix any malformed JSON
+    plugins: [
+      { id: "response-healing" },
+      { id: "web", max_results: 10 }
+    ]
   };
 
   yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };

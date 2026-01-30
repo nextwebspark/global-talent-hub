@@ -13,6 +13,7 @@ export const companies = pgTable("companies", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   sector: text("sector"),
+  businessType: text("business_type"), // distributor, retailer, manufacturer, wholesaler, service_provider, etc.
   region: text("region"),
   country: text("country"),
   streetAddress: text("street_address"),
@@ -23,6 +24,7 @@ export const companies = pgTable("companies", {
   employees: integer("employees"),
   employeesSource: text("employees_source"),
   confidence: integer("confidence").default(5),
+  relevanceReason: text("relevance_reason"), // LLM's explanation of why this company matches the query
   color: text("color").default("#1e3a8a"),
   searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),

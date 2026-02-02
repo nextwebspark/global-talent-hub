@@ -371,6 +371,33 @@ export async function registerRoutes(
     }
   });
 
+  // Company Notes endpoints
+  app.get("/api/companies/:id/notes", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const notes = await storage.getCompanyNotes(id);
+      res.json(notes || { content: '' });
+    } catch (error) {
+      console.error("Error fetching company notes:", error);
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  app.put("/api/companies/:id/notes", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const { content } = req.body;
+      if (typeof content !== 'string') {
+        return res.status(400).json({ error: "Content is required" });
+      }
+      const notes = await storage.upsertCompanyNotes(id, content);
+      res.json(notes);
+    } catch (error) {
+      console.error("Error updating company notes:", error);
+      res.status(500).json({ error: "Failed to update notes" });
+    }
+  });
+
   app.delete("/api/search-queries/:id/results", async (req, res) => {
     try {
       const searchQueryId = parseInt(String(req.params.id));

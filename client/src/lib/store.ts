@@ -74,10 +74,20 @@ export interface Company {
   revenueSource?: string;
   employees: number;
   employeesSource?: string;
+  geographicFootprint?: number;
+  customerModel?: string;
+  ownershipType?: string;
+  coreActivity?: string;
+  operatingModel?: string;
+  revenueDrivers?: string;
+  summary?: string;
+  lastVerifiedYear?: number;
   confidence: number;
   description?: string;
   color?: string;
   source?: string;
+  businessType?: string;
+  relevanceReason?: string;
 }
 
 export interface Executive {
@@ -232,6 +242,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
   const employees = Math.round(safeParseFloat(apiCompany.employees, 0));
   let confidence = Math.round(safeParseFloat((apiCompany as any).confidence, 5));
   confidence = Math.max(1, Math.min(10, confidence));
+  const ext = apiCompany as any;
   
   return {
     id: String(apiCompany.id || '0'),
@@ -239,16 +250,26 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     industry: String(apiCompany.sector || 'Unknown').trim(),
     hq_city: String(apiCompany.region || 'Unknown').trim(),
     hq_country: String(apiCompany.country || 'Unknown').trim(),
-    streetAddress: (apiCompany as any).streetAddress ? String((apiCompany as any).streetAddress).trim() : undefined,
+    streetAddress: ext.streetAddress ? String(ext.streetAddress).trim() : undefined,
     lat: isValidCoordinate(lat, lng) ? lat : 0,
     lng: isValidCoordinate(lat, lng) ? lng : 0,
     revenue_usd: revenue >= 0 ? revenue : 0,
-    revenueSource: String((apiCompany as any).revenueSource || 'Unknown').trim(),
+    revenueSource: String(ext.revenueSource || 'Unknown').trim(),
     employees: employees >= 0 ? employees : 0,
-    employeesSource: String((apiCompany as any).employeesSource || 'Unknown').trim(),
+    employeesSource: String(ext.employeesSource || 'Unknown').trim(),
+    geographicFootprint: ext.geographicFootprint ?? undefined,
+    customerModel: ext.customerModel ? String(ext.customerModel).trim() : undefined,
+    ownershipType: ext.ownershipType ? String(ext.ownershipType).trim() : undefined,
+    coreActivity: ext.coreActivity ? String(ext.coreActivity).trim() : undefined,
+    operatingModel: ext.operatingModel ? String(ext.operatingModel).trim() : undefined,
+    revenueDrivers: ext.revenueDrivers ? String(ext.revenueDrivers).trim() : undefined,
+    summary: ext.summary ? String(ext.summary).trim() : undefined,
+    lastVerifiedYear: ext.lastVerifiedYear ?? undefined,
+    businessType: ext.businessType ? String(ext.businessType).trim() : undefined,
+    relevanceReason: ext.relevanceReason ? String(ext.relevanceReason).trim() : undefined,
     confidence,
     color: apiCompany.color || '#1e3a8a',
-    source: String((apiCompany as any).source || 'Unknown').trim(),
+    source: String(ext.source || 'Unknown').trim(),
   };
 }
 

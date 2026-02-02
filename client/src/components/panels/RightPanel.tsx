@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -111,8 +111,54 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const updateExecutiveMutation = useUpdateExecutive();
   const createExecutiveMutation = useCreateExecutive();
 
+  const [companyNotes, setCompanyNotes] = useState('');
+  const [isEditingCompanyNotes, setIsEditingCompanyNotes] = useState(false);
+  const [isSavingCompanyNotes, setIsSavingCompanyNotes] = useState(false);
+  const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
+  const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
+
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
+
+  const fetchCompanyNotes = useCallback(async (companyId: string) => {
+    setIsLoadingCompanyNotes(true);
+    setCompanyNotesError(null);
+    try {
+      const response = await fetch(`/api/companies/${companyId}/notes`);
+      if (!response.ok) throw new Error('Failed to fetch company notes');
+      const data = await response.json();
+      setCompanyNotes(data.content || '');
+    } catch (error) {
+      console.error('Error fetching company notes:', error);
+      setCompanyNotesError('Failed to load notes');
+    } finally {
+      setIsLoadingCompanyNotes(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedCompanyId && panelView === 'company') {
+      fetchCompanyNotes(selectedCompanyId);
+    }
+  }, [selectedCompanyId, panelView, fetchCompanyNotes]);
+
+  const handleSaveCompanyNotes = async () => {
+    if (!company) return;
+    setIsSavingCompanyNotes(true);
+    try {
+      await fetch(`/api/companies/${company.id}/notes`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: companyNotes })
+      });
+      toast.success('Notes saved');
+      setIsEditingCompanyNotes(false);
+    } catch (error) {
+      toast.error('Failed to save notes');
+    } finally {
+      setIsSavingCompanyNotes(false);
+    }
+  };
 
   const fetchExecutiveDetails = useCallback(async (execId: string) => {
     setLoadingExecutiveDetails(true);
@@ -149,36 +195,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     setExecutiveDetails(null);
   };
 
-  // When no company selected, show collapsed toggle button only if onToggle is provided
-  if (!company && !selectedExecutiveId) {
-    if (onToggle) {
-      return (
-        <div 
-          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-        >
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background hover:bg-accent"
-            aria-label={isOpen ? "Collapse panel" : "Expand panel"}
-            data-testid="button-toggle-right-panel"
-          >
-            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-          {isOpen && (
-            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-              <Building2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
-              <p className="text-sm text-muted-foreground font-serif">Select a company on the map to view details</p>
-            </div>
-          )}
-        </div>
-      );
-    }
-    return null;
-  }
-
   const handleUpdateCompany = async (field: string, value: any) => {
     if (!company) return;
     updateCompanyLocal(company.id, { [field]: value });
@@ -188,6 +204,13 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       if (field === 'name') updateData.name = value;
       if (field === 'revenue_usd') updateData.revenue = String(value);
       if (field === 'employees') updateData.employees = value;
+      if (field === 'ownershipType') updateData.ownershipType = value;
+      if (field === 'geographicFootprint') updateData.geographicFootprint = value;
+      if (field === 'customerModel') updateData.customerModel = value;
+      if (field === 'coreActivity') updateData.coreActivity = value;
+      if (field === 'operatingModel') updateData.operatingModel = value;
+      if (field === 'revenueDrivers') updateData.revenueDrivers = value;
+      if (field === 'summary') updateData.summary = value;
       
       await updateCompanyMutation.mutateAsync({
         id: parseInt(company.id),
@@ -239,6 +262,36 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     }
   };
 
+  // Per §2: RHP hidden ONLY when no entity is selected
+  if (!selectedCompanyId && !selectedExecutiveId) {
+    if (onToggle) {
+      return (
+        <div 
+          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+        >
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background hover:bg-accent"
+            aria-label={isOpen ? "Collapse panel" : "Expand panel"}
+            data-testid="button-toggle-right-panel"
+          >
+            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+          {isOpen && (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <Building2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
+              <p className="text-sm text-muted-foreground font-serif">Select a company on the map to view details</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+    return null;
+  }
+
   if (panelView === 'executive' && selectedExecutiveId) {
     return (
       <ExecutiveDetailView 
@@ -253,7 +306,43 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     );
   }
 
-  if (!company) return null;
+  // Company view - Per §4: never show nothing
+  if (!company) {
+    return (
+      <div 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+      >
+        {onToggle && (
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
+          >
+            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </Button>
+        )}
+        {isOpen && (
+          <div className="flex flex-col items-center gap-3 p-6 text-center">
+            <AlertCircle className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No company data available</p>
+            <Button variant="ghost" size="sm" onClick={() => selectCompany(null)}>
+              <X className="h-4 w-4 mr-2" /> Clear Selection
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const getConfidenceLabel = (confidence: number): { label: string; color: string } => {
+    if (confidence >= 7) return { label: 'High', color: 'text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400' };
+    if (confidence >= 4) return { label: 'Medium', color: 'text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400' };
+    return { label: 'Low', color: 'text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400' };
+  };
+
+  const confidenceInfo = getConfidenceLabel(company.confidence);
 
   return (
     <div 
@@ -274,173 +363,325 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       )}
       
       <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-      <div className="p-4 border-b border-border flex justify-between items-center bg-muted/10">
-        <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" data-testid="button-close-panel">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      <ScrollArea className="flex-1 p-6">
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-             <Badge variant="outline" className="rounded-sm font-normal text-xs uppercase tracking-wide text-muted-foreground border-muted-foreground/30" data-testid="badge-industry">
-               {company.industry}
-             </Badge>
-             <Badge variant="secondary" className={`rounded-sm font-normal text-xs uppercase tracking-wide ${company.confidence >= 7 ? 'bg-green-100 text-green-800' : company.confidence >= 4 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'}`} data-testid="badge-confidence">
-               Confidence: {company.confidence}/10
-             </Badge>
+        {/* §7.1 Company Header - Sticky */}
+        <div className="sticky top-0 z-10 p-4 border-b border-border bg-background/95 backdrop-blur-sm">
+          <div className="flex justify-between items-start mb-2">
+            <div className="flex-1 min-w-0">
+              <EditableField
+                value={company.name}
+                onSave={(val) => handleUpdateCompany('name', String(val))}
+                className="text-xl font-serif font-bold truncate"
+                inputClassName="text-xl font-serif font-bold"
+              />
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive shrink-0 ml-2" data-testid="button-close-panel">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
           
-          <EditableField
-            value={company.name}
-            onSave={(val) => handleUpdateCompany('name', String(val))}
-            className="text-2xl font-serif font-bold mb-1 block"
-            inputClassName="text-2xl font-serif font-bold mb-1 h-10"
-          />
-
-          <div className="flex items-center text-sm text-muted-foreground gap-1" data-testid="text-location">
-            <MapPin className="w-3 h-3" />
-            {company.hq_city}, {company.hq_country}
+          <div className="flex items-center text-sm text-muted-foreground gap-1 mb-2" data-testid="text-location">
+            <MapPin className="w-3 h-3 shrink-0" />
+            <span className="truncate">{company.hq_city}, {company.hq_country}</span>
           </div>
           
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="outline" className="text-xs" data-testid="badge-sector">
+              {company.industry || 'Unknown Sector'}
+            </Badge>
+            {company.ownershipType && (
+              <Badge variant="secondary" className="text-xs" data-testid="badge-ownership">
+                {company.ownershipType}
+              </Badge>
+            )}
+            {company.businessType && (
+              <Badge variant="outline" className="text-xs capitalize" data-testid="badge-business-type">
+                {company.businessType.replace('_', ' ')}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-6">
+            {/* §7.2 Scale Snapshot - Fixed KPI boxes */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" /> Scale Snapshot
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div 
+                  onClick={() => setScalingMetric('revenue')}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                    scalingMetric === 'revenue' 
+                      ? 'bg-primary/5 border-primary ring-1 ring-primary/20' 
+                      : 'bg-muted/30 border-border hover:bg-muted/50'
+                  }`}
+                  data-testid="card-revenue"
+                >
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <DollarSign className="w-3 h-3" /> Revenue
+                  </div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <EditableField
+                      type="number"
+                      value={company.revenue_usd}
+                      onSave={(val) => handleUpdateCompany('revenue_usd', Number(val))}
+                      className="text-lg font-mono font-semibold"
+                      displayFormatter={(val) => Number(val) > 0 ? `$${(Number(val) / 1000000000).toFixed(2)}B` : 'Unknown'}
+                    />
+                  </div>
+                  {scalingMetric === 'revenue' && (
+                    <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>
+                  )}
+                </div>
+
+                <div 
+                  onClick={() => setScalingMetric('employees')}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                    scalingMetric === 'employees' 
+                      ? 'bg-primary/5 border-primary ring-1 ring-primary/20' 
+                      : 'bg-muted/30 border-border hover:bg-muted/50'
+                  }`}
+                  data-testid="card-employees"
+                >
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Users className="w-3 h-3" /> Employees
+                  </div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <EditableField
+                      type="number"
+                      value={company.employees}
+                      onSave={(val) => handleUpdateCompany('employees', Number(val))}
+                      className="text-lg font-mono font-semibold"
+                      displayFormatter={(val) => Number(val) > 0 ? Number(val).toLocaleString() : 'Unknown'}
+                    />
+                  </div>
+                  {scalingMetric === 'employees' && (
+                    <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-lg border bg-muted/30 border-border">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Globe className="w-3 h-3" /> Geographic Footprint
+                  </div>
+                  <div className="text-lg font-mono font-semibold">
+                    {company.geographicFootprint ? `${company.geographicFootprint} countries` : 'Unknown'}
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg border bg-muted/30 border-border">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                    <Target className="w-3 h-3" /> Customer Model
+                  </div>
+                  <div className="text-lg font-mono font-semibold">
+                    {company.customerModel || 'Unknown'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* §7.3 Business Profile */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+                <Building2 className="h-4 w-4" /> Business Profile
+              </h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-muted-foreground">Core Activity</label>
+                  <EditableField
+                    value={company.coreActivity || ''}
+                    onSave={(val) => handleUpdateCompany('coreActivity', String(val))}
+                    className="text-sm mt-0.5"
+                    placeholder="What the company primarily does"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Operating Model</label>
+                  <EditableField
+                    value={company.operatingModel || ''}
+                    onSave={(val) => handleUpdateCompany('operatingModel', String(val))}
+                    className="text-sm mt-0.5"
+                    placeholder="How the company operates"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Primary Revenue Drivers</label>
+                  <EditableField
+                    value={company.revenueDrivers || ''}
+                    onSave={(val) => handleUpdateCompany('revenueDrivers', String(val))}
+                    className="text-sm mt-0.5"
+                    placeholder="Main sources of revenue"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* §7.4 Company Summary */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Company Summary
+              </h3>
+              <EditableField
+                value={company.summary || ''}
+                onSave={(val) => handleUpdateCompany('summary', String(val))}
+                className="text-sm leading-relaxed"
+                placeholder="A brief 2-4 sentence description of the company..."
+              />
+              {company.relevanceReason && (
+                <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                  <span className="font-medium">Search Relevance:</span> {company.relevanceReason}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* §7.5 Notes (User Editable) */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Notes
+                </h3>
+                {!isEditingCompanyNotes && (
+                  <Button variant="ghost" size="sm" onClick={() => setIsEditingCompanyNotes(true)} className="h-6 text-xs">
+                    <Edit2 className="h-3 w-3 mr-1" /> Edit
+                  </Button>
+                )}
+              </div>
+              
+              {isLoadingCompanyNotes ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading notes...
+                </div>
+              ) : companyNotesError ? (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4" /> {companyNotesError}
+                </div>
+              ) : isEditingCompanyNotes ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={companyNotes}
+                    onChange={(e) => setCompanyNotes(e.target.value)}
+                    placeholder="Add internal notes and insights about this company..."
+                    className="min-h-[100px] text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleSaveCompanyNotes} disabled={isSavingCompanyNotes}>
+                      {isSavingCompanyNotes ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                      Save
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setIsEditingCompanyNotes(false);
+                      fetchCompanyNotes(company.id);
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 border rounded-lg bg-muted/20 min-h-[60px]">
+                  {companyNotes ? (
+                    <p className="text-sm whitespace-pre-wrap">{companyNotes}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No notes yet. Click Edit to add notes.</p>
+                  )}
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-2 italic">
+                Notes are private and not sourced from external data.
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Key Executives */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <Users className="h-4 w-4" /> Key Executives
+                </h3>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 text-xs text-primary hover:bg-primary/10"
+                  onClick={handleAddExecutive}
+                  data-testid="button-add-executive"
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {companyExecutives.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">No executives found. Click Add to create one.</p>
+                ) : (
+                  companyExecutives.map(exec => (
+                    <div 
+                      key={exec.id} 
+                      className="group p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card cursor-pointer" 
+                      onClick={() => handleSelectExecutive(exec.id)}
+                      data-testid={`card-executive-${exec.id}`}
+                    >
+                      <div className="flex gap-3">
+                        <div className="shrink-0">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ${exec.isEnriched ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                            {exec.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start gap-2">
+                            <span className="font-medium text-sm truncate hover:text-primary transition-colors">
+                              {exec.name}
+                            </span>
+                            <span className={`text-[10px] font-medium shrink-0 ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
+                              {exec.confidence}/10
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {exec.title}
+                          </div>
+                          <p className="text-[10px] text-primary mt-1">
+                            Click to view details
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+
+        {/* §7.6 Data Confidence Footer - Always visible */}
+        <div className="sticky bottom-0 p-3 border-t border-border bg-muted/30 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Data Confidence</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {company.lastVerifiedYear && (
+                <span className="text-xs text-muted-foreground">
+                  Verified {company.lastVerifiedYear}
+                </span>
+              )}
+              <Badge className={`text-xs ${confidenceInfo.color}`}>
+                {confidenceInfo.label} ({company.confidence}/10)
+              </Badge>
+            </div>
+          </div>
           {company.source && (
-            <p className="mt-2 text-[10px] italic text-muted-foreground" data-testid="text-source">
+            <p className="text-[10px] text-muted-foreground mt-1">
               Source: {company.source}
             </p>
           )}
         </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-6">
-           <div>
-             <div 
-               onClick={() => setScalingMetric('revenue')}
-               className={`p-3 rounded border cursor-pointer transition-all duration-200 group relative
-                  ${scalingMetric === 'revenue' 
-                    ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
-                    : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}`}
-               data-testid="card-revenue"
-             >
-               <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'revenue' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-                 <DollarSign className="w-3 h-3" /> Revenue
-               </div>
-               
-               <div onClick={(e) => e.stopPropagation()}>
-                  <EditableField
-                    type="number"
-                    value={company.revenue_usd}
-                    onSave={(val) => handleUpdateCompany('revenue_usd', Number(val))}
-                    className="text-lg font-mono font-medium block mt-1"
-                    inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
-                    displayFormatter={(val) => `$${(Number(val) / 1000000000).toFixed(2)}B`}
-                  />
-               </div>
-
-               {scalingMetric === 'revenue' && (
-                  <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
-               )}
-             </div>
-             {company.revenueSource && (
-               <p className="text-[9px] italic text-muted-foreground mt-1">Source: {company.revenueSource}</p>
-             )}
-           </div>
-
-           <div>
-             <div 
-               onClick={() => setScalingMetric('employees')}
-               className={`p-3 rounded border cursor-pointer transition-all duration-200 group relative
-                  ${scalingMetric === 'employees' 
-                    ? 'bg-primary/5 border-primary shadow-sm ring-1 ring-primary/20' 
-                    : 'bg-muted/30 border-border/50 hover:bg-muted/50 hover:border-primary/30'}`}
-               data-testid="card-employees"
-             >
-               <div className={`text-xs uppercase tracking-wider mb-1 flex items-center gap-1 ${scalingMetric === 'employees' ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-                 <Users className="w-3 h-3" /> Employees
-               </div>
-               
-               <div onClick={(e) => e.stopPropagation()}>
-                  <EditableField
-                    type="number"
-                    value={company.employees}
-                    onSave={(val) => handleUpdateCompany('employees', Number(val))}
-                    className="text-lg font-mono font-medium block mt-1"
-                    inputClassName="h-7 text-xs font-mono font-medium bg-background mt-1"
-                    displayFormatter={(val) => Number(val).toLocaleString()}
-                  />
-               </div>
-
-               {scalingMetric === 'employees' && (
-                  <div className="text-[10px] text-primary mt-1 font-medium">Map Scaling Active</div>
-               )}
-             </div>
-             {company.employeesSource && (
-               <p className="text-[9px] italic text-muted-foreground mt-1">Source: {company.employeesSource}</p>
-             )}
-           </div>
-        </div>
-
-        <Separator className="my-6" />
-
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-serif font-semibold text-lg">Key Executives</h3>
-            <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 text-xs text-primary hover:bg-primary/10"
-                onClick={handleAddExecutive}
-                data-testid="button-add-executive"
-            >
-                Add New
-            </Button>
-          </div>
-
-          <div className="space-y-3">
-            {companyExecutives.map(exec => (
-              <div 
-                key={exec.id} 
-                className="group p-3 rounded border border-border hover:border-primary/30 hover:bg-muted/30 transition-all bg-card shadow-sm cursor-pointer" 
-                onClick={() => handleSelectExecutive(exec.id)}
-                data-testid={`card-executive-${exec.id}`}
-              >
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0">
-                    {exec.imageUrl ? (
-                      <img 
-                        src={exec.imageUrl} 
-                        alt={exec.name}
-                        className="w-10 h-10 rounded-full object-cover border border-border"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm ${exec.imageUrl ? 'hidden' : ''}`}>
-                      {exec.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="font-semibold text-sm hover:text-primary transition-colors">
-                        {exec.name}
-                      </div>
-                      <span className={`text-[9px] font-medium ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
-                        {exec.confidence}/10
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground font-medium mb-1">
-                      {exec.title}
-                    </div>
-                    <p className="text-[9px] text-primary">
-                      Click to view details
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </ScrollArea>
       </div>
     </div>
   );
@@ -610,6 +851,7 @@ function ExecutiveDetailView({
     }
   };
 
+  // §4 Render Contract: Show Loading state
   if (isLoading) {
     return (
       <div 
@@ -621,26 +863,26 @@ function ExecutiveDetailView({
             variant="secondary"
             size="icon"
             onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-            data-testid="button-toggle-right-panel-loading"
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
         {isOpen && (
-          <>
+          <div className="flex flex-col items-center gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="mt-2 text-sm text-muted-foreground">Loading executive details...</p>
-          </>
+            <p className="text-sm text-muted-foreground">Loading executive details...</p>
+          </div>
         )}
       </div>
     );
   }
 
+  // §4 Render Contract: Show No Data state
   if (!executiveDetails) {
     return (
       <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`} 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
         style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
       >
         {onToggle && (
@@ -648,14 +890,14 @@ function ExecutiveDetailView({
             variant="secondary"
             size="icon"
             onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-            data-testid="button-toggle-right-panel-empty"
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
         {isOpen && (
           <>
+            <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
             <p className="text-sm text-muted-foreground">No executive data available</p>
             <Button variant="ghost" onClick={onBack} className="mt-4">
               <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
@@ -696,7 +938,6 @@ function ExecutiveDetailView({
 
       <ScrollArea className="flex-1">
         <div key={executive.id} className="animate-in fade-in-0 duration-300">
-        {/* Company Context - Always Visible */}
         {company && (
           <div className="p-4 bg-muted/20 border-b border-border">
             <div className="flex items-center gap-2 mb-2">
@@ -721,7 +962,6 @@ function ExecutiveDetailView({
         )}
 
         <div className="p-6 space-y-6">
-          {/* Executive Header */}
           <div>
             <div className="flex items-center gap-4 mb-4">
               <div className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
@@ -758,7 +998,6 @@ function ExecutiveDetailView({
               </div>
             </div>
 
-            {/* Contact Info Section */}
             {(executive.email || executive.phone || executive.linkedin) && (
               <div className="flex flex-wrap gap-2 mt-3 p-3 bg-muted/30 rounded-lg">
                 {executive.email && (
@@ -785,7 +1024,6 @@ function ExecutiveDetailView({
 
           <Separator />
 
-          {/* Career History */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -838,12 +1076,6 @@ function ExecutiveDetailView({
                         placeholder="End date"
                       />
                     </div>
-                    <EditableField
-                      value={entry.description || ''}
-                      onSave={(val) => handleUpdateCareerEntry(entry.id, 'description', String(val))}
-                      className="text-xs text-muted-foreground mt-1"
-                      placeholder="Description (optional)"
-                    />
                   </div>
                 ))
               )}
@@ -852,7 +1084,6 @@ function ExecutiveDetailView({
 
           <Separator />
 
-          {/* Education */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -891,20 +1122,18 @@ function ExecutiveDetailView({
                         className="text-xs text-muted-foreground"
                         placeholder="Degree"
                       />
-                      <span className="text-xs text-muted-foreground">in</span>
-                      <EditableField
-                        value={entry.fieldOfStudy || ''}
-                        onSave={(val) => handleUpdateEducation(entry.id, 'fieldOfStudy', String(val))}
-                        className="text-xs text-muted-foreground"
-                        placeholder="Field of study"
-                      />
+                      {entry.fieldOfStudy && (
+                        <>
+                          <span className="text-xs text-muted-foreground">in</span>
+                          <EditableField
+                            value={entry.fieldOfStudy || ''}
+                            onSave={(val) => handleUpdateEducation(entry.id, 'fieldOfStudy', String(val))}
+                            className="text-xs text-muted-foreground"
+                            placeholder="Field of study"
+                          />
+                        </>
+                      )}
                     </div>
-                    <EditableField
-                      value={entry.graduationYear || ''}
-                      onSave={(val) => handleUpdateEducation(entry.id, 'graduationYear', String(val))}
-                      className="text-xs text-muted-foreground"
-                      placeholder="Graduation year"
-                    />
                   </div>
                 ))
               )}
@@ -913,7 +1142,6 @@ function ExecutiveDetailView({
 
           <Separator />
 
-          {/* Remuneration */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -982,12 +1210,6 @@ function ExecutiveDetailView({
                         />
                       </div>
                     </div>
-                    <EditableField
-                      value={entry.notes || ''}
-                      onSave={(val) => handleUpdateRemuneration(entry.id, 'notes', String(val))}
-                      className="text-xs text-muted-foreground mt-2"
-                      placeholder="Notes (optional)"
-                    />
                   </div>
                 ))
               )}
@@ -996,7 +1218,6 @@ function ExecutiveDetailView({
 
           <Separator />
 
-          {/* Notes */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">

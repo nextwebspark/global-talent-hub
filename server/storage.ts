@@ -8,6 +8,7 @@ import {
   education,
   remuneration,
   executiveNotes,
+  companyNotes,
   type InsertUser,
   type User,
   type Company,
@@ -23,7 +24,9 @@ import {
   type Remuneration,
   type InsertRemuneration,
   type ExecutiveNotes,
-  type InsertExecutiveNotes
+  type InsertExecutiveNotes,
+  type CompanyNotes,
+  type InsertCompanyNotes
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, ilike, or, sql, asc } from "drizzle-orm";
 
@@ -95,6 +98,9 @@ export interface IStorage {
   
   getExecutiveNotes(executiveId: number): Promise<ExecutiveNotes | undefined>;
   upsertExecutiveNotes(executiveId: number, content: string): Promise<ExecutiveNotes>;
+  
+  getCompanyNotes(companyId: number): Promise<CompanyNotes | undefined>;
+  upsertCompanyNotes(companyId: number, content: string): Promise<CompanyNotes>;
   
   getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
@@ -661,6 +667,27 @@ export class DatabaseStorage implements IStorage {
       return updated;
     }
     const [created] = await db.insert(executiveNotes).values({ executiveId, content }).returning();
+    return created;
+  }
+
+  // Company Notes
+  async getCompanyNotes(companyId: number): Promise<CompanyNotes | undefined> {
+    const [notes] = await db.select().from(companyNotes)
+      .where(eq(companyNotes.companyId, companyId));
+    return notes;
+  }
+
+  async upsertCompanyNotes(companyId: number, content: string): Promise<CompanyNotes> {
+    const existing = await this.getCompanyNotes(companyId);
+    if (existing) {
+      const [updated] = await db
+        .update(companyNotes)
+        .set({ content, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(companyNotes.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(companyNotes).values({ companyId, content }).returning();
     return created;
   }
 

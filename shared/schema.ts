@@ -14,6 +14,7 @@ export const companies = pgTable("companies", {
   name: text("name").notNull(),
   sector: text("sector"),
   businessType: text("business_type"), // distributor, retailer, manufacturer, wholesaler, service_provider, etc.
+  ownershipType: text("ownership_type"), // public, private, family-owned, PE-backed, state-owned
   region: text("region"),
   country: text("country"),
   streetAddress: text("street_address"),
@@ -23,6 +24,13 @@ export const companies = pgTable("companies", {
   revenueSource: text("revenue_source"),
   employees: integer("employees"),
   employeesSource: text("employees_source"),
+  geographicFootprint: integer("geographic_footprint"), // number of countries/regions
+  customerModel: text("customer_model"), // B2C, B2B, Mixed
+  coreActivity: text("core_activity"),
+  operatingModel: text("operating_model"),
+  revenueDrivers: text("revenue_drivers"),
+  summary: text("summary"), // 2-4 sentence description
+  lastVerifiedYear: integer("last_verified_year"),
   confidence: integer("confidence").default(5),
   relevanceReason: text("relevance_reason"), // LLM's explanation of why this company matches the query
   color: text("color").default("#1e3a8a"),
@@ -155,6 +163,14 @@ export const executiveNotes = pgTable("executive_notes", {
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const companyNotes = pgTable("company_notes", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const insertCareerHistorySchema = createInsertSchema(careerHistory).omit({
   id: true,
   createdAt: true,
@@ -179,6 +195,12 @@ export const insertExecutiveNotesSchema = createInsertSchema(executiveNotes).omi
   updatedAt: true,
 });
 
+export const insertCompanyNotesSchema = createInsertSchema(companyNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Company = typeof companies.$inferSelect;
@@ -198,4 +220,6 @@ export type InsertEducation = z.infer<typeof insertEducationSchema>;
 export type Remuneration = typeof remuneration.$inferSelect;
 export type InsertRemuneration = z.infer<typeof insertRemunerationSchema>;
 export type ExecutiveNotes = typeof executiveNotes.$inferSelect;
+export type CompanyNotes = typeof companyNotes.$inferSelect;
+export type InsertCompanyNotes = z.infer<typeof insertCompanyNotesSchema>;
 export type InsertExecutiveNotes = z.infer<typeof insertExecutiveNotesSchema>;

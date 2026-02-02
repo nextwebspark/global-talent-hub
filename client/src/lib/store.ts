@@ -168,6 +168,10 @@ interface AppState {
   scalingMetric: 'revenue' | 'employees';
   revenueFilter: number;
   
+  // Map visibility state (UI-only, does not persist to database)
+  hiddenCountries: Set<string>;
+  hiddenCompanies: Set<string>;
+  
   setProject: (project: Project) => void;
   setCompanies: (companies: Company[]) => void;
   addCompany: (company: Company) => void;
@@ -187,6 +191,11 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
   setRevenueFilter: (value: number) => void;
+  
+  // Map visibility actions
+  toggleCountryVisibility: (countryName: string) => void;
+  toggleCompanyVisibility: (companyId: string) => void;
+  resetVisibility: () => void;
   
   loadFromAPI: (apiCompanies: APICompany[]) => void;
   reset: () => void;
@@ -280,6 +289,8 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: '',
   scalingMetric: 'revenue',
   revenueFilter: 0,
+  hiddenCountries: new Set<string>(),
+  hiddenCompanies: new Set<string>(),
 
   setProject: (project) => set({ currentProject: project }),
   setCompanies: (companies) => set({ companies }),
@@ -322,6 +333,32 @@ export const useAppStore = create<AppState>((set) => ({
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
   setRevenueFilter: (value) => set({ revenueFilter: value }),
 
+  // Map visibility controls
+  toggleCountryVisibility: (countryName) => set((state) => {
+    const next = new Set(state.hiddenCountries);
+    if (next.has(countryName)) {
+      next.delete(countryName);
+    } else {
+      next.add(countryName);
+    }
+    return { hiddenCountries: next };
+  }),
+  
+  toggleCompanyVisibility: (companyId) => set((state) => {
+    const next = new Set(state.hiddenCompanies);
+    if (next.has(companyId)) {
+      next.delete(companyId);
+    } else {
+      next.add(companyId);
+    }
+    return { hiddenCompanies: next };
+  }),
+  
+  resetVisibility: () => set({
+    hiddenCountries: new Set<string>(),
+    hiddenCompanies: new Set<string>()
+  }),
+
   loadFromAPI: (apiCompanies: APICompany[]) => {
     const companies: Company[] = [];
     const executives: Executive[] = [];
@@ -351,6 +388,8 @@ export const useAppStore = create<AppState>((set) => ({
     panelView: 'company',
     searchQuery: '',
     scalingMetric: 'revenue',
-    revenueFilter: 0
+    revenueFilter: 0,
+    hiddenCountries: new Set<string>(),
+    hiddenCompanies: new Set<string>()
   })
 }));

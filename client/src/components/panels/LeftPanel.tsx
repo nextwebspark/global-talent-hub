@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -39,7 +39,11 @@ interface LeftPanelProps {
 }
 
 export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
-  const { companies, executives, selectCompany, selectExecutive, selectedCompanyId, deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject } = useAppStore();
+  const { 
+    companies, executives, selectCompany, selectExecutive, selectedCompanyId, 
+    deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
+    hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility
+  } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
@@ -444,27 +448,51 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               const isCountryExpanded = expandedCountries.has(country.name);
               const totalRevenue = country.companies.reduce((sum, c) => sum + c.revenue_usd, 0);
               
+              const isCountryHidden = hiddenCountries.has(country.name);
+              
               return (
                 <div key={country.name} className="rounded-lg overflow-hidden">
                   <div
-                    className="flex items-center gap-2 p-3 cursor-pointer transition-all duration-200 rounded-lg hover:bg-muted/50 border border-transparent"
-                    onClick={() => toggleCountry(country.name)}
+                    className="flex items-center gap-2 p-3 cursor-pointer transition-all duration-200 rounded-lg hover:bg-muted/50 border border-transparent group/country"
                     data-testid={`row-country-${country.name}`}
                   >
-                    <ChevronRight className={`h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground ${isCountryExpanded ? 'rotate-90' : ''}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-sm truncate">
+                    <ChevronRight 
+                      className={`h-4 w-4 shrink-0 transition-transform duration-200 text-muted-foreground ${isCountryExpanded ? 'rotate-90' : ''}`}
+                      onClick={() => toggleCountry(country.name)}
+                    />
+                    <div className="flex-1 min-w-0" onClick={() => toggleCountry(country.name)}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm truncate flex-1 min-w-0" title={country.name}>
                           {country.name}
                         </span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'}
-                        </span>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        ${(totalRevenue / 1000000000).toFixed(1)}B total revenue
+                      <div className="text-xs text-muted-foreground truncate">
+                        {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'} • ${(totalRevenue / 1000000000).toFixed(1)}B
                       </div>
                     </div>
+                    <TooltipProvider delayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleCountryVisibility(country.name);
+                            }}
+                            className={`p-1.5 rounded-md transition-all shrink-0 ${
+                              isCountryHidden 
+                                ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50' 
+                                : 'text-primary/70 hover:text-primary hover:bg-primary/10'
+                            }`}
+                            data-testid={`button-visibility-country-${country.name}`}
+                          >
+                            {isCountryHidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="text-xs">
+                          {isCountryHidden ? 'Show on map' : 'Hide from map'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
 
                   {isCountryExpanded && (
@@ -472,6 +500,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                       {country.companies.map((company) => {
                         const isCompanyExpanded = expandedCompanies.has(company.id);
                         const isHighlighted = selectedCompanyId === company.id;
+                        const isCompanyHidden = hiddenCompanies.has(company.id) || isCountryHidden;
                         
                         return (
                           <div key={company.id} className="group/company">
@@ -488,25 +517,46 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                             >
                               <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? 'text-accent' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} />
                               <div className="flex-1 min-w-0">
-                                <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : ''}`}>
+                                <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : ''}`} title={company.name}>
                                   {company.name}
                                 </div>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <span>${(company.revenue_usd / 1000000000).toFixed(1)}B</span>
-                                  <span>•</span>
-                                  <span>{company.employees.toLocaleString()} employees</span>
-                                  <span>•</span>
-                                  <span>{company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}</span>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  ${(company.revenue_usd / 1000000000).toFixed(1)}B • {company.employees.toLocaleString()} emp • {company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}
                                 </div>
                               </div>
-                              <button
-                                onClick={(e) => handleDeleteCompany(e, company.id, company.name)}
-                                className="opacity-0 group-hover/company:opacity-100 p-1.5 rounded hover:bg-destructive/10 hover:text-destructive transition-all shrink-0"
-                                title="Delete company"
-                                data-testid={`button-delete-company-${company.id}`}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <TooltipProvider delayDuration={0}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleCompanyVisibility(company.id);
+                                        }}
+                                        className={`p-1 rounded transition-all ${
+                                          isCompanyHidden 
+                                            ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50' 
+                                            : 'text-primary/70 hover:text-primary hover:bg-primary/10'
+                                        }`}
+                                        data-testid={`button-visibility-company-${company.id}`}
+                                      >
+                                        {isCompanyHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-xs">
+                                      {isCompanyHidden ? 'Show on map' : 'Hide from map'}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <button
+                                  onClick={(e) => handleDeleteCompany(e, company.id, company.name)}
+                                  className="opacity-0 group-hover/company:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all"
+                                  title="Delete company"
+                                  data-testid={`button-delete-company-${company.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {isCompanyExpanded && (
@@ -526,23 +576,23 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                         </div>
                                       )}
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-xs font-medium truncate group-hover/exec:text-primary transition-colors">
+                                    <div className="flex-1 min-w-0 overflow-hidden">
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <span className="text-xs font-medium truncate group-hover/exec:text-primary transition-colors" title={exec.name}>
                                           {exec.name}
                                         </span>
                                         {exec.isEnriched && (
-                                          <span title={`Enriched via ${exec.enrichmentSource || 'external source'}`}>
-                                            <Sparkles className="h-2.5 w-2.5 text-emerald-500 shrink-0" />
+                                          <span title={`Enriched via ${exec.enrichmentSource || 'external source'}`} className="shrink-0">
+                                            <Sparkles className="h-2.5 w-2.5 text-emerald-500" />
                                           </span>
                                         )}
                                       </div>
-                                      <div className="text-[10px] text-muted-foreground truncate">
+                                      <div className="text-[10px] text-muted-foreground truncate" title={exec.title}>
                                         {exec.title}
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                      <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${
+                                    <div className="flex items-center gap-1 shrink-0 w-14 justify-end">
+                                      <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap ${
                                         exec.confidence >= 7 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
                                         exec.confidence >= 4 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 
                                         'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'

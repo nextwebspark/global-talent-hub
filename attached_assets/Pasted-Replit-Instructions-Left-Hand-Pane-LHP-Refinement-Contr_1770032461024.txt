@@ -1,0 +1,201 @@
+Replit Instructions — Left-Hand Pane (LHP) Refinement & Controls
+Objective
+
+Preserve the current left-hand pane structure and hierarchy, while:
+
+Fixing layout breakage caused by long names
+
+Improving readability and scanability
+
+Adding map visibility controls for countries and companies using a non-checkbox interaction
+
+1. Layout Stability (Non-Negotiable)
+Problem to Solve
+
+Long company or executive names push confidence scores off-screen.
+
+Required Behaviour
+
+Confidence scores must always remain visible, regardless of name length.
+
+Names must never affect the position of confidence indicators.
+
+Instructions
+
+Treat each row as having three fixed zones:
+
+Left: icon / avatar
+
+Centre: name and role (flexible, truncates if needed)
+
+Right: confidence score (fixed width, pinned)
+
+Long names must:
+
+Truncate gracefully with ellipsis
+
+Reveal full name on hover or focus
+
+The right-hand confidence score must never move or wrap.
+
+If the confidence score is not visible, the layout is incorrect.
+
+2. Hierarchy & Density Control
+
+Countries, companies, and executives must remain clearly visually distinct.
+
+Expand/collapse behaviour must remain unchanged unless broken.
+
+Vertical spacing must favour scannability over compactness.
+
+This is a professional intelligence tool, not a consumer list.
+
+3. Map Visibility Control (Innovative, Not Checkboxes)
+Requirement
+
+Users must be able to show or hide:
+
+Entire countries
+
+Individual companies
+
+…directly from the left-hand pane.
+
+4. Visibility Control Interaction Model (Eyelid Concept)
+Behaviour
+
+Each country row and company row must include a visibility toggle icon (eyelid / eye).
+
+This control:
+
+Toggles visibility on the map only
+
+Does NOT delete or deselect the item
+
+Does NOT affect database state
+
+Visual Rules
+
+Eye open → visible on map
+
+Eye closed → hidden from map
+
+Subtle animation on toggle (optional but encouraged)
+
+Icon must be:
+
+Minimal
+
+Intuitive
+
+Clickable without expanding/collapsing the row
+
+No checkboxes. No toggles that look like settings.
+
+5. Hierarchical Visibility Logic
+Country-Level Toggle
+
+Toggling a country:
+
+Shows or hides all companies in that country on the map
+
+Does NOT collapse the country list
+
+Does NOT affect selection state
+
+Company-Level Toggle
+
+Toggling a company:
+
+Shows or hides only that company on the map
+
+Does NOT affect executives or other companies
+
+6. Visual Feedback Rules (Critical for Trust)
+
+When visibility is changed:
+
+The map must update immediately
+
+The bubble must:
+
+Fade out (hide)
+
+Or fade in (show)
+
+No page reloads
+
+No delays
+
+If the user clicks the icon and nothing visibly changes, the interaction is broken.
+
+7. State Persistence Rules
+
+Visibility state must persist:
+
+While navigating within the session
+
+While selecting different companies or executives
+
+Visibility state must reset only when:
+
+The user explicitly resets filters
+
+A new search is executed
+
+Reloading a saved search should restore:
+
+Map visibility state
+
+Left-hand pane visibility icons
+
+8. No Side Effects on Selection
+
+Visibility toggles must:
+
+Not change current selection
+
+Not open or close the right-hand panel
+
+Not interfere with expand/collapse behaviour
+
+Selection and visibility are independent concerns.
+
+9. Accessibility & Discoverability
+
+The visibility icon must:
+
+Have a tooltip (e.g. “Hide from map” / “Show on map”)
+
+Be keyboard-focusable
+
+Hover states should clearly indicate clickability.
+
+10. Acceptance Checklist (Must All Pass)
+
+Replit must confirm:
+
+Confidence scores never disappear
+
+Long names truncate correctly
+
+Eye icon toggles visibility without side effects
+
+Country toggle affects all companies on map
+
+Company toggle affects only that company
+
+Map updates instantly
+
+Selection remains unchanged
+
+No checkboxes exist anywhere in the left pane
+
+If any item fails, the implementation is incomplete.
+
+Final Guidance to Replit
+
+This is a layout resilience + interaction clarity task, not a redesign.
+Do not introduce new UI paradigms.
+Do not add configuration panels.
+Do not replace icons with checkboxes.

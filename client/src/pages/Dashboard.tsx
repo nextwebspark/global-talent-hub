@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, setCompanies, setExecutives } = useAppStore();
+  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, setCompanies, setExecutives, resetVisibility } = useAppStore();
   const { isLoading } = useCompanies();
   const searchMutation = useSearch();
   const { data: models } = useModels();
@@ -324,6 +324,9 @@ export default function Dashboard() {
       toast.error('Please enter a search query');
       return;
     }
+    
+    // Reset map visibility for new search
+    resetVisibility();
     
     // Cancel any existing search
     if (searchCleanupRef.current) {

@@ -23,6 +23,8 @@ function isValidCoordinate(lat: number, lng: number): boolean {
 // Component to handle map bounds updates
 function MapUpdater() {
   const companies = useAppStore(state => state.companies);
+  const hiddenCountries = useAppStore(state => state.hiddenCountries);
+  const hiddenCompanies = useAppStore(state => state.hiddenCompanies);
   const map = useMap();
   const prevCountRef = useRef(0);
   const lastFitTimeRef = useRef(0);
@@ -65,12 +67,18 @@ function MapUpdater() {
   }, [map]);
 
   useEffect(() => {
-    const validCompanies = companies.filter(c => isValidCoordinate(c.lat, c.lng));
+    // Filter companies by visibility and valid coordinates
+    const visibleCompanies = companies.filter(c => {
+      if (!isValidCoordinate(c.lat, c.lng)) return false;
+      if (hiddenCountries.has(c.hq_country)) return false;
+      if (hiddenCompanies.has(c.id)) return false;
+      return true;
+    });
     const now = Date.now();
     
     // Skip auto-fit if user is actively interacting with the map
     if (isUserInteractingRef.current) {
-      prevCountRef.current = validCompanies.length;
+      prevCountRef.current = visibleCompanies.length;
       return;
     }
     
@@ -78,24 +86,24 @@ function MapUpdater() {
     // 1. New companies are added (streaming search)
     // 2. At least 500ms since last fit (debounce)
     // 3. Company count changed
-    if (validCompanies.length > 0 && validCompanies.length !== prevCountRef.current) {
+    if (visibleCompanies.length > 0 && visibleCompanies.length !== prevCountRef.current) {
       const timeSinceLastFit = now - lastFitTimeRef.current;
       
       // For the first company, fit immediately. For subsequent, debounce to 500ms
       if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
-        const bounds = L.latLngBounds(validCompanies.map(c => [c.lat, c.lng]));
+        const bounds = L.latLngBounds(visibleCompanies.map(c => [c.lat, c.lng]));
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true, duration: 0.5 });
         lastFitTimeRef.current = now;
       }
       
-      prevCountRef.current = validCompanies.length;
+      prevCountRef.current = visibleCompanies.length;
     }
     
     // Reset when companies are cleared (new search starting)
-    if (validCompanies.length === 0) {
+    if (visibleCompanies.length === 0) {
       prevCountRef.current = 0;
     }
-  }, [companies, map]);
+  }, [companies, hiddenCountries, hiddenCompanies, map]);
 
   return null;
 }
@@ -112,10 +120,10 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, hiddenCountries, hiddenCompanies } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
-  // Filter companies based on revenue slider and valid coordinates
+  // Filter companies based on revenue slider, valid coordinates, and visibility
   const maxRevenue = 50000000000;
   const filterThreshold = (revenueFilter / 100) * maxRevenue;
   
@@ -123,7 +131,11 @@ export default function MapComponent() {
     // Ensure revenue meets threshold
     if (c.revenue_usd < filterThreshold) return false;
     // Ensure valid coordinates (not 0,0 and within valid ranges)
-    return isValidCoordinate(c.lat, c.lng);
+    if (!isValidCoordinate(c.lat, c.lng)) return false;
+    // Check visibility - hidden by country or individually hidden
+    if (hiddenCountries.has(c.hq_country)) return false;
+    if (hiddenCompanies.has(c.id)) return false;
+    return true;
   });
 
   // Scale revenue/employees to radius

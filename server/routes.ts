@@ -398,7 +398,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/companies/:id/enrich-bing", async (req, res) => {
+  app.post("/api/companies/:id/enrich-deepseek", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const { companyName, country } = req.body;
@@ -407,70 +407,47 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Company name is required" });
       }
 
-      const bingApiKey = process.env.BING_API_KEY;
-      if (!bingApiKey) {
+      const openrouterApiKey = process.env.OPENROUTER_API_KEY;
+      if (!openrouterApiKey) {
         return res.status(400).json({ 
-          error: "Bing API key not configured", 
-          message: "Please add BING_API_KEY to your secrets to use Bing enrichment"
+          error: "OpenRouter API key not configured", 
+          message: "Please add OPENROUTER_API_KEY to your secrets"
         });
       }
 
-      const searchQuery = `${companyName} ${country || ''} company overview business profile`;
-      
-      const bingResponse = await fetch(
-        `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchQuery)}&count=5&mkt=en-US`,
-        {
-          headers: {
-            'Ocp-Apim-Subscription-Key': bingApiKey
-          }
-        }
-      );
+      console.log(`[DeepSeek Enrich] Researching company: ${companyName} (${country || 'Unknown'})`);
 
-      if (!bingResponse.ok) {
-        const errorText = await bingResponse.text();
-        console.error('[Bing API] Error:', errorText);
-        return res.status(500).json({ error: "Bing API request failed", message: errorText });
-      }
-
-      const bingData = await bingResponse.json();
-      
-      const snippets = bingData.webPages?.value?.map((page: any) => page.snippet).join(' ') || '';
-      
-      const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-      const openaiBaseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1';
-      
-      if (!openaiApiKey) {
-        const summary = snippets.slice(0, 500);
-        return res.json({
-          summary,
-          coreActivity: null,
-          operatingModel: null,
-          revenueDrivers: null
-        });
-      }
-
-      const aiResponse = await fetch(`${openaiBaseUrl}/chat/completions`, {
+      const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${openaiApiKey}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Bearer ${openrouterApiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://replit.com',
+          'X-Title': 'Global Talent Map'
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'deepseek/deepseek-chat',
           messages: [
             {
               role: 'system',
-              content: `You are a business analyst. Given search results about a company, extract structured information. Return ONLY valid JSON with these fields:
-- summary: A 2-4 sentence description of the company
-- coreActivity: What the company primarily does (1-2 sentences)
-- operatingModel: How the company operates (1-2 sentences)
-- revenueDrivers: Main sources of revenue (1-2 sentences)
+              content: `You are a business research analyst with deep knowledge of global companies. Research and provide accurate, factual information about companies.
 
-If information is not available, use null for that field.`
+Return ONLY valid JSON with these fields:
+- summary: A 2-4 sentence description of the company including what they do, their market position, and key facts
+- coreActivity: What the company primarily does (1-2 sentences describing their main business)
+- operatingModel: How the company operates - B2B, B2C, franchise, direct sales, etc. (1-2 sentences)
+- revenueDrivers: Main sources of revenue - products, services, subscriptions, etc. (1-2 sentences)
+
+Be accurate and factual. If you're not confident about specific information, provide what you know and note any uncertainty. Do not make up information.`
             },
             {
               role: 'user',
-              content: `Company: ${companyName}\nCountry: ${country || 'Unknown'}\n\nSearch Results:\n${snippets}\n\nExtract business information as JSON.`
+              content: `Research this company and provide business profile information:
+
+Company Name: ${companyName}
+Country/Region: ${country || 'Unknown'}
+
+Please provide a comprehensive business profile as JSON.`
             }
           ],
           response_format: { type: 'json_object' }
@@ -478,17 +455,20 @@ If information is not available, use null for that field.`
       });
 
       if (!aiResponse.ok) {
-        const summary = snippets.slice(0, 500);
-        return res.json({
-          summary,
-          coreActivity: null,
-          operatingModel: null,
-          revenueDrivers: null
-        });
+        const errorText = await aiResponse.text();
+        console.error('[DeepSeek API] Error:', errorText);
+        return res.status(500).json({ error: "DeepSeek API request failed", message: errorText });
       }
 
       const aiData = await aiResponse.json();
-      const enrichedInfo = JSON.parse(aiData.choices[0].message.content);
+      
+      let enrichedInfo;
+      try {
+        enrichedInfo = JSON.parse(aiData.choices[0].message.content);
+      } catch (parseError) {
+        console.error('[DeepSeek] Failed to parse response:', aiData.choices[0].message.content);
+        return res.status(500).json({ error: "Failed to parse AI response" });
+      }
       
       await storage.updateCompanyManual(id, {
         summary: enrichedInfo.summary || null,
@@ -497,10 +477,11 @@ If information is not available, use null for that field.`
         revenueDrivers: enrichedInfo.revenueDrivers || null
       });
 
+      console.log(`[DeepSeek Enrich] Successfully enriched: ${companyName}`);
       res.json(enrichedInfo);
     } catch (error) {
-      console.error("Error enriching with Bing:", error);
-      res.status(500).json({ error: "Failed to enrich with Bing", message: String(error) });
+      console.error("Error enriching with DeepSeek:", error);
+      res.status(500).json({ error: "Failed to enrich with DeepSeek", message: String(error) });
     }
   });
 

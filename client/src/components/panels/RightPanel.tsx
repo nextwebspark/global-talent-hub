@@ -263,11 +263,11 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     }
   };
 
-  const handleEnrichWithBing = async (companyData: typeof company) => {
+  const handleEnrichWithDeepSeek = async (companyData: typeof company) => {
     if (!companyData) return;
     setIsEnrichingWithBing(true);
     try {
-      const response = await fetch(`/api/companies/${companyData.id}/enrich-bing`, {
+      const response = await fetch(`/api/companies/${companyData.id}/enrich-deepseek`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyName: companyData.name, country: companyData.hq_country })
@@ -275,7 +275,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to enrich with Bing');
+        throw new Error(error.message || 'Failed to enrich with DeepSeek');
       }
       
       const enrichedData = await response.json();
@@ -293,10 +293,10 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
         updateCompanyLocal(companyData.id, { revenueDrivers: enrichedData.revenueDrivers });
       }
       
-      toast.success('Company enriched with Bing search data');
+      toast.success('Company enriched with DeepSeek AI');
     } catch (error: any) {
-      console.error('Error enriching with Bing:', error);
-      toast.error(error.message || 'Failed to enrich with Bing');
+      console.error('Error enriching with DeepSeek:', error);
+      toast.error(error.message || 'Failed to enrich with DeepSeek');
     } finally {
       setIsEnrichingWithBing(false);
     }
@@ -539,14 +539,14 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => handleEnrichWithBing(company)}
+                  onClick={() => handleEnrichWithDeepSeek(company)}
                   disabled={isEnrichingWithBing}
                   className="h-6 text-xs"
                 >
                   {isEnrichingWithBing ? (
                     <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</>
                   ) : (
-                    <><Search className="h-3 w-3 mr-1" /> Enrich with Bing</>
+                    <><Sparkles className="h-3 w-3 mr-1" /> Enrich with AI</>
                   )}
                 </Button>
               </div>

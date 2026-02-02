@@ -8,7 +8,10 @@ import {
   discoverCompaniesStreaming,
   fetchAvailableModels,
   generateSearchUniqueKey,
-  AVAILABLE_MODELS 
+  AVAILABLE_MODELS,
+  testModel,
+  testModelComprehensive,
+  RELIABLE_ONLINE_MODELS
 } from "./services/discovery";
 import { 
   enrichExecutive, 
@@ -391,6 +394,58 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[Routes] Error fetching models:", error);
       res.json(AVAILABLE_MODELS);
+    }
+  });
+
+  // Model health check - test if a model is working
+  app.post("/api/models/test", async (req, res) => {
+    try {
+      const { modelId, comprehensive } = req.body;
+      
+      if (!modelId) {
+        return res.status(400).json({ error: "Model ID is required" });
+      }
+
+      console.log(`[Routes] Testing model: ${modelId}, comprehensive: ${comprehensive}`);
+      
+      if (comprehensive) {
+        const result = await testModelComprehensive(modelId);
+        res.json(result);
+      } else {
+        // Quick test with :online suffix (default search behavior)
+        const isReliable = RELIABLE_ONLINE_MODELS.some(m => modelId.includes(m) || m.includes(modelId));
+        const result = await testModel(modelId, isReliable);
+        res.json({
+          ...result,
+          isReliableOnline: isReliable,
+          recommendation: result.success 
+            ? (isReliable ? "Full web search support" : "Works without web search")
+            : result.error?.suggestion
+        });
+      }
+    } catch (error: any) {
+      console.error("[Routes] Error testing model:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: { code: "TEST_FAILED", message: error.message, suggestion: "Check your OpenRouter API key" }
+      });
+    }
+  });
+
+  // Get list of reliable models known to work with web search
+  app.get("/api/models/reliable", async (req, res) => {
+    try {
+      const reliableModels = AVAILABLE_MODELS.filter(m => 
+        RELIABLE_ONLINE_MODELS.some(r => m.id.includes(r) || r.includes(m.id))
+      );
+      res.json({
+        reliableModels,
+        allModels: AVAILABLE_MODELS,
+        reliableIds: RELIABLE_ONLINE_MODELS
+      });
+    } catch (error: any) {
+      console.error("[Routes] Error fetching reliable models:", error);
+      res.status(500).json({ error: "Failed to fetch reliable models" });
     }
   });
 

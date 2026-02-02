@@ -168,6 +168,55 @@ export function useModels() {
   });
 }
 
+export interface ModelTestResult {
+  success: boolean;
+  model: string;
+  withOnline: boolean;
+  latencyMs: number;
+  isReliableOnline?: boolean;
+  recommendation?: string;
+  error?: {
+    code: string;
+    message: string;
+    suggestion: string;
+  };
+}
+
+export interface ComprehensiveModelTestResult {
+  model: string;
+  baseTest: { success: boolean; latencyMs: number; error?: any };
+  onlineTest: { success: boolean; latencyMs: number; error?: any };
+  recommendation: string;
+}
+
+export function useTestModel() {
+  return useMutation<ModelTestResult, Error, { modelId: string; comprehensive?: boolean }>({
+    mutationFn: async ({ modelId, comprehensive = false }) => {
+      const response = await fetch('/api/models/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId, comprehensive }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'Failed to test model');
+      }
+      return response.json();
+    },
+  });
+}
+
+export function useReliableModels() {
+  return useQuery<{ reliableModels: LLMModel[]; allModels: LLMModel[]; reliableIds: string[] }>({
+    queryKey: ['reliable-models'],
+    queryFn: async () => {
+      const response = await fetch('/api/models/reliable');
+      if (!response.ok) throw new Error('Failed to fetch reliable models');
+      return response.json();
+    },
+  });
+}
+
 export function useSearch() {
   const queryClient = useQueryClient();
   return useMutation({

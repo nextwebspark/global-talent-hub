@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult, streamingSearch } from '@/lib/api';
+import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult, streamingSearch, useTestModel } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
@@ -8,7 +8,7 @@ import MapComponent from '@/components/map/Map';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
-import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2, RefreshCw } from 'lucide-react';
+import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2, RefreshCw, Zap, CheckCircle, XCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -22,8 +22,10 @@ export default function Dashboard() {
   const { data: models } = useModels();
   const { data: searchHistory, refetch: refetchHistory } = useSearchHistory();
   const loadSearchResults = useLoadSearchResults();
+  const testModelMutation = useTestModel();
   const [searchInput, setSearchInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-chat');
+  const [selectedModel, setSelectedModel] = useState('anthropic/claude-sonnet-4');
+  const [modelTestStatus, setModelTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -283,6 +285,39 @@ export default function Dashboard() {
     }
   };
 
+  const handleTestModel = async () => {
+    if (!selectedModel) {
+      toast.error('Please select a model first');
+      return;
+    }
+    
+    setModelTestStatus('testing');
+    toast.loading('Testing model...', { id: 'model-test' });
+    
+    try {
+      const result = await testModelMutation.mutateAsync({ modelId: selectedModel });
+      toast.dismiss('model-test');
+      
+      if (result.success) {
+        setModelTestStatus('success');
+        toast.success(`Model ready! ${result.recommendation || 'Response time: ' + result.latencyMs + 'ms'}`);
+        setTimeout(() => setModelTestStatus('idle'), 3000);
+      } else {
+        setModelTestStatus('failed');
+        toast.error(result.error?.message || 'Model test failed', {
+          description: result.error?.suggestion,
+          duration: 6000
+        });
+        setTimeout(() => setModelTestStatus('idle'), 5000);
+      }
+    } catch (error: any) {
+      toast.dismiss('model-test');
+      setModelTestStatus('failed');
+      toast.error(error.message || 'Model test failed');
+      setTimeout(() => setModelTestStatus('idle'), 5000);
+    }
+  };
+
   const handleNewSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchInput.trim()) {
@@ -538,14 +573,34 @@ export default function Dashboard() {
               </Select>
               
               <Button 
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleTestModel}
+                disabled={testModelMutation.isPending || !selectedModel}
+                className={`h-10 rounded-full px-3 text-sm shadow-lg transition-colors ${
+                  modelTestStatus === 'success' ? 'border-green-500/50 text-green-600' :
+                  modelTestStatus === 'failed' ? 'border-red-500/50 text-red-600' :
+                  'border-amber-500/50 text-amber-600 hover:bg-amber-500 hover:text-white'
+                }`}
+                data-testid="button-test-model"
+              >
+                {modelTestStatus === 'testing' ? <Loader2 className="h-4 w-4 animate-spin" /> :
+                 modelTestStatus === 'success' ? <CheckCircle className="h-4 w-4" /> :
+                 modelTestStatus === 'failed' ? <XCircle className="h-4 w-4" /> :
+                 <Zap className="h-4 w-4" />}
+                <span className="ml-1 hidden sm:inline">Test</span>
+              </Button>
+              
+              <Button 
                 type="submit" 
                 size="sm" 
-                disabled={searchMutation.isPending}
+                disabled={searchMutation.isPending || isSearching}
                 className="h-10 rounded-full px-6 text-sm font-semibold shadow-lg"
                 data-testid="button-new-search"
               >
-                {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
-                {searchMutation.isPending ? 'Searching...' : 'Run Search'}
+                {(searchMutation.isPending || isSearching) ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
+                {(searchMutation.isPending || isSearching) ? 'Searching...' : 'Run Search'}
               </Button>
               
               <Button 

@@ -9,15 +9,188 @@ const openrouter = new OpenAI({
 // Default model - Claude Sonnet for best factual accuracy in company research
 export const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 
-export const AVAILABLE_MODELS = [
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Default)", provider: "Anthropic" },
-  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI" },
-  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", provider: "DeepSeek" },
-  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic" },
-  { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash", provider: "Google" },
-  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Meta" },
-  { id: "mistralai/mistral-large-2411", name: "Mistral Large", provider: "Mistral" },
+// Models known to work reliably with web search (:online suffix)
+export const RELIABLE_ONLINE_MODELS = [
+  "anthropic/claude-sonnet-4",
+  "anthropic/claude-3.5-sonnet",
+  "anthropic/claude-3.5-haiku",
+  "openai/gpt-4o",
+  "openai/gpt-4o-mini",
+  "google/gemini-2.0-flash-001",
+  "google/gemini-2.5-flash-preview",
+  "perplexity/sonar-pro",
+  "perplexity/sonar-reasoning-pro",
 ];
+
+export const AVAILABLE_MODELS = [
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Default)", provider: "Anthropic", reliableOnline: true },
+  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI", reliableOnline: true },
+  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI", reliableOnline: true },
+  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", provider: "DeepSeek", reliableOnline: false },
+  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic", reliableOnline: true },
+  { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash", provider: "Google", reliableOnline: true },
+  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google", reliableOnline: true },
+  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Meta", reliableOnline: false },
+  { id: "mistralai/mistral-large-2411", name: "Mistral Large", provider: "Mistral", reliableOnline: false },
+  { id: "perplexity/sonar-pro", name: "Perplexity Sonar Pro (Always Online)", provider: "Perplexity", reliableOnline: true },
+];
+
+// Parse OpenRouter error responses for user-friendly messages
+export function parseOpenRouterError(error: any): { code: string; message: string; suggestion: string } {
+  const errorMessage = error?.message || error?.error?.message || String(error);
+  const statusCode = error?.status || error?.response?.status;
+  
+  // Privacy policy issue
+  if (errorMessage.includes("No endpoints found matching your data policy")) {
+    return {
+      code: "PRIVACY_POLICY",
+      message: "This model requires OpenRouter privacy settings to be configured.",
+      suggestion: "Visit https://openrouter.ai/settings/privacy and enable 'Paid model training' for this provider."
+    };
+  }
+  
+  // Rate limit
+  if (statusCode === 429 || errorMessage.includes("429") || errorMessage.includes("rate limit")) {
+    return {
+      code: "RATE_LIMITED",
+      message: "This model has hit rate limits.",
+      suggestion: "Try a different model, or wait a few minutes and try again."
+    };
+  }
+  
+  // Provider error (400)
+  if (statusCode === 400 || errorMessage.includes("400")) {
+    return {
+      code: "PROVIDER_ERROR",
+      message: "The model provider returned an error.",
+      suggestion: "The :online web search feature may not be supported. Trying without web search..."
+    };
+  }
+  
+  // Model not found
+  if (statusCode === 404 || errorMessage.includes("404")) {
+    return {
+      code: "MODEL_NOT_FOUND",
+      message: "This model is not available.",
+      suggestion: "Select a different model from the list."
+    };
+  }
+  
+  // Insufficient credits
+  if (errorMessage.includes("insufficient") || errorMessage.includes("credits") || errorMessage.includes("balance")) {
+    return {
+      code: "INSUFFICIENT_CREDITS",
+      message: "Insufficient OpenRouter credits.",
+      suggestion: "Add credits to your OpenRouter account at https://openrouter.ai/credits"
+    };
+  }
+  
+  // Generic error
+  return {
+    code: "UNKNOWN_ERROR",
+    message: errorMessage,
+    suggestion: "Try a different model or check your OpenRouter API key."
+  };
+}
+
+// Test if a model is working by sending a simple prompt
+export async function testModel(modelId: string, withOnline: boolean = false): Promise<{
+  success: boolean;
+  model: string;
+  withOnline: boolean;
+  latencyMs: number;
+  responsePreview?: string;
+  error?: { code: string; message: string; suggestion: string };
+}> {
+  const startTime = Date.now();
+  const modelName = withOnline ? `${modelId}:online` : modelId;
+  
+  console.log(`[Model Test] Testing model: ${modelName}`);
+  
+  try {
+    const response = await openrouter.chat.completions.create({
+      model: modelName,
+      messages: [
+        { role: "user", content: "Reply with exactly one word: OK" }
+      ],
+      max_tokens: 10,
+      temperature: 0
+    });
+    
+    const latencyMs = Date.now() - startTime;
+    const content = response.choices[0]?.message?.content?.trim() || "";
+    
+    console.log(`[Model Test] ${modelName} responded in ${latencyMs}ms: "${content}"`);
+    
+    // Validate that we got a reasonable response (not empty)
+    if (!content || content.length === 0) {
+      return {
+        success: false,
+        model: modelId,
+        withOnline,
+        latencyMs,
+        error: {
+          code: "EMPTY_RESPONSE",
+          message: "Model returned an empty response.",
+          suggestion: "This model may not be responding correctly. Try a different model."
+        }
+      };
+    }
+    
+    return {
+      success: true,
+      model: modelId,
+      withOnline,
+      latencyMs,
+      responsePreview: content.substring(0, 50)
+    };
+  } catch (error: any) {
+    const latencyMs = Date.now() - startTime;
+    const parsedError = parseOpenRouterError(error);
+    
+    console.log(`[Model Test] ${modelName} failed in ${latencyMs}ms: ${parsedError.code} - ${parsedError.message}`);
+    
+    return {
+      success: false,
+      model: modelId,
+      withOnline,
+      latencyMs,
+      error: parsedError
+    };
+  }
+}
+
+// Test a model with both online and offline modes
+export async function testModelComprehensive(modelId: string): Promise<{
+  model: string;
+  baseTest: { success: boolean; latencyMs: number; error?: any };
+  onlineTest: { success: boolean; latencyMs: number; error?: any };
+  recommendation: string;
+}> {
+  console.log(`[Model Test] Comprehensive test for: ${modelId}`);
+  
+  // Test base model first
+  const baseResult = await testModel(modelId, false);
+  
+  // Test with :online suffix
+  const onlineResult = await testModel(modelId, true);
+  
+  let recommendation: string;
+  if (onlineResult.success) {
+    recommendation = "Full web search support available";
+  } else if (baseResult.success) {
+    recommendation = "Works without web search (will use model's training data only)";
+  } else {
+    recommendation = `Model unavailable: ${baseResult.error?.suggestion || "Check OpenRouter settings"}`;
+  }
+  
+  return {
+    model: modelId,
+    baseTest: { success: baseResult.success, latencyMs: baseResult.latencyMs, error: baseResult.error },
+    onlineTest: { success: onlineResult.success, latencyMs: onlineResult.latencyMs, error: onlineResult.error },
+    recommendation
+  };
+}
 
 const REGION_COORDINATES: Record<string, { lat: number; lng: number }> = {
   'north america': { lat: 40.7128, lng: -74.0060 },
@@ -491,12 +664,17 @@ export async function* discoverCompaniesStreaming(
   
   const client = openrouter;
   const baseModel = selectedModel || DEFAULT_MODEL;
-  // Append :online for web search - LLM will search the web for real company data
-  const modelName = `${baseModel}:online`;
+  
+  // Determine if this model supports :online suffix reliably
+  const isReliableOnlineModel = RELIABLE_ONLINE_MODELS.some(m => baseModel.includes(m) || m.includes(baseModel));
+  
+  // Try with :online first if the model is known to support it, otherwise try base model first
+  let useOnline = isReliableOnlineModel;
+  let modelName = useOnline ? `${baseModel}:online` : baseModel;
   
   console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
   console.log(`[Discovery Streaming] Original query: "${query}"`);
-  console.log(`[Discovery Streaming] Web search enabled via :online suffix`);
+  console.log(`[Discovery Streaming] Reliable online model: ${isReliableOnlineModel}, using :online = ${useOnline}`);
   
   yield { type: 'status', data: { message: 'Searching the web for companies...', progress: 5 } };
   
@@ -600,16 +778,69 @@ IMPORTANT:
     ]
   };
 
-  yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };
+  yield { type: 'status', data: { message: useOnline ? 'Searching the web for companies...' : 'Researching companies...', progress: 15 } };
 
   let response;
+  let usedOnline = useOnline;
+  
+  // Helper function to make the API call
+  const makeRequest = async (withOnline: boolean) => {
+    const attemptModel = withOnline ? `${baseModel}:online` : baseModel;
+    const attemptOptions = {
+      ...requestOptions,
+      model: attemptModel,
+      plugins: withOnline ? [
+        { id: "response-healing" },
+        { id: "web", max_results: 10 }
+      ] : [
+        { id: "response-healing" }
+      ]
+    };
+    return client.chat.completions.create(attemptOptions);
+  };
+  
   try {
-    response = await client.chat.completions.create(requestOptions);
+    response = await makeRequest(useOnline);
+    usedOnline = useOnline;
   } catch (apiError: any) {
-    console.error("[Discovery Streaming] LLM API error:", apiError.message);
-    yield { type: 'error', data: { message: `AI model error: ${apiError.message}` } };
-    return;
+    const parsedError = parseOpenRouterError(apiError);
+    console.log(`[Discovery Streaming] First attempt failed (online=${useOnline}): ${parsedError.code} - ${parsedError.message}`);
+    
+    // If online mode failed, try without it (or vice versa)
+    const shouldRetry = parsedError.code === 'PROVIDER_ERROR' || parsedError.code === 'PRIVACY_POLICY' || parsedError.code === 'MODEL_NOT_FOUND';
+    
+    if (shouldRetry) {
+      const retryOnline = !useOnline;
+      console.log(`[Discovery Streaming] Retrying with online=${retryOnline}...`);
+      yield { type: 'status', data: { message: `Web search unavailable for this model. ${retryOnline ? 'Enabling' : 'Using'} model's training data...`, progress: 18 } };
+      
+      try {
+        response = await makeRequest(retryOnline);
+        usedOnline = retryOnline;
+        console.log(`[Discovery Streaming] Retry successful with online=${retryOnline}`);
+      } catch (retryError: any) {
+        const retryParsedError = parseOpenRouterError(retryError);
+        console.error("[Discovery Streaming] Both attempts failed:", retryParsedError.message);
+        yield { type: 'error', data: { 
+          message: `Model unavailable: ${retryParsedError.message}`, 
+          suggestion: retryParsedError.suggestion,
+          code: retryParsedError.code
+        } };
+        return;
+      }
+    } else {
+      // Non-retryable error (rate limit, insufficient credits)
+      console.error("[Discovery Streaming] LLM API error:", parsedError.message);
+      yield { type: 'error', data: { 
+        message: parsedError.message, 
+        suggestion: parsedError.suggestion,
+        code: parsedError.code
+      } };
+      return;
+    }
   }
+  
+  console.log(`[Discovery Streaming] API call successful, used online=${usedOnline}`);
 
   const content = response.choices[0]?.message?.content || "{}";
   console.log("[Discovery Streaming] LLM response received, length:", content.length);
@@ -744,7 +975,14 @@ export async function discoverCompaniesAndExecutives(
     if (event.type === 'company') {
       results.push(event.data.company);
     } else if (event.type === 'error') {
-      throw new Error(event.data.message);
+      // Include suggestion in error message for user-facing display
+      const errorMessage = event.data.suggestion 
+        ? `${event.data.message} ${event.data.suggestion}`
+        : event.data.message;
+      const error = new Error(errorMessage);
+      (error as any).code = event.data.code;
+      (error as any).suggestion = event.data.suggestion;
+      throw error;
     }
   }
   

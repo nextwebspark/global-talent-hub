@@ -8,6 +8,51 @@ Global Talent Map is an AI-driven market research web application for executive 
 
 Preferred communication style: Simple, everyday language.
 
+## Core Data Principles (MANDATORY)
+
+### 1. Data Persistence
+- All search results MUST be stored in the database with unique IDs, proper field definitions, and correct relational links (company ↔ executives)
+- Any modification to search results MUST update the database immediately
+- No data may exist only in memory or UI state
+
+### 2. Reloading & Version Control
+- Reloading a previous search MUST return the most recent data including all manual edits
+- The database is the single live state, not the search output
+
+### 3. Editability Rules
+- Companies and Executives (and all dependent fields) MUST be fully editable and updatable
+- Updates MUST persist across reloads and future searches
+
+### 4. Record Management
+- Users MUST be able to add new Companies and Executives
+- Users MUST be able to delete existing records
+- Deletions MUST respect relational integrity (no orphaned records)
+
+### 5. Source-of-Truth Priority
+There is no single source of truth. Data must follow source priority:
+
+**Companies:**
+1. Audited Annual Reports / regulatory filings (highest priority)
+2. Official company website or press releases
+3. Trusted aggregators
+4. LinkedIn / media (indicative only)
+
+**Executives:**
+1. Annual Reports / regulatory filings (highest priority)
+2. Company leadership pages / announcements
+3. LinkedIn profiles
+4. Media / inferred content (labelled only)
+
+**Rules:**
+- Higher-tier sources override lower tiers
+- Never guess, estimate, or infer facts
+- If no authoritative source exists → store null
+
+### 6. Conflict Handling
+- If values conflict: Higher tier wins
+- If same tier → most recent wins
+- Otherwise → flag for human review
+
 ## System Architecture
 
 ### Frontend Architecture

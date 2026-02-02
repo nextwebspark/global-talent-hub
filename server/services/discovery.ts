@@ -9,6 +9,14 @@ const openrouter = new OpenAI({
 // Default model - Claude Sonnet for best factual accuracy in company research
 export const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 
+// Fallback models to try when primary model fails (in order of preference)
+export const FALLBACK_MODELS = [
+  "openai/gpt-4o-mini",
+  "anthropic/claude-3.5-haiku", 
+  "google/gemini-2.0-flash-001",
+  "meta-llama/llama-3.3-70b-instruct",
+];
+
 // Models known to work reliably with web search (:online suffix)
 export const RELIABLE_ONLINE_MODELS = [
   "anthropic/claude-sonnet-4",
@@ -799,6 +807,40 @@ IMPORTANT:
     return client.chat.completions.create(attemptOptions);
   };
   
+  // Helper to try a model with both online modes
+  let lastFallbackError: { code: string; message: string; suggestion: string } | null = null;
+  
+  const tryModelWithFallback = async (model: string): Promise<{ response: any; usedOnline: boolean } | null> => {
+    const isReliableOnline = RELIABLE_ONLINE_MODELS.includes(model);
+    const tryOnlineFirst = isReliableOnline;
+    
+    try {
+      const resp = await client.chat.completions.create({
+        ...requestOptions,
+        model: tryOnlineFirst ? `${model}:online` : model,
+        plugins: tryOnlineFirst ? [{ id: "response-healing" }, { id: "web", max_results: 10 }] : [{ id: "response-healing" }]
+      });
+      return { response: resp, usedOnline: tryOnlineFirst };
+    } catch (e1: any) {
+      const err1 = parseOpenRouterError(e1);
+      console.log(`[Discovery Streaming] ${model} (online=${tryOnlineFirst}) failed: ${err1.code}`);
+      
+      // Try opposite online mode
+      try {
+        const resp = await client.chat.completions.create({
+          ...requestOptions,
+          model: !tryOnlineFirst ? `${model}:online` : model,
+          plugins: !tryOnlineFirst ? [{ id: "response-healing" }, { id: "web", max_results: 10 }] : [{ id: "response-healing" }]
+        });
+        return { response: resp, usedOnline: !tryOnlineFirst };
+      } catch (e2: any) {
+        lastFallbackError = parseOpenRouterError(e2);
+        console.log(`[Discovery Streaming] ${model} (online=${!tryOnlineFirst}) also failed: ${lastFallbackError.code}`);
+        return null;
+      }
+    }
+  };
+
   try {
     response = await makeRequest(useOnline);
     usedOnline = useOnline;
@@ -820,23 +862,82 @@ IMPORTANT:
         console.log(`[Discovery Streaming] Retry successful with online=${retryOnline}`);
       } catch (retryError: any) {
         const retryParsedError = parseOpenRouterError(retryError);
-        console.error("[Discovery Streaming] Both attempts failed:", retryParsedError.message);
+        console.log(`[Discovery Streaming] Both attempts failed for ${baseModel}: ${retryParsedError.message}`);
+        
+        // Try fallback models
+        let fallbackSuccess = false;
+        for (const fallbackModel of FALLBACK_MODELS) {
+          if (fallbackModel === baseModel) continue; // Skip the model we already tried
+          
+          console.log(`[Discovery Streaming] Trying fallback model: ${fallbackModel}`);
+          yield { type: 'status', data: { message: `Trying alternative AI model...`, progress: 20 } };
+          
+          const fallbackResult = await tryModelWithFallback(fallbackModel);
+          if (fallbackResult) {
+            response = fallbackResult.response;
+            usedOnline = fallbackResult.usedOnline;
+            console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel} (online=${usedOnline})`);
+            fallbackSuccess = true;
+            break;
+          }
+          console.log(`[Discovery Streaming] Fallback model ${fallbackModel} also failed`);
+        }
+        
+        if (!fallbackSuccess) {
+          console.error("[Discovery Streaming] All models failed including fallbacks");
+          const lastErr = lastFallbackError as { code: string; message: string; suggestion: string } | null;
+          const errorMsg = lastErr 
+            ? `All AI models unavailable. Last error: ${lastErr.message}`
+            : `All AI models unavailable. Please check your OpenRouter API key and try again.`;
+          const suggestion = lastErr?.suggestion || 
+            'Ensure your OpenRouter account has credits and privacy settings are configured.';
+          yield { type: 'error', data: { 
+            message: errorMsg, 
+            suggestion,
+            code: 'ALL_MODELS_FAILED'
+          } };
+          return;
+        }
+      }
+    } else {
+      // Non-retryable error (rate limit, insufficient credits) - still try fallbacks
+      console.error("[Discovery Streaming] LLM API error:", parsedError.message);
+      
+      if (parsedError.code === 'RATE_LIMITED' || parsedError.code === 'INSUFFICIENT_CREDITS') {
         yield { type: 'error', data: { 
-          message: `Model unavailable: ${retryParsedError.message}`, 
-          suggestion: retryParsedError.suggestion,
-          code: retryParsedError.code
+          message: parsedError.message, 
+          suggestion: parsedError.suggestion,
+          code: parsedError.code
         } };
         return;
       }
-    } else {
-      // Non-retryable error (rate limit, insufficient credits)
-      console.error("[Discovery Streaming] LLM API error:", parsedError.message);
-      yield { type: 'error', data: { 
-        message: parsedError.message, 
-        suggestion: parsedError.suggestion,
-        code: parsedError.code
-      } };
-      return;
+      
+      // Try fallback models for other errors
+      let fallbackSuccess = false;
+      for (const fallbackModel of FALLBACK_MODELS) {
+        if (fallbackModel === baseModel) continue;
+        
+        console.log(`[Discovery Streaming] Trying fallback model: ${fallbackModel}`);
+        yield { type: 'status', data: { message: `Trying alternative AI model...`, progress: 20 } };
+        
+        const fallbackResult = await tryModelWithFallback(fallbackModel);
+        if (fallbackResult) {
+          response = fallbackResult.response;
+          usedOnline = fallbackResult.usedOnline;
+          console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel}`);
+          fallbackSuccess = true;
+          break;
+        }
+      }
+      
+      if (!fallbackSuccess) {
+        yield { type: 'error', data: { 
+          message: parsedError.message, 
+          suggestion: parsedError.suggestion,
+          code: parsedError.code
+        } };
+        return;
+      }
     }
   }
   

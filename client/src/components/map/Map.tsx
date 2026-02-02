@@ -194,8 +194,7 @@ export default function MapComponent() {
           const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
           const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
           
-          const fillColor = company.color || (isSelected ? 'hsl(35 92% 50%)' : 'hsl(222 47% 11%)');
-          const borderColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
+          const fillColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
           
           // Subtle enrichment indicator - emerald ring for enriched companies
           const enrichedRing = hasEnrichedExecs ? 
@@ -210,8 +209,7 @@ export default function MapComponent() {
                 width: ${diameter}px;
                 height: ${diameter}px;
                 background-color: ${fillColor};
-                opacity: ${isSelected ? 0.8 : 0.4};
-                border: ${isSelected ? '2px solid ' + borderColor : '1px solid ' + borderColor};
+                opacity: ${isSelected ? 0.9 : 0.5};
                 border-radius: 50%;
                 transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 cursor: grab;

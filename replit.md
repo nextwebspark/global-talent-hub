@@ -48,7 +48,30 @@ There is no single source of truth. Data must follow source priority:
 - Never guess, estimate, or infer facts
 - If no authoritative source exists → store null
 
-### 6. Conflict Handling
+### 6. Revenue Data (STRICT RULES - Non-Negotiable)
+
+**Definition:**
+- Revenue = Top-line operating revenue from normal business activities for a specific financial year
+- Revenue does NOT include: project value, contract value, AUM, AUD, GMV, valuation, funding, capex, pipeline
+
+**Source Priority:**
+1. Audited annual reports or regulatory filings (highest)
+2. Official company financial disclosures
+3. Clearly labelled revenue from trusted aggregators (Forbes, Fortune, Bloomberg)
+
+**Critical Rules:**
+- If number is not explicitly stated as "revenue" → set to null
+- Do NOT infer, calculate, or estimate revenue from other metrics
+- Do NOT substitute project value, AUM, GMV, or funding as revenue
+- null revenue is better than wrong revenue
+- Every revenue figure must store: value, currency, financial year, source, confidence level
+
+**System Enforcement:**
+- Discovery layer validates revenue sources before accepting values
+- Non-authoritative sources are flagged with reduced confidence
+- Zero or unverified revenue is stored as null, not estimated
+
+### 7. Conflict Handling
 - If values conflict: Higher tier wins
 - If same tier → most recent wins
 - Otherwise → flag for human review

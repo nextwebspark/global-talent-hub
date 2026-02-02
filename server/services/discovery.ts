@@ -339,13 +339,48 @@ function validateCompanyData(data: any): any {
   
   const coords = validateCoordinates(data.latitude || data.lat, data.longitude || data.lng || data.lon, region, country, city);
   
-  let revenue = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
+  const revenueSource = String(data.revenueSource || data.revenue_source || '').trim();
+  
+  // STRICT REVENUE RULES: Only accept revenue from authoritative sources
+  // Revenue must be explicitly stated, not inferred from project value, AUM, GMV, funding, etc.
+  
+  // Tier 1: Official audited sources (highest authority)
+  const isTier1Source = revenueSource && 
+    /annual report|10-k|sec filing|quarterly report|regulatory filing|audited|official disclosure|company financials|investor relations/i.test(revenueSource);
+  
+  // Tier 2: Trusted aggregators with explicit revenue labels
+  const isTier2Source = revenueSource && 
+    /forbes|fortune|bloomberg|reuters|financial times/i.test(revenueSource) &&
+    /revenue|sales|turnover/i.test(revenueSource);
+  
+  // Reject: Estimates, industry guesses, inferred values
+  const isRejectedSource = !revenueSource || 
+    /estimate|projected|approximate|inferred|calculated|derived|research firm|market analysis|industry average/i.test(revenueSource) ||
+    /aum|aum|project value|contract value|gmv|valuation|funding|investment/i.test(revenueSource);
+  
+  let revenue: number | null = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
+  let revenueConfidenceReduction = 0;
+  
+  // Apply strict revenue validation - NO REVENUE IS BETTER THAN WRONG REVENUE
+  // Only Tier 1 and Tier 2 sources are acceptable; all others must be null
+  if (revenue === 0 || revenue === null || !revenueSource) {
+    console.log(`[Discovery] ${name}: No revenue data - setting to null`);
+    revenue = null;
+  } else if (isRejectedSource) {
+    console.log(`[Discovery] ${name}: Revenue source "${revenueSource}" is not authoritative (estimate/inferred) - setting to null`);
+    revenue = null;
+  } else if (!isTier1Source && !isTier2Source) {
+    // Unverified sources do not meet strict rules - set to null
+    console.log(`[Discovery] ${name}: Revenue source "${revenueSource}" is unverified (not Tier 1 or Tier 2) - setting to null`);
+    revenue = null;
+  } else if (isTier2Source && !isTier1Source) {
+    // Tier 2 is acceptable but with minor confidence reduction
+    revenueConfidenceReduction = 1;
+  }
+  // Tier 1 sources pass with no confidence reduction
+  
   let employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
   
-  if (revenue === 0 || revenue < 1000000) {
-    console.warn(`[Discovery] Warning: ${name} has zero/low revenue, using minimum default`);
-    revenue = 50000000;
-  }
   if (employees === 0 || employees < 10) {
     console.warn(`[Discovery] Warning: ${name} has zero/low employees, using minimum default`);
     employees = 100;
@@ -354,10 +389,13 @@ function validateCompanyData(data: any): any {
   let confidence = parseNumber(data.confidence || data.score, 5);
   confidence = Math.max(1, Math.min(10, confidence));
   
-  const revenueSource = String(data.revenueSource || data.revenue_source || 'Unknown').trim();
-  const isLikelyPublic = /annual report|10-k|sec filing|quarterly report|investor relations/i.test(revenueSource);
+  // Apply confidence reduction for non-authoritative revenue sources
+  if (revenueConfidenceReduction > 0) {
+    confidence = Math.max(1, confidence - revenueConfidenceReduction);
+  }
   
-  if (revenue > 0 && employees > 0) {
+  // Revenue sanity checks (only if revenue exists)
+  if (revenue !== null && revenue > 0 && employees > 0) {
     const revenuePerEmployee = revenue / employees;
     const MAX_REASONABLE_RATIO = 3000000;
     
@@ -368,8 +406,8 @@ function validateCompanyData(data: any): any {
   }
   
   const MAX_PRIVATE_COMPANY_REVENUE = 30000000000;
-  if (revenue > MAX_PRIVATE_COMPANY_REVENUE && !isLikelyPublic) {
-    console.warn(`[Discovery] Warning: Private company ${name} has very high revenue`);
+  if (revenue !== null && revenue > MAX_PRIVATE_COMPANY_REVENUE && !isTier1Source) {
+    console.warn(`[Discovery] Warning: Private company ${name} has very high revenue without Tier 1 source`);
     confidence = Math.min(confidence, 4);
   }
   
@@ -608,7 +646,7 @@ Return a JSON object with this EXACT structure:
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 500000000,
-      "revenueSource": "How you determined this (e.g., 'Industry estimate based on market position', 'Annual report 2024')",
+      "revenueSource": "Annual Report 2024 (or null if no authoritative source exists - never estimate)",
       "employees": 3000,
       "employeesSource": "How you determined this (e.g., 'LinkedIn company size indicator')",
       "confidence": 7,
@@ -630,9 +668,34 @@ Return a JSON object with this EXACT structure:
 ===== DATA QUALITY REQUIREMENTS =====
 
 1. ONLY include companies you are confident are REAL and currently operating
-2. Revenue/Employees: Use best available data, never return 0
-   - For private companies: Use industry estimates, LinkedIn data, press mentions
-   - Clearly state the source of your estimate
+
+2. REVENUE (STRICT RULES - NO EXCEPTIONS):
+   DEFINITION: Revenue means TOP-LINE OPERATING REVENUE from normal business activities for a specific financial year.
+   
+   Revenue DOES NOT include and MUST NOT be confused with:
+   - Project value or contract value
+   - Capital injections or funding amounts
+   - Assets under management (AUM)
+   - Assets under development (AUD)
+   - Gross merchandise value (GMV)
+   - Valuation or enterprise value
+   - Pipeline or backlog value
+   - Investment size or capex
+   
+   SOURCE PRIORITY (mandatory):
+   1. Audited annual reports or regulatory filings (highest priority)
+   2. Official company financial disclosures
+   3. Clearly labelled revenue from trusted aggregators (Forbes, Fortune, Bloomberg)
+   
+   CRITICAL RULES:
+   - If revenue is not EXPLICITLY stated as "revenue" → set to null
+   - Do NOT infer, calculate, or estimate revenue from other metrics
+   - Do NOT substitute project value, AUM, GMV, or funding as revenue
+   - "null" is better than wrong revenue
+   - revenueSource MUST clearly state the exact source (e.g., "Annual Report 2024", "Forbes Global 2000")
+   
+   For private companies where revenue is not publicly disclosed: Set revenue to null, not an estimate.
+
 3. GPS Coordinates: MUST be the EXACT coordinates of the company's headquarters street address
    - Each company MUST have UNIQUE coordinates - never use the same coordinates for multiple companies
    - Look up the actual street address and convert to precise GPS coordinates
@@ -729,8 +792,8 @@ IMPORTANT:
             streetAddress: { type: "string" as const, description: "Exact street address of headquarters" },
             latitude: { type: "number" as const, description: "GPS latitude of headquarters" },
             longitude: { type: "number" as const, description: "GPS longitude of headquarters" },
-            revenue: { type: "number" as const, description: "Annual revenue in USD" },
-            revenueSource: { type: "string" as const, description: "Source of revenue data" },
+            revenue: { type: ["number", "null"] as any, description: "Annual revenue in USD. MUST be null if not explicitly known from authoritative sources. Never infer from AUM, project value, or funding." },
+            revenueSource: { type: "string" as const, description: "REQUIRED: Exact source of revenue (e.g., 'Annual Report 2024', 'Forbes Global 2000'). If revenue is null, explain why (e.g., 'Private company - no public disclosure')." },
             employees: { type: "integer" as const, description: "Number of employees" },
             employeesSource: { type: "string" as const, description: "Source of employee count" },
             confidence: { type: "integer" as const, minimum: 1, maximum: 10, description: "Data confidence score 1-10" },

@@ -267,8 +267,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     if (onToggle) {
       return (
         <div 
-          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+          className="h-full flex shrink-0 relative z-20"
         >
           <Button
             variant="secondary"
@@ -280,12 +279,17 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
-          {isOpen && (
-            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-              <Building2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
-              <p className="text-sm text-muted-foreground font-serif">Select a company on the map to view details</p>
-            </div>
-          )}
+          <div 
+            className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+            style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+          >
+            {isOpen && (
+              <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+                <Building2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
+                <p className="text-sm text-muted-foreground font-serif">Select a company on the map to view details</p>
+              </div>
+            )}
+          </div>
         </div>
       );
     }
@@ -309,29 +313,31 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   // Company view - Per §4: never show nothing
   if (!company) {
     return (
-      <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-      >
+      <div className="h-full flex shrink-0 relative z-20">
         {onToggle && (
           <Button
             variant="secondary"
             size="icon"
             onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        {isOpen && (
-          <div className="flex flex-col items-center gap-3 p-6 text-center">
-            <AlertCircle className="h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No company data available</p>
-            <Button variant="ghost" size="sm" onClick={() => selectCompany(null)}>
-              <X className="h-4 w-4 mr-2" /> Clear Selection
-            </Button>
-          </div>
-        )}
+        <div 
+          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+        >
+          {isOpen && (
+            <div className="flex flex-col items-center gap-3 p-6 text-center">
+              <AlertCircle className="h-10 w-10 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">No company data available</p>
+              <Button variant="ghost" size="sm" onClick={() => selectCompany(null)}>
+                <X className="h-4 w-4 mr-2" /> Clear Selection
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -345,10 +351,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const confidenceInfo = getConfidenceLabel(company.confidence);
 
   return (
-    <div 
-      className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-      style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-    >
+    <div className="h-full flex shrink-0 relative z-20 animate-in slide-in-from-right-10 duration-300">
       {onToggle && (
         <Button
           variant="secondary"
@@ -361,6 +364,10 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
           {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       )}
+      <div 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+      >
       
       <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         {/* §7.1 Company Header - Sticky */}
@@ -683,6 +690,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
           )}
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -854,26 +862,28 @@ function ExecutiveDetailView({
   // §4 Render Contract: Show Loading state
   if (isLoading) {
     return (
-      <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`} 
-        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-      >
+      <div className="h-full flex shrink-0 relative z-20">
         {onToggle && (
           <Button
             variant="secondary"
             size="icon"
             onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        {isOpen && (
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Loading executive details...</p>
-          </div>
-        )}
+        <div 
+          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`} 
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+        >
+          {isOpen && (
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Loading executive details...</p>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -881,29 +891,31 @@ function ExecutiveDetailView({
   // §4 Render Contract: Show No Data state
   if (!executiveDetails) {
     return (
-      <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl z-20 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-      >
+      <div className="h-full flex shrink-0 relative z-20">
         {onToggle && (
           <Button
             variant="secondary"
             size="icon"
             onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50"
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
           >
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        {isOpen && (
-          <>
-            <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">No executive data available</p>
-            <Button variant="ghost" onClick={onBack} className="mt-4">
-              <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
-            </Button>
-          </>
-        )}
+        <div 
+          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+        >
+          {isOpen && (
+            <>
+              <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
+              <p className="text-sm text-muted-foreground">No executive data available</p>
+              <Button variant="ghost" onClick={onBack} className="mt-4">
+                <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -911,10 +923,7 @@ function ExecutiveDetailView({
   const { executive, company, careerHistory, education, remuneration, notes } = executiveDetails;
 
   return (
-    <div 
-      className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl z-20 animate-in slide-in-from-right-10 duration-300 shrink-0 relative transition-all ${!isOpen ? 'w-0 border-l-0 overflow-hidden' : ''}`}
-      style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-    >
+    <div className="h-full flex shrink-0 relative z-20 animate-in slide-in-from-right-10 duration-300">
       {onToggle && (
         <Button
           variant="secondary"
@@ -927,6 +936,10 @@ function ExecutiveDetailView({
           {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       )}
+      <div 
+        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
+      >
       
       <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
       <div className="p-4 border-b border-border flex items-center gap-2 bg-muted/10">
@@ -1265,6 +1278,7 @@ function ExecutiveDetailView({
         </div>
         </div>
       </ScrollArea>
+      </div>
       </div>
     </div>
   );

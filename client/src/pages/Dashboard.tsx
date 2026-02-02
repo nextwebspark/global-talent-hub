@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, setCompanies, setExecutives, resetVisibility } = useAppStore();
+  const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, selectedExecutiveId, setCompanies, setExecutives, resetVisibility } = useAppStore();
   const { isLoading } = useCompanies();
   const searchMutation = useSearch();
   const { data: models } = useModels();
@@ -60,6 +60,13 @@ export default function Dashboard() {
       }
     };
   }, []);
+
+  // Auto-open RHP when company or executive is selected
+  useEffect(() => {
+    if (selectedCompanyId || selectedExecutiveId) {
+      setIsRightPanelOpen(true);
+    }
+  }, [selectedCompanyId, selectedExecutiveId]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isResizingLeft) {

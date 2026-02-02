@@ -398,6 +398,112 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/companies/:id/enrich-bing", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const { companyName, country } = req.body;
+      
+      if (!companyName) {
+        return res.status(400).json({ error: "Company name is required" });
+      }
+
+      const bingApiKey = process.env.BING_API_KEY;
+      if (!bingApiKey) {
+        return res.status(400).json({ 
+          error: "Bing API key not configured", 
+          message: "Please add BING_API_KEY to your secrets to use Bing enrichment"
+        });
+      }
+
+      const searchQuery = `${companyName} ${country || ''} company overview business profile`;
+      
+      const bingResponse = await fetch(
+        `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(searchQuery)}&count=5&mkt=en-US`,
+        {
+          headers: {
+            'Ocp-Apim-Subscription-Key': bingApiKey
+          }
+        }
+      );
+
+      if (!bingResponse.ok) {
+        const errorText = await bingResponse.text();
+        console.error('[Bing API] Error:', errorText);
+        return res.status(500).json({ error: "Bing API request failed", message: errorText });
+      }
+
+      const bingData = await bingResponse.json();
+      
+      const snippets = bingData.webPages?.value?.map((page: any) => page.snippet).join(' ') || '';
+      
+      const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+      const openaiBaseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      
+      if (!openaiApiKey) {
+        const summary = snippets.slice(0, 500);
+        return res.json({
+          summary,
+          coreActivity: null,
+          operatingModel: null,
+          revenueDrivers: null
+        });
+      }
+
+      const aiResponse = await fetch(`${openaiBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a business analyst. Given search results about a company, extract structured information. Return ONLY valid JSON with these fields:
+- summary: A 2-4 sentence description of the company
+- coreActivity: What the company primarily does (1-2 sentences)
+- operatingModel: How the company operates (1-2 sentences)
+- revenueDrivers: Main sources of revenue (1-2 sentences)
+
+If information is not available, use null for that field.`
+            },
+            {
+              role: 'user',
+              content: `Company: ${companyName}\nCountry: ${country || 'Unknown'}\n\nSearch Results:\n${snippets}\n\nExtract business information as JSON.`
+            }
+          ],
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!aiResponse.ok) {
+        const summary = snippets.slice(0, 500);
+        return res.json({
+          summary,
+          coreActivity: null,
+          operatingModel: null,
+          revenueDrivers: null
+        });
+      }
+
+      const aiData = await aiResponse.json();
+      const enrichedInfo = JSON.parse(aiData.choices[0].message.content);
+      
+      await storage.updateCompanyManual(id, {
+        summary: enrichedInfo.summary || null,
+        coreActivity: enrichedInfo.coreActivity || null,
+        operatingModel: enrichedInfo.operatingModel || null,
+        revenueDrivers: enrichedInfo.revenueDrivers || null
+      });
+
+      res.json(enrichedInfo);
+    } catch (error) {
+      console.error("Error enriching with Bing:", error);
+      res.status(500).json({ error: "Failed to enrich with Bing", message: String(error) });
+    }
+  });
+
   app.delete("/api/search-queries/:id/results", async (req, res) => {
     try {
       const searchQueryId = parseInt(String(req.params.id));

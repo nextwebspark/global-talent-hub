@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck, Search } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -116,6 +116,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isSavingCompanyNotes, setIsSavingCompanyNotes] = useState(false);
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
+  const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
@@ -259,6 +260,45 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       toast.success('Executive added');
     } catch (error) {
       toast.error('Failed to add executive');
+    }
+  };
+
+  const handleEnrichWithBing = async (companyData: typeof company) => {
+    if (!companyData) return;
+    setIsEnrichingWithBing(true);
+    try {
+      const response = await fetch(`/api/companies/${companyData.id}/enrich-bing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: companyData.name, country: companyData.hq_country })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to enrich with Bing');
+      }
+      
+      const enrichedData = await response.json();
+      
+      if (enrichedData.summary) {
+        updateCompanyLocal(companyData.id, { summary: enrichedData.summary });
+      }
+      if (enrichedData.coreActivity) {
+        updateCompanyLocal(companyData.id, { coreActivity: enrichedData.coreActivity });
+      }
+      if (enrichedData.operatingModel) {
+        updateCompanyLocal(companyData.id, { operatingModel: enrichedData.operatingModel });
+      }
+      if (enrichedData.revenueDrivers) {
+        updateCompanyLocal(companyData.id, { revenueDrivers: enrichedData.revenueDrivers });
+      }
+      
+      toast.success('Company enriched with Bing search data');
+    } catch (error: any) {
+      console.error('Error enriching with Bing:', error);
+      toast.error(error.message || 'Failed to enrich with Bing');
+    } finally {
+      setIsEnrichingWithBing(false);
     }
   };
 
@@ -490,6 +530,41 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
 
             <Separator />
 
+            {/* §7.4 Company Summary - Now above Business Profile */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Company Summary
+                </h3>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => handleEnrichWithBing(company)}
+                  disabled={isEnrichingWithBing}
+                  className="h-6 text-xs"
+                >
+                  {isEnrichingWithBing ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</>
+                  ) : (
+                    <><Search className="h-3 w-3 mr-1" /> Enrich with Bing</>
+                  )}
+                </Button>
+              </div>
+              <EditableField
+                value={company.summary || ''}
+                onSave={(val) => handleUpdateCompany('summary', String(val))}
+                className="text-sm leading-relaxed"
+                placeholder="A brief 2-4 sentence description of the company..."
+              />
+              {company.relevanceReason && (
+                <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
+                  <span className="font-medium">Search Relevance:</span> {company.relevanceReason}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
             {/* §7.3 Business Profile */}
             <div>
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
@@ -524,26 +599,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                   />
                 </div>
               </div>
-            </div>
-
-            <Separator />
-
-            {/* §7.4 Company Summary */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                Company Summary
-              </h3>
-              <EditableField
-                value={company.summary || ''}
-                onSave={(val) => handleUpdateCompany('summary', String(val))}
-                className="text-sm leading-relaxed"
-                placeholder="A brief 2-4 sentence description of the company..."
-              />
-              {company.relevanceReason && (
-                <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-700 dark:text-blue-300">
-                  <span className="font-medium">Search Relevance:</span> {company.relevanceReason}
-                </div>
-              )}
             </div>
 
             <Separator />

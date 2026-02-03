@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
+import { validateLlmResponse } from "./postLlmValidation";
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -1041,13 +1042,35 @@ IMPORTANT:
     return;
   }
 
-  console.log(`[Discovery Streaming] Processing ${companiesData.length} companies`);
+  // ========== POST-LLM VALIDATION LAYER ==========
+  // Runs AFTER LLM response, BEFORE storage/ranking/display
+  // Does NOT generate data - only validates, strips, blocks, or degrades
+  yield { type: 'status', data: { message: 'Validating results...', progress: 45 } };
+  
+  const postLlmValidation = validateLlmResponse(companiesData, {
+    originalQuery: query,
+    requestedLimit: limit
+  });
+  
+  console.log(`[Discovery Streaming] Post-LLM validation summary:`, postLlmValidation.summary);
+  
+  // Use validated companies instead of raw data
+  const validatedCompaniesData = postLlmValidation.companies;
+  
+  if (validatedCompaniesData.length === 0) {
+    console.warn("[Discovery Streaming] All companies blocked by post-LLM validation");
+    yield { type: 'complete', data: { total: 0, validationSummary: postLlmValidation.summary } };
+    return;
+  }
+  // ========== END POST-LLM VALIDATION LAYER ==========
+
+  console.log(`[Discovery Streaming] Processing ${validatedCompaniesData.length} validated companies`);
   let processed = 0;
   
   // Reset coordinate tracking for each new search
   resetCoordinateTracking();
   
-  for (const rawCompanyData of companiesData) {
+  for (const rawCompanyData of validatedCompaniesData) {
     try {
       const validatedData = validateCompanyData(rawCompanyData);
       

@@ -66,6 +66,19 @@ The backend employs a strict layered architecture:
 - **Tier 2**: Reuters, Bloomberg, Forbes, WSJ, regional business sources (Zawya, Gulf Business) - Full metric extraction with confidence reduction
 - **Tier 3**: General web pages - Name discovery only, all metrics must be null/Unknown
 
+### Entity Existence Requirements
+Required fields for entity existence are limited to:
+- **company name** (required)
+- **country** (required)
+- **primary activity** (sector OR businessType - required)
+
+Rendering fields (coordinates, map zoom, icons) degrade gracefully:
+- If lat/long missing → derive from city centroid
+- If city unknown → derive from country centroid
+- `location_precision` field tracks: `exact`, `city`, `country`, or `unknown`
+
+Coordinate fallback service (`server/services/coordinateFallback.ts`) provides city/country centroids for major global cities and countries.
+
 ### AI Research Engine
 Server-side AI processing (OpenAI, OpenRouter) parses natural language queries to extract industry, geography, and roles. Results are ranked by revenue, then employees. The LLM is instructed to find precise HQ locations and street addresses for accurate map placement. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.
 

@@ -1095,20 +1095,28 @@ export function validateLlmResponse(
       continue;
     }
 
-    // BLOCK: Companies with confidence below minimum threshold
-    const confidence = Number(company.confidence || company.score || 0);
-    if (confidence < 1) {
-      validationLog.push({
-        companyName,
-        action: 'blocked',
-        reason: `Confidence score too low: ${confidence}`
-      });
-      totalBlocked++;
-      continue;
-    }
-
     // Create a validated copy to potentially modify
     const validatedCompany = { ...company };
+
+    // DEGRADE (not BLOCK): Companies with missing or zero confidence
+    // Missing confidence is not a fatal error - set a default low value
+    // This allows validateCompanyData downstream to handle it properly
+    const rawConfidence = Number(company.confidence || company.score || 0);
+    if (rawConfidence < 1) {
+      // Set a default low confidence (3) instead of blocking
+      // This follows the principle: "null is better than wrong data"
+      // but also "a company with missing confidence is still potentially valid"
+      validatedCompany.confidence = 3; // Low confidence as fallback
+      validationLog.push({
+        companyName,
+        action: 'degraded',
+        reason: `Confidence score missing or zero (${rawConfidence}) - defaulting to 3`,
+        field: 'confidence',
+        originalValue: rawConfidence,
+        newValue: 3
+      });
+      totalDegraded++;
+    }
     let wasDegraded = false;
     let wasStripped = false;
 

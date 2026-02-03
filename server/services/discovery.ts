@@ -1143,6 +1143,15 @@ IMPORTANT:
       // Get unique coordinates to prevent map marker overlapping
       const uniqueCoords = getUniqueCoordinates(validatedData.latitude, validatedData.longitude);
       
+      // Properly handle null values for numeric fields
+      // SQL NULL must be passed as actual null, not the string "null"
+      const safeRevenue = validatedData.revenue !== null && validatedData.revenue !== undefined 
+        ? String(validatedData.revenue) 
+        : null;
+      const safeEmployees = validatedData.employees !== null && validatedData.employees !== undefined
+        ? validatedData.employees
+        : null;
+      
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: validatedData.sector,
@@ -1152,9 +1161,9 @@ IMPORTANT:
         streetAddress: validatedData.streetAddress || null,
         latitude: String(uniqueCoords.lat),
         longitude: String(uniqueCoords.lng),
-        revenue: String(validatedData.revenue),
+        revenue: safeRevenue,
         revenueSource: validatedData.revenueSource,
-        employees: validatedData.employees,
+        employees: safeEmployees,
         employeesSource: validatedData.employeesSource,
         confidence: validatedData.confidence,
         relevanceReason: validatedData.relevanceReason || null,

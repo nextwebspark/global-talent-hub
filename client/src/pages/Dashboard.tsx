@@ -8,8 +8,9 @@ import MapComponent from '@/components/map/Map';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
-import { Loader2, Search, Globe, Bot, ChevronDown, History, Trash2, RefreshCw, Zap, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Search, Globe, Bot, ChevronDown, ChevronUp, History, Trash2, RefreshCw, Zap, CheckCircle, XCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
@@ -29,8 +30,9 @@ export default function Dashboard() {
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   
   const [leftPanelWidth, setLeftPanelWidth] = useState(360);
   const [rightPanelWidth, setRightPanelWidth] = useState(384);
@@ -449,43 +451,72 @@ export default function Dashboard() {
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-5xl px-4">
           <form onSubmit={handleNewSearch} className="flex flex-col gap-3">
             <div className="relative" ref={historyRef}>
-              <div className="flex items-center bg-background/95 backdrop-blur-sm shadow-lg rounded-full border border-border overflow-hidden">
-                <div className="flex items-center gap-2 px-4 group relative" title={currentProject.name}>
-                  <Globe className="h-4 w-4 text-primary shrink-0" />
-                  <span className="text-xs font-medium text-muted-foreground hidden sm:inline max-w-[180px] truncate">
-                    {currentProject.name}
-                  </span>
-                  <div className="absolute left-0 top-full mt-1 bg-popover text-popover-foreground text-xs p-2 rounded shadow-lg border border-border opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap pointer-events-none">
-                    {currentProject.name}
+              <div className={`bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden transition-all duration-200 ${isPromptExpanded ? 'rounded-xl' : 'rounded-full'}`}>
+                <div className="flex items-center px-4 py-2 border-b border-border/50">
+                  <div className="flex items-center gap-2 group relative" title={currentProject.name}>
+                    <Globe className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground hidden sm:inline max-w-[180px] truncate">
+                      {currentProject.name}
+                    </span>
                   </div>
+                  <div className="h-4 w-px bg-border mx-3 shrink-0" />
+                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground ml-2">Search Prompt</span>
+                  <div className="flex-1" />
+                  {isSearching ? (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-xs text-muted-foreground">{searchProgress}%</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <button 
+                        type="button"
+                        onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+                        className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
+                        title={isPromptExpanded ? "Collapse prompt" : "Expand prompt"}
+                        data-testid="button-toggle-prompt-expand"
+                      >
+                        {isPromptExpanded ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                        title="Search history"
+                        data-testid="button-toggle-history"
+                      >
+                        <History className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="h-6 w-px bg-border shrink-0" />
-                <Search className="ml-3 h-4 w-4 text-muted-foreground shrink-0" />
-                <Input 
-                  ref={inputRef}
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onFocus={() => setShowHistory(true)}
-                  placeholder="Enter new search query..." 
-                  className="border-0 shadow-none focus-visible:ring-0 h-12 text-sm bg-transparent px-3 flex-1"
-                  disabled={isSearching}
-                  data-testid="input-new-search"
-                  title={searchInput}
-                />
-                {isSearching ? (
-                  <div className="flex items-center gap-2 px-3">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-xs text-muted-foreground">{searchProgress}%</span>
-                  </div>
-                ) : (
-                  <button 
-                    type="button"
-                    onClick={() => setShowHistory(!showHistory)}
-                    className="p-2 mr-2 hover:bg-muted rounded-full transition-colors"
-                  >
-                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
-                  </button>
-                )}
+                <div className="px-4 py-2">
+                  <Textarea 
+                    ref={inputRef}
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onFocus={() => {
+                      if (!isPromptExpanded && searchInput.length < 50) {
+                        setShowHistory(true);
+                      }
+                    }}
+                    placeholder={isPromptExpanded 
+                      ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies in renewable energy...\n\nInclusion criteria:\n- Entity must be a company, not a project\n- Must have operational presence in target region\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
+                      : "Enter search prompt or click Expand for detailed prompts..."
+                    }
+                    className={`border-0 shadow-none focus-visible:ring-0 text-sm bg-transparent resize-none transition-all duration-200 ${
+                      isPromptExpanded ? 'min-h-[200px] max-h-[400px]' : 'min-h-[40px] max-h-[80px]'
+                    }`}
+                    disabled={isSearching}
+                    data-testid="input-new-search"
+                  />
+                </div>
               </div>
               
               {isSearching && (

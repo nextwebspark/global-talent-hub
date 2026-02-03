@@ -430,15 +430,17 @@ export function validateCompanyData(data: any): any {
   const isTier1Source = revenueSource && 
     /annual report|10-k|sec filing|quarterly report|regulatory filing|audited|official disclosure|company financials|investor relations/i.test(revenueSource);
   
-  // Tier 2: Trusted aggregators with explicit revenue labels
-  const isTier2Source = revenueSource && 
-    /forbes|fortune|bloomberg|reuters|financial times/i.test(revenueSource) &&
-    /revenue|sales|turnover/i.test(revenueSource);
+  // Tier 2: Trusted aggregators OR industry estimates
+  const isTier2Source = revenueSource && (
+    (/forbes|fortune|bloomberg|reuters|financial times/i.test(revenueSource) &&
+     /revenue|sales|turnover/i.test(revenueSource)) ||
+    /industry estimate|market estimate|estimated based on|analyst estimate/i.test(revenueSource)
+  );
   
-  // Reject: Estimates, industry guesses, inferred values
+  // Reject: Bad proxies (AUM, project value, etc.) - but NOT industry estimates
+  // Industry estimates are acceptable in Tier 2 when clearly labeled
   const isRejectedSource = !revenueSource || 
-    /estimate|projected|approximate|inferred|calculated|derived|research firm|market analysis|industry average/i.test(revenueSource) ||
-    /aum|aum|project value|contract value|gmv|valuation|funding|investment/i.test(revenueSource);
+    /aum|assets under management|project value|contract value|gmv|valuation|funding|investment|pipeline|backlog/i.test(revenueSource);
   
   let revenue: number | null = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
   let revenueCurrency: string | null = null;
@@ -480,34 +482,44 @@ export function validateCompanyData(data: any): any {
     revenue = null;
   } else {
     // ============================================================================
-    // HARD REQUIRE: Currency + Year for revenue display
+    // CURRENCY + YEAR HANDLING: Accept revenue with defaults if missing
+    // ============================================================================
+    // CHANGED: Previously rejected revenue entirely if currency/year missing.
+    // NEW APPROACH: Accept revenue but apply confidence reduction and use defaults.
+    // This ensures users see approximate revenue rather than "Unknown" for all results.
     // ============================================================================
     const hasCurrency = rawCurrency && rawCurrency.length >= 2 && rawCurrency.length <= 4;
     const hasFiscalYear = rawFiscalYear && rawFiscalYear >= 2015 && rawFiscalYear <= 2030;
     
     if (!hasCurrency || !hasFiscalYear) {
-      console.log(`[Discovery] ${name}: Revenue REJECTED - missing currency (${rawCurrency || 'none'}) or year (${rawFiscalYear || 'none'})`);
-      revenue = null;
+      // ACCEPT revenue with defaults instead of rejecting
+      console.log(`[Discovery] ${name}: Revenue ACCEPTED with defaults - currency (${rawCurrency || 'none'} -> USD) or year (${rawFiscalYear || 'none'} -> estimated)`);
+      revenueCurrency = hasCurrency ? rawCurrency : 'USD'; // Default to USD if not specified
+      revenueFiscalYear = hasFiscalYear ? rawFiscalYear : null; // Keep null to indicate estimated
+      
+      // Apply confidence reduction for missing metadata
+      if (!hasCurrency) revenueConfidenceReduction += 1;
+      if (!hasFiscalYear) revenueConfidenceReduction += 1;
     } else {
       revenueCurrency = rawCurrency;
       revenueFiscalYear = rawFiscalYear;
-      
-      // FX CONVERSION: Convert non-USD currencies to USD using FX_RATES lookup
-      if (revenueCurrency !== 'USD' && FX_RATES[revenueCurrency]) {
-        const fx = FX_RATES[revenueCurrency];
-        const originalRevenue = revenue;
-        revenue = Math.round(revenue * fx.rate);
-        revenueConvertedFromCurrency = revenueCurrency;
-        revenueFxRate = fx.rate;
-        revenueFxPolicy = fx.policy;
-        revenueCurrency = 'USD'; // Store in USD after conversion
-        console.log(`[Discovery] ${name}: Converted revenue from ${revenueConvertedFromCurrency} to USD (rate: ${fx.rate}, original: ${originalRevenue})`);
-      }
-      
-      // Tier 2 sources get minor confidence reduction
-      if (isTier2Source && !isTier1Source) {
-        revenueConfidenceReduction = 1;
-      }
+    }
+    
+    // FX CONVERSION: Convert non-USD currencies to USD using FX_RATES lookup
+    if (revenueCurrency && revenueCurrency !== 'USD' && FX_RATES[revenueCurrency]) {
+      const fx = FX_RATES[revenueCurrency];
+      const originalRevenue = revenue;
+      revenue = Math.round(revenue! * fx.rate);
+      revenueConvertedFromCurrency = revenueCurrency;
+      revenueFxRate = fx.rate;
+      revenueFxPolicy = fx.policy;
+      revenueCurrency = 'USD'; // Store in USD after conversion
+      console.log(`[Discovery] ${name}: Converted revenue from ${revenueConvertedFromCurrency} to USD (rate: ${fx.rate}, original: ${originalRevenue})`);
+    }
+    
+    // Tier 2 sources get minor confidence reduction
+    if (isTier2Source && !isTier1Source) {
+      revenueConfidenceReduction += 1;
     }
   }
   
@@ -867,7 +879,9 @@ Return a JSON object with this EXACT structure:
       "latitude": 25.2048,
       "longitude": 55.2708,
       "revenue": 500000000,
-      "revenueSource": "Annual Report 2024 (or null if no authoritative source exists - never estimate)",
+      "revenueCurrency": "USD",
+      "revenueFiscalYear": 2024,
+      "revenueSource": "Annual Report 2024 OR Industry estimate based on market position",
       "employees": 3000,
       "employeesSource": "How you determined this (e.g., 'LinkedIn company size indicator')",
       "confidence": 7,
@@ -890,7 +904,7 @@ Return a JSON object with this EXACT structure:
 
 1. ONLY include companies you are confident are REAL and currently operating
 
-2. REVENUE (STRICT RULES - NO EXCEPTIONS):
+2. REVENUE GUIDELINES:
    DEFINITION: Revenue means TOP-LINE OPERATING REVENUE from normal business activities for a specific financial year.
    
    Revenue DOES NOT include and MUST NOT be confused with:
@@ -903,19 +917,21 @@ Return a JSON object with this EXACT structure:
    - Pipeline or backlog value
    - Investment size or capex
    
-   SOURCE PRIORITY (mandatory):
-   1. Audited annual reports or regulatory filings (highest priority)
-   2. Official company financial disclosures
-   3. Clearly labelled revenue from trusted aggregators (Forbes, Fortune, Bloomberg)
+   SOURCE PRIORITY (use the best available):
+   1. TIER 1 - Audited annual reports or regulatory filings (highest confidence)
+   2. TIER 2 - Official company financial disclosures, Forbes, Fortune, Bloomberg
+   3. TIER 3 - Industry estimates from reputable sources (clearly label as "Industry estimate")
    
-   CRITICAL RULES:
-   - If revenue is not EXPLICITLY stated as "revenue" → set to null
-   - Do NOT infer, calculate, or estimate revenue from other metrics
+   APPROACH:
+   - For PUBLIC companies: Use official filings when available
+   - For PRIVATE companies: Use industry estimates with clear labeling (e.g., "Industry estimate based on market position")
+   - For LARGE, WELL-KNOWN companies: Provide your best estimate with source reasoning
+   - ALWAYS include revenueCurrency (e.g., "USD", "AED", "EUR") and revenueFiscalYear (e.g., 2023, 2024)
+   - revenueSource MUST explain where the figure comes from or why it was estimated
+   
+   WHAT TO AVOID:
    - Do NOT substitute project value, AUM, GMV, or funding as revenue
-   - "null" is better than wrong revenue
-   - revenueSource MUST clearly state the exact source (e.g., "Annual Report 2024", "Forbes Global 2000")
-   
-   For private companies where revenue is not publicly disclosed: Set revenue to null, not an estimate.
+   - Do NOT use valuation or enterprise value as revenue
 
 3. GPS Coordinates: MUST be the EXACT coordinates of the company's headquarters street address
    - Each company MUST have UNIQUE coordinates - never use the same coordinates for multiple companies
@@ -1053,10 +1069,10 @@ IMPORTANT:
             streetAddress: { type: "string" as const, description: "Exact street address of headquarters" },
             latitude: { type: "number" as const, description: "GPS latitude of headquarters" },
             longitude: { type: "number" as const, description: "GPS longitude of headquarters" },
-            revenue: { type: ["number", "null"] as any, description: "Annual revenue in ORIGINAL CURRENCY (not converted to USD). MUST be null if not explicitly known from authoritative sources. Never infer from AUM, project value, or funding." },
-            revenueCurrency: { type: "string" as const, description: "REQUIRED if revenue is provided: 3-letter currency code (e.g., 'USD', 'AED', 'SAR', 'EUR'). Must match the currency of the revenue figure from the source." },
-            revenueFiscalYear: { type: "integer" as const, description: "REQUIRED if revenue is provided: Fiscal year of the revenue figure (e.g., 2023, 2024). Must match the year stated in the source document." },
-            revenueSource: { type: "string" as const, description: "REQUIRED: Exact source of revenue (e.g., 'Annual Report 2023', 'Forbes Global 2000 2024'). If revenue is null, explain why (e.g., 'Private company - no public disclosure')." },
+            revenue: { type: ["number", "null"] as any, description: "Annual revenue in ORIGINAL CURRENCY. For public companies use official filings; for well-known companies provide industry estimates. ALWAYS provide a number for major banks, utilities, and large corporations. Only set null for truly unknown small/private companies." },
+            revenueCurrency: { type: "string" as const, description: "REQUIRED: 3-letter currency code (e.g., 'USD', 'AED', 'SAR', 'EUR'). Use 'USD' if unsure. Must be provided when revenue is provided." },
+            revenueFiscalYear: { type: "integer" as const, description: "REQUIRED: Fiscal year of the revenue figure (e.g., 2023, 2024). Use most recent available year." },
+            revenueSource: { type: "string" as const, description: "REQUIRED: Source of revenue (e.g., 'Annual Report 2023', 'Industry estimate based on market position'). Explain your reasoning." },
             employees: { type: "integer" as const, description: "Number of employees" },
             employeesSource: { type: "string" as const, description: "Source of employee count" },
             confidence: { type: "integer" as const, minimum: 1, maximum: 10, description: "Data confidence score 1-10" },

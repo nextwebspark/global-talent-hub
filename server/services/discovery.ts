@@ -8,41 +8,69 @@ const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-// Default model - Claude Sonnet for best factual accuracy in company research
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
+// ========== APPROVED DISCOVERY MODELS ==========
+// CRITICAL: Only models that pass structured-output reliability tests are approved.
+// These models are proven to return valid JSON with consistent field extraction.
+// All other models MUST be disabled for discovery or routed to narrative-only mode.
 
-// Fallback models to try when primary model fails (in order of preference)
-export const FALLBACK_MODELS = [
-  "openai/gpt-4o-mini",
-  "anthropic/claude-3.5-haiku", 
-  "google/gemini-2.0-flash-001",
-  "meta-llama/llama-3.3-70b-instruct",
-];
+// Approved models for discovery (structured output extraction)
+export const APPROVED_DISCOVERY_MODELS = {
+  primary: "google/gemini-2.5-flash-preview",  // Gemini 3 Flash - best structured output
+  fallbacks: [
+    "anthropic/claude-sonnet-4",               // Claude Sonnet - reliable fallback
+    "anthropic/claude-3.5-haiku",              // Claude Haiku - fast fallback
+  ]
+};
+
+// Default model - Gemini 3 Flash for best structured output reliability
+export const DEFAULT_MODEL = APPROVED_DISCOVERY_MODELS.primary;
+
+// Fallback models for discovery - ONLY approved models
+export const FALLBACK_MODELS = APPROVED_DISCOVERY_MODELS.fallbacks;
+
+// Check if a model is approved for discovery (structured output extraction)
+export function isApprovedForDiscovery(modelId: string): boolean {
+  const allApproved = [
+    APPROVED_DISCOVERY_MODELS.primary,
+    ...APPROVED_DISCOVERY_MODELS.fallbacks
+  ];
+  return allApproved.includes(modelId);
+}
+
+// Get the approved model to use (enforces approved list)
+export function getApprovedModel(requestedModel: string): { model: string; wasOverridden: boolean; reason?: string } {
+  if (isApprovedForDiscovery(requestedModel)) {
+    return { model: requestedModel, wasOverridden: false };
+  }
+  
+  console.warn(`[ModelValidation] Model "${requestedModel}" is NOT approved for discovery. Overriding to ${DEFAULT_MODEL}`);
+  return { 
+    model: DEFAULT_MODEL, 
+    wasOverridden: true,
+    reason: `Model "${requestedModel}" failed structured-output reliability test. Using approved model: ${DEFAULT_MODEL}`
+  };
+}
 
 // Models known to work reliably with web search (:online suffix)
 export const RELIABLE_ONLINE_MODELS = [
+  "google/gemini-2.5-flash-preview",
   "anthropic/claude-sonnet-4",
   "anthropic/claude-3.5-sonnet",
   "anthropic/claude-3.5-haiku",
-  "openai/gpt-4o",
-  "openai/gpt-4o-mini",
-  "google/gemini-2.0-flash-001",
-  "google/gemini-2.5-flash-preview",
-  "perplexity/sonar-pro",
-  "perplexity/sonar-reasoning-pro",
 ];
 
+// All available models for UI display (includes non-approved for transparency)
 export const AVAILABLE_MODELS = [
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Default)", provider: "Anthropic", reliableOnline: true },
-  { id: "openai/gpt-4o", name: "GPT-4o", provider: "OpenAI", reliableOnline: true },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", provider: "OpenAI", reliableOnline: true },
-  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3", provider: "DeepSeek", reliableOnline: false },
-  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic", reliableOnline: true },
-  { id: "google/gemini-2.5-flash-preview", name: "Gemini 2.5 Flash", provider: "Google", reliableOnline: true },
-  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash", provider: "Google", reliableOnline: true },
-  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B", provider: "Meta", reliableOnline: false },
-  { id: "mistralai/mistral-large-2411", name: "Mistral Large", provider: "Mistral", reliableOnline: false },
-  { id: "perplexity/sonar-pro", name: "Perplexity Sonar Pro (Always Online)", provider: "Perplexity", reliableOnline: true },
+  { id: "google/gemini-2.5-flash-preview", name: "Gemini 3 Flash (Primary)", provider: "Google", reliableOnline: true, approvedForDiscovery: true },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Fallback)", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
+  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku (Fallback)", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
+  { id: "openai/gpt-4o", name: "GPT-4o (Disabled)", provider: "OpenAI", reliableOnline: true, approvedForDiscovery: false },
+  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini (Disabled)", provider: "OpenAI", reliableOnline: true, approvedForDiscovery: false },
+  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3 (Disabled)", provider: "DeepSeek", reliableOnline: false, approvedForDiscovery: false },
+  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash (Disabled)", provider: "Google", reliableOnline: true, approvedForDiscovery: false },
+  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B (Disabled)", provider: "Meta", reliableOnline: false, approvedForDiscovery: false },
+  { id: "mistralai/mistral-large-2411", name: "Mistral Large (Disabled)", provider: "Mistral", reliableOnline: false, approvedForDiscovery: false },
+  { id: "perplexity/sonar-pro", name: "Perplexity Sonar Pro (Disabled)", provider: "Perplexity", reliableOnline: true, approvedForDiscovery: false },
 ];
 
 // Parse OpenRouter error responses for user-friendly messages
@@ -956,7 +984,17 @@ export async function* discoverCompaniesStreaming(
   // ========== END QUERY VALIDATION ==========
   
   const client = openrouter;
-  const baseModel = selectedModel || DEFAULT_MODEL;
+  
+  // ========== ENFORCE APPROVED MODELS ==========
+  // CRITICAL: Only approved models can be used for discovery
+  const modelValidation = getApprovedModel(selectedModel || DEFAULT_MODEL);
+  const baseModel = modelValidation.model;
+  
+  if (modelValidation.wasOverridden) {
+    console.warn(`[Discovery Streaming] ${modelValidation.reason}`);
+    yield { type: 'status', data: { message: `Using approved model: ${baseModel}`, progress: 2 } };
+  }
+  // ========== END MODEL ENFORCEMENT ==========
   
   // Determine if this model supports :online suffix reliably
   const isReliableOnlineModel = RELIABLE_ONLINE_MODELS.some(m => baseModel.includes(m) || m.includes(baseModel));

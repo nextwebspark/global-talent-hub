@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { storage } from "../storage";
 import { webSearchService, classifySourceTier, type WebSearchResult, type SourceTierClassification } from "./webSearch";
 import { validateCompanyData } from "./discovery";
-import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError } from "./discovery";
+import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
 import type { SearchCriteria } from "./discovery";
 
 const openrouter = new OpenAI({
@@ -158,6 +158,16 @@ export async function* discoverCompaniesWithRetrieval(
     return;
   }
   
+  // ========== ENFORCE APPROVED MODELS ==========
+  const modelValidation = getApprovedModel(selectedModel);
+  const approvedModel = modelValidation.model;
+  
+  if (modelValidation.wasOverridden) {
+    console.warn(`[RetrievalDiscovery] ${modelValidation.reason}`);
+    yield { type: 'status', data: { message: `Using approved model: ${approvedModel}`, progress: 1 } };
+  }
+  // ========== END MODEL ENFORCEMENT ==========
+  
   const query = originalQuery.trim();
   const limit = criteria.limit || 10;
   
@@ -258,7 +268,7 @@ Extract up to ${limit} companies that match the query. Remember:
         }
       ],
       extractionSchema,
-      selectedModel
+      approvedModel  // Use validated approved model
     );
     
     extractedCompanies = data.companies || [];

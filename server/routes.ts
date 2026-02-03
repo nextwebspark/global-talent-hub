@@ -678,7 +678,9 @@ Please provide a comprehensive business profile as JSON.`
       let webSearchFailed = false;
       
       // Helper to process a discovery stream
-      const processDiscoveryStream = async (stream: AsyncGenerator<any, void, unknown>, isLlmOnlyFallback: boolean = false): Promise<boolean> => {
+      // Returns { fallbackNeeded: boolean, completeSent: boolean }
+      const processDiscoveryStream = async (stream: AsyncGenerator<any, void, unknown>, isLlmOnlyFallback: boolean = false): Promise<{ fallbackNeeded: boolean, completeSent: boolean }> => {
+        let completeSent = false;
         for await (const event of stream) {
           if (event.type === 'company') {
             companyCount++;
@@ -691,8 +693,9 @@ Please provide a comprehensive business profile as JSON.`
             sendEvent('status', event.data);
           } else if (event.type === 'error') {
             // Check if this is a web search failure - signal to fall back
+            // Only trigger fallback for web search specific errors, not general LLM errors
             if (!isLlmOnlyFallback && event.data?.message?.includes('Web search failed')) {
-              return true; // Signal to fall back to LLM-only
+              return { fallbackNeeded: true, completeSent: false }; // Signal to fall back to LLM-only
             }
             sendEvent('error', event.data);
           } else if (event.type === 'complete') {
@@ -704,22 +707,26 @@ Please provide a comprehensive business profile as JSON.`
             if (webSearchFailed || isLlmOnlyFallback) {
               eventData.discoveryStatus = 'degraded';
               eventData.degradationReasons = eventData.degradationReasons || [];
-              eventData.degradationReasons.push('Web search failed - used AI-only mode');
+              if (!eventData.degradationReasons.includes('Web search failed - used AI-only mode')) {
+                eventData.degradationReasons.push('Web search failed - used AI-only mode');
+              }
             }
             
             sendEvent('complete', { 
               ...eventData,
               searchQueryId: searchQuery.id 
             });
+            completeSent = true;
           }
         }
-        return false;
+        return { fallbackNeeded: false, completeSent };
       };
       
       // Run retrieval-first discovery
       if (useRetrieval) {
         const retrievalStream = discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query);
-        webSearchFailed = await processDiscoveryStream(retrievalStream, false);
+        const result = await processDiscoveryStream(retrievalStream, false);
+        webSearchFailed = result.fallbackNeeded;
         
         // If web search failed, fall back to LLM-only
         if (webSearchFailed) {

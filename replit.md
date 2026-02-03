@@ -11,6 +11,31 @@ Preferred communication style: Simple, everyday language.
 ### Core Architectural Principle
 The system strictly adheres to the principle: "THE LLM PROPOSES. THE APPLICATION DECIDES. THE UI ONLY SHOWS VALIDATED TRUTH." This means LLM outputs are treated as proposals, which the application validates and potentially modifies before displaying to the user.
 
+### Confidence Score Semantics
+Confidence scores follow strict semantic rules (DO NOT CONFLATE THESE CASES):
+
+**CASE 1: MISSING CONFIDENCE (undefined, null, or not provided)**
+- Meaning: "Unknown confidence due to missing justification"
+- Value: Assign `confidence = 3`
+- Action: Mark as degraded, allow entity to proceed
+- Influence: ZERO influence on ranking and visuals (treated as neutral)
+- This is NOT explicit unreliability - just unknown
+
+**CASE 2: EXPLICIT LOW CONFIDENCE (LLM returned 0 or 1)**
+- Meaning: "Explicitly unreliable as signaled by the model"
+- Value: PRESERVE the returned value (do not upgrade)
+- Action: Allow entity to exist, strip high-risk metrics
+- Influence: ZERO influence on ranking and visuals
+- This IS explicit unreliability - the model signals distrust
+
+**CRITICAL RULES:**
+- Missing confidence must NEVER be treated as explicit unreliability
+- Explicit unreliability must NEVER be auto-upgraded
+- Confidence affects influence only, NEVER existence
+- No confidence value should ever cause wholesale blocking by itself
+- Visual scaling requires `confidence >= 6` to have any influence
+- Ranking includes ALL valid entities; confidence affects ORDER not INCLUSION
+
 ### Core Data Principles
 All search results, companies, and executives are persistently stored in a PostgreSQL database with unique IDs and proper relational links. Data modifications immediately update the database. Reloading a previous search restores the most recent data including manual edits. Users can add, edit, and delete companies and executives, with all changes persisting. Data sourcing prioritizes audited reports and official statements, particularly for revenue data, which is strictly defined and validated. Revenue figures must explicitly state "revenue" and include value, currency, financial year, source, and confidence level. Conflicts are resolved by source priority (higher tier wins) or recency.
 

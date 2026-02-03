@@ -389,17 +389,45 @@ function validateCompanyData(data: any): any {
     console.log(`[Discovery] ${name}: No employee data available - keeping as Unknown (no false precision)`);
   }
   
-  // CONFIDENCE: Do not auto-assign default - require explicit justification
-  const rawConfidence = data.confidence || data.score;
+  // ============================================================================
+  // CONFIDENCE SEMANTICS (DO NOT CONFLATE THESE TWO CASES)
+  // ============================================================================
+  // 
+  // CASE 1: MISSING CONFIDENCE (undefined, null, or not provided)
+  //   - Meaning: "Unknown confidence due to missing justification"
+  //   - Action: Assign confidence = 3, allow entity to proceed
+  //   - This is NOT explicit unreliability - just unknown
+  //
+  // CASE 2: EXPLICIT LOW CONFIDENCE (LLM returned 0 or 1)
+  //   - Meaning: "Explicitly unreliable as signaled by the model"
+  //   - Action: PRESERVE the returned value (do not upgrade)
+  //   - This IS explicit unreliability - the model is signaling distrust
+  //
+  // CRITICAL: Missing confidence must NEVER be treated as explicit unreliability
+  //           Explicit unreliability must NEVER be auto-upgraded
+  // ============================================================================
+  
+  const providedConfidence = data.confidence ?? data.score;
+  const isConfidenceMissing = providedConfidence === undefined || providedConfidence === null;
   let confidence: number;
   
-  if (rawConfidence === undefined || rawConfidence === null) {
-    // No confidence provided by LLM - set to low value indicating uncertainty
-    confidence = 3; // Low confidence when not explicitly justified
-    console.log(`[Discovery] ${name}: No confidence score provided - defaulting to low (3) for transparency`);
+  if (isConfidenceMissing) {
+    // CASE 1: Missing confidence - unknown, not unreliable
+    // confidence = 3 → "unknown due to missing justification"
+    confidence = 3;
+    console.log(`[Discovery] ${name}: No confidence score provided - defaulting to 3 (unknown, not unreliable)`);
   } else {
-    confidence = parseNumber(rawConfidence, 3);
-    confidence = Math.max(1, Math.min(10, confidence));
+    const parsedConfidence = parseNumber(providedConfidence, 3);
+    
+    if (parsedConfidence <= 1) {
+      // CASE 2: Explicit low confidence - preserve, do not upgrade
+      // confidence = 0/1 → "explicitly unreliable as signaled by the model"
+      confidence = parsedConfidence;
+      console.log(`[Discovery] ${name}: LLM explicitly signaled low confidence (${confidence}) - preserving as unreliable`);
+    } else {
+      // Normal case: confidence 2-10, clamp to valid range
+      confidence = Math.max(1, Math.min(10, parsedConfidence));
+    }
   }
   
   // Apply confidence reduction for non-authoritative revenue sources

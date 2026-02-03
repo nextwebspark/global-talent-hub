@@ -2057,15 +2057,32 @@ CRITICAL REQUIREMENTS:
     }
     
     // CONFIDENCE: Do not auto-assign default without justification
-    const rawConfidence = data.confidence;
+    // ============================================================================
+    // CONFIDENCE SEMANTICS (DO NOT CONFLATE THESE TWO CASES)
+    // ============================================================================
+    // CASE 1: MISSING → confidence = 3 ("unknown due to missing justification")
+    // CASE 2: EXPLICIT 0/1 → preserve value ("explicitly unreliable")
+    // CRITICAL: Missing != unreliable, explicit unreliability != auto-upgrade
+    // ============================================================================
+    
+    const providedConfidence = data.confidence;
+    const isConfidenceMissing = providedConfidence === undefined || providedConfidence === null;
     let confidence: number;
     
-    if (rawConfidence === undefined || rawConfidence === null) {
-      confidence = 3; // Low confidence when not explicitly justified
-      console.log(`[Enrichment:Research] ${name}: No confidence provided - defaulting to low (3)`);
+    if (isConfidenceMissing) {
+      // CASE 1: Missing confidence - unknown, not unreliable
+      confidence = 3;
+      console.log(`[Enrichment:Research] ${name}: No confidence provided - defaulting to 3 (unknown, not unreliable)`);
     } else {
-      confidence = parseNumeric(rawConfidence, 3);
-      confidence = Math.max(1, Math.min(10, confidence));
+      const parsedConfidence = parseNumeric(providedConfidence, 3);
+      
+      if (parsedConfidence <= 1) {
+        // CASE 2: Explicit low confidence - preserve, do not upgrade
+        confidence = parsedConfidence;
+        console.log(`[Enrichment:Research] ${name}: LLM explicitly signaled low confidence (${confidence}) - preserving as unreliable`);
+      } else {
+        confidence = Math.max(1, Math.min(10, parsedConfidence));
+      }
     }
     
     console.log(`[Enrichment:Research] Successfully researched company: ${name} (Revenue: $${revenue}, Employees: ${employees}, Location: ${country})`);

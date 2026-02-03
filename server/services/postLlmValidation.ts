@@ -1097,28 +1097,90 @@ export function validateLlmResponse(
 
     // Create a validated copy to potentially modify
     const validatedCompany = { ...company };
+    let wasDegraded = false;
+    let wasStripped = false;
 
-    // DEGRADE (not BLOCK): Companies with missing or zero confidence
-    // Missing confidence is not a fatal error - set a default low value
-    // This allows validateCompanyData downstream to handle it properly
-    const rawConfidence = Number(company.confidence || company.score || 0);
-    if (rawConfidence < 1) {
-      // Set a default low confidence (3) instead of blocking
-      // This follows the principle: "null is better than wrong data"
-      // but also "a company with missing confidence is still potentially valid"
-      validatedCompany.confidence = 3; // Low confidence as fallback
+    // ============================================================================
+    // CONFIDENCE SEMANTICS (DO NOT CONFLATE THESE TWO CASES)
+    // ============================================================================
+    // 
+    // CASE 1: MISSING CONFIDENCE (undefined, null, or not provided)
+    //   - Meaning: "Unknown confidence due to missing justification"
+    //   - Action: Assign confidence = 3, mark as degraded, allow entity to proceed
+    //   - Influence: ZERO influence on ranking and visuals (treated as neutral)
+    //   - This is NOT explicit unreliability - just unknown
+    //
+    // CASE 2: EXPLICIT LOW CONFIDENCE (LLM returned 0 or 1)
+    //   - Meaning: "Explicitly unreliable as signaled by the model"
+    //   - Action: PRESERVE the returned value (do not upgrade), allow entity to exist
+    //   - Influence: ZERO influence on ranking and visuals, strip high-risk metrics
+    //   - This IS explicit unreliability - the model is signaling distrust
+    //
+    // CRITICAL: Missing confidence must NEVER be treated as explicit unreliability
+    //           Explicit unreliability must NEVER be auto-upgraded
+    // ============================================================================
+    
+    const providedConfidence = company.confidence ?? company.score;
+    const isConfidenceMissing = providedConfidence === undefined || providedConfidence === null;
+    const rawConfidence = isConfidenceMissing ? null : Number(providedConfidence);
+    
+    if (isConfidenceMissing) {
+      // CASE 1: Missing confidence - unknown, not unreliable
+      // confidence = 3 → "unknown due to missing justification"
+      validatedCompany.confidence = 3;
+      validatedCompany._confidenceSource = 'missing'; // Internal flag for downstream
       validationLog.push({
         companyName,
         action: 'degraded',
-        reason: `Confidence score missing or zero (${rawConfidence}) - defaulting to 3`,
+        reason: 'Confidence score missing - defaulting to 3 (unknown, not unreliable)',
         field: 'confidence',
-        originalValue: rawConfidence,
+        originalValue: null,
         newValue: 3
       });
+      wasDegraded = true;
+      totalDegraded++;
+    } else if (rawConfidence !== null && rawConfidence <= 1) {
+      // CASE 2: Explicit low confidence - preserve, do not upgrade
+      // confidence = 0/1 → "explicitly unreliable as signaled by the model"
+      validatedCompany.confidence = rawConfidence; // PRESERVE original value
+      validatedCompany._confidenceSource = 'explicit_low'; // Internal flag for downstream
+      validationLog.push({
+        companyName,
+        action: 'degraded',
+        reason: `LLM explicitly signaled low confidence (${rawConfidence}) - preserving as unreliable`,
+        field: 'confidence',
+        originalValue: rawConfidence,
+        newValue: rawConfidence
+      });
+      
+      // Strip high-risk metrics for explicitly unreliable entities
+      if (validatedCompany.revenue !== undefined) {
+        validationLog.push({
+          companyName,
+          action: 'stripped_field',
+          reason: 'Revenue stripped due to explicit low confidence from LLM',
+          field: 'revenue',
+          originalValue: validatedCompany.revenue
+        });
+        validatedCompany.revenue = null;
+        wasStripped = true;
+      }
+      if (validatedCompany.employees !== undefined && validatedCompany.employees !== null) {
+        validationLog.push({
+          companyName,
+          action: 'stripped_field',
+          reason: 'Employees stripped due to explicit low confidence from LLM',
+          field: 'employees',
+          originalValue: validatedCompany.employees
+        });
+        validatedCompany.employees = null;
+        wasStripped = true;
+      }
+      
+      wasDegraded = true;
       totalDegraded++;
     }
-    let wasDegraded = false;
-    let wasStripped = false;
+    // If rawConfidence >= 2, keep the provided value as-is (trusted)
 
     // STRIP: Remove executives with placeholder names (titles instead of real names)
     if (Array.isArray(validatedCompany.executives)) {

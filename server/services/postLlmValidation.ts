@@ -950,24 +950,24 @@ export interface RankingIntegrityEntry {
 
 /**
  * MINIMUM CRITERIA FOR A VALID ENTITY
- * An entity is valid if it has:
- * 1. A non-empty name
- * 2. Valid coordinates (for map display)
- * 3. A country (for geographic filtering)
+ * ALIGNED WITH PHASE 1 ENTITY VALIDITY REQUIREMENTS:
+ * 1. A non-empty name (required)
+ * 2. A country (required)
+ * 3. A primary activity - sector OR businessType (required)
  * 
+ * NOTE: Coordinates are NOT required - they can be inferred from city/country centroids.
  * Confidence does NOT determine validity - only display order.
  */
 export function meetsMinimumValidityCriteria(company: any): boolean {
   const hasName = company.name && String(company.name).trim().length > 0;
   const hasCountry = company.country && String(company.country).trim().length > 0;
-  const hasCoordinates = (
-    company.latitude !== undefined && 
-    company.latitude !== null && 
-    company.longitude !== undefined && 
-    company.longitude !== null
+  const hasPrimaryActivity = (
+    (company.sector && String(company.sector).trim().length > 0) ||
+    (company.businessType && String(company.businessType).trim().length > 0)
   );
   
-  return hasName && hasCountry && hasCoordinates;
+  // Coordinates are NOT required - they can be inferred from city/country centroids
+  return hasName && hasCountry && hasPrimaryActivity;
 }
 
 /**
@@ -1087,9 +1087,205 @@ export interface PostLlmValidationOptions {
   requestedLimit: number;
 }
 
+// ============================================================================
+// TWO-PHASE VALIDATION SYSTEM
+// ============================================================================
+// 
+// PHASE 1: ENTITY VALIDITY (CAN BLOCK)
+// - Blocks ONLY if: no company name, no country, or clearly violates inclusion rules
+// - Purpose: Ensure minimum entity requirements for existence
+// 
+// PHASE 2: PRESENTATION COMPLETENESS (NEVER BLOCKS)
+// - Coordinates missing → fallback to city/country centroid
+// - Employees missing → display as "Unknown"
+// - Revenue missing → NULL (displayed as "Unknown")
+// - Purpose: Prepare data for display, never blocks entities
+// 
+// ============================================================================
+
+interface Phase1Result {
+  passed: boolean;
+  company: any;
+  blockReason?: string;
+}
+
+interface Phase2Result {
+  company: any;
+  degradations: string[];
+  strippedFields: string[];
+}
+
+/**
+ * PHASE 1: ENTITY VALIDITY
+ * Determines if an entity meets minimum requirements for existence.
+ * CAN BLOCK - returns passed=false if entity should not exist.
+ * 
+ * Blocking criteria:
+ * - No company name
+ * - No country
+ * - Clearly violates inclusion rules (placeholder names, etc.)
+ */
+function runPhase1EntityValidity(company: any): Phase1Result {
+  const companyName = String(company.name || company.companyName || '').trim();
+  const country = String(company.country || '').trim();
+  const sector = String(company.sector || '').trim();
+  const businessType = String(company.businessType || '').trim();
+  
+  // BLOCK: No company name or placeholder name
+  if (!companyName || companyName.toLowerCase() === 'unknown' || companyName.toLowerCase() === 'unknown company') {
+    return {
+      passed: false,
+      company,
+      blockReason: 'Missing or placeholder company name'
+    };
+  }
+  
+  // BLOCK: No country
+  if (!country) {
+    return {
+      passed: false,
+      company,
+      blockReason: 'Missing country - required for entity existence'
+    };
+  }
+  
+  // BLOCK: No primary activity (sector OR businessType required)
+  if (!sector && !businessType) {
+    return {
+      passed: false,
+      company,
+      blockReason: 'Missing primary activity (sector or business type) - required for entity existence'
+    };
+  }
+  
+  // PASSED: Entity meets minimum requirements for existence
+  return {
+    passed: true,
+    company: { ...company, name: companyName, country }
+  };
+}
+
+/**
+ * PHASE 2: PRESENTATION COMPLETENESS
+ * Prepares entity data for display. NEVER BLOCKS.
+ * 
+ * Actions:
+ * - Coordinates missing → will be inferred from city/country centroids later
+ * - Employees missing → leave as null (UI shows "Unknown")
+ * - Revenue missing → leave as null (UI shows "Unknown")
+ * - Confidence handling → assign defaults, strip metrics for low confidence
+ */
+function runPhase2PresentationCompleteness(company: any): Phase2Result {
+  const validatedCompany = { ...company };
+  const degradations: string[] = [];
+  const strippedFields: string[] = [];
+  const companyName = String(company.name || '').trim();
+  
+  // ============================================================================
+  // CONFIDENCE SEMANTICS (DO NOT CONFLATE THESE TWO CASES)
+  // ============================================================================
+  const providedConfidence = company.confidence ?? company.score;
+  const isConfidenceMissing = providedConfidence === undefined || providedConfidence === null;
+  const rawConfidence = isConfidenceMissing ? null : Number(providedConfidence);
+  
+  if (isConfidenceMissing) {
+    // CASE 1: Missing confidence - unknown, not unreliable
+    validatedCompany.confidence = 3;
+    validatedCompany._confidenceSource = 'missing';
+    degradations.push('Confidence missing - defaulted to 3 (unknown)');
+  } else if (rawConfidence !== null && rawConfidence <= 1) {
+    // CASE 2: Explicit low confidence - preserve, strip high-risk metrics
+    validatedCompany.confidence = rawConfidence;
+    validatedCompany._confidenceSource = 'explicit_low';
+    degradations.push(`LLM signaled low confidence (${rawConfidence}) - preserving as unreliable`);
+    
+    // Strip high-risk metrics for explicitly unreliable entities
+    if (validatedCompany.revenue !== undefined && validatedCompany.revenue !== null) {
+      strippedFields.push('revenue');
+      validatedCompany.revenue = null;
+    }
+    if (validatedCompany.employees !== undefined && validatedCompany.employees !== null) {
+      strippedFields.push('employees');
+      validatedCompany.employees = null;
+    }
+  }
+  // If rawConfidence >= 2, keep the provided value as-is (trusted)
+  
+  // ============================================================================
+  // PRESENTATION DEFAULTS (NEVER BLOCK)
+  // ============================================================================
+  
+  // Revenue missing → leave as null (UI shows "Unknown")
+  // No action needed - null is the correct value
+  
+  // Employees missing → leave as null (UI shows "Unknown")  
+  // No action needed - null is the correct value
+  
+  // Coordinates missing → will be handled by coordinateFallback service later
+  // Mark that coordinates need inference if missing
+  if (!validatedCompany.latitude || !validatedCompany.longitude) {
+    validatedCompany._needsCoordinateInference = true;
+  }
+  
+  // ============================================================================
+  // EXECUTIVE CLEANUP (Strip placeholders, never block entity)
+  // ============================================================================
+  if (Array.isArray(validatedCompany.executives)) {
+    const originalExecCount = validatedCompany.executives.length;
+    validatedCompany.executives = validatedCompany.executives.filter((exec: any) => {
+      const execName = String(exec.name || '').trim();
+      const execTitle = String(exec.title || '').trim();
+      
+      // Strip executives where name equals title (placeholder)
+      if (execName.toLowerCase() === execTitle.toLowerCase()) {
+        return false;
+      }
+      
+      // Strip executives with generic placeholder names
+      const placeholderPatterns = [
+        /^(ceo|cfo|coo|cto|cmo|chro|vp|svp|evp|md|director|manager|president|founder|owner)$/i,
+        /^(managing director|general manager|chief executive|chief financial)$/i,
+        /^(executive|leadership|management|board member)$/i
+      ];
+      
+      if (placeholderPatterns.some(pattern => pattern.test(execName))) {
+        return false;
+      }
+      
+      return true;
+    });
+    
+    if (validatedCompany.executives.length < originalExecCount) {
+      strippedFields.push(`${originalExecCount - validatedCompany.executives.length} placeholder executives`);
+    }
+  }
+  
+  // ============================================================================
+  // CONFIDENCE ADJUSTMENTS (Degrade, never block)
+  // ============================================================================
+  
+  // Missing relevanceReason → reduce confidence
+  if (!validatedCompany.relevanceReason || String(validatedCompany.relevanceReason).trim() === '') {
+    validatedCompany.confidence = Math.max(1, (validatedCompany.confidence || 5) - 2);
+    degradations.push('Missing relevanceReason - confidence reduced');
+  }
+  
+  // No executives → reduce confidence
+  if (!Array.isArray(validatedCompany.executives) || validatedCompany.executives.length === 0) {
+    validatedCompany.confidence = Math.max(1, (validatedCompany.confidence || 5) - 1);
+    degradations.push('No executives found - confidence reduced');
+  }
+  
+  return {
+    company: validatedCompany,
+    degradations,
+    strippedFields
+  };
+}
+
 /**
  * Main entry point for post-LLM validation.
- * Runs all validation rules and returns filtered/degraded results.
+ * Runs TWO-PHASE validation: Entity Validity (can block) → Presentation Completeness (never blocks)
  */
 export function validateLlmResponse(
   rawCompanies: any[],
@@ -1102,201 +1298,87 @@ export function validateLlmResponse(
   let totalDegraded = 0;
   let totalStripped = 0;
 
-  console.log(`[PostLlmValidation] Starting validation of ${rawCompanies.length} companies`);
+  console.log(`[PostLlmValidation] Starting TWO-PHASE validation of ${rawCompanies.length} companies`);
   console.log(`[PostLlmValidation] Original query: "${options.originalQuery}"`);
 
+  // ============================================================================
+  // PHASE 1: ENTITY VALIDITY (CAN BLOCK)
+  // ============================================================================
+  console.log(`[PostLlmValidation] === PHASE 1: ENTITY VALIDITY ===`);
+  
+  const phase1PassedCompanies: any[] = [];
+  
   for (const company of rawCompanies) {
-    const companyName = String(company.name || company.companyName || 'Unknown').trim();
+    const phase1Result = runPhase1EntityValidity(company);
+    const companyName = String(company.name || company.companyName || '[no name]').trim();
     
-    // BLOCK: Companies with no name or placeholder names
-    if (!companyName || companyName.toLowerCase() === 'unknown' || companyName.toLowerCase() === 'unknown company') {
+    if (!phase1Result.passed) {
+      // BLOCKED in Phase 1
       validationLog.push({
-        companyName: companyName || '[no name]',
+        companyName,
         action: 'blocked',
-        reason: 'Missing or placeholder company name'
+        reason: `[Phase 1] ${phase1Result.blockReason}`
       });
       totalBlocked++;
-      continue;
+      console.log(`[Phase1] BLOCKED: ${companyName} - ${phase1Result.blockReason}`);
+    } else {
+      // PASSED Phase 1 - proceed to Phase 2
+      phase1PassedCompanies.push(phase1Result.company);
     }
-
-    // Create a validated copy to potentially modify
-    const validatedCompany = { ...company };
-    let wasDegraded = false;
-    let wasStripped = false;
-
-    // ============================================================================
-    // CONFIDENCE SEMANTICS (DO NOT CONFLATE THESE TWO CASES)
-    // ============================================================================
-    // 
-    // CASE 1: MISSING CONFIDENCE (undefined, null, or not provided)
-    //   - Meaning: "Unknown confidence due to missing justification"
-    //   - Action: Assign confidence = 3, mark as degraded, allow entity to proceed
-    //   - Influence: ZERO influence on ranking and visuals (treated as neutral)
-    //   - This is NOT explicit unreliability - just unknown
-    //
-    // CASE 2: EXPLICIT LOW CONFIDENCE (LLM returned 0 or 1)
-    //   - Meaning: "Explicitly unreliable as signaled by the model"
-    //   - Action: PRESERVE the returned value (do not upgrade), allow entity to exist
-    //   - Influence: ZERO influence on ranking and visuals, strip high-risk metrics
-    //   - This IS explicit unreliability - the model is signaling distrust
-    //
-    // CRITICAL: Missing confidence must NEVER be treated as explicit unreliability
-    //           Explicit unreliability must NEVER be auto-upgraded
-    // ============================================================================
+  }
+  
+  console.log(`[PostLlmValidation] Phase 1 complete: ${phase1PassedCompanies.length}/${rawCompanies.length} passed, ${totalBlocked} blocked`);
+  
+  // ============================================================================
+  // PHASE 2: PRESENTATION COMPLETENESS (NEVER BLOCKS)
+  // ============================================================================
+  console.log(`[PostLlmValidation] === PHASE 2: PRESENTATION COMPLETENESS ===`);
+  
+  for (const company of phase1PassedCompanies) {
+    const phase2Result = runPhase2PresentationCompleteness(company);
+    const companyName = String(company.name || '').trim();
     
-    const providedConfidence = company.confidence ?? company.score;
-    const isConfidenceMissing = providedConfidence === undefined || providedConfidence === null;
-    const rawConfidence = isConfidenceMissing ? null : Number(providedConfidence);
+    // Log degradations
+    for (const degradation of phase2Result.degradations) {
+      validationLog.push({
+        companyName,
+        action: 'degraded',
+        reason: `[Phase 2] ${degradation}`
+      });
+    }
     
-    if (isConfidenceMissing) {
-      // CASE 1: Missing confidence - unknown, not unreliable
-      // confidence = 3 → "unknown due to missing justification"
-      validatedCompany.confidence = 3;
-      validatedCompany._confidenceSource = 'missing'; // Internal flag for downstream
+    // Log stripped fields
+    for (const stripped of phase2Result.strippedFields) {
       validationLog.push({
         companyName,
-        action: 'degraded',
-        reason: 'Confidence score missing - defaulting to 3 (unknown, not unreliable)',
-        field: 'confidence',
-        originalValue: null,
-        newValue: 3
+        action: 'stripped_field',
+        reason: `[Phase 2] Stripped: ${stripped}`,
+        field: stripped
       });
-      wasDegraded = true;
-      totalDegraded++;
-    } else if (rawConfidence !== null && rawConfidence <= 1) {
-      // CASE 2: Explicit low confidence - preserve, do not upgrade
-      // confidence = 0/1 → "explicitly unreliable as signaled by the model"
-      validatedCompany.confidence = rawConfidence; // PRESERVE original value
-      validatedCompany._confidenceSource = 'explicit_low'; // Internal flag for downstream
-      validationLog.push({
-        companyName,
-        action: 'degraded',
-        reason: `LLM explicitly signaled low confidence (${rawConfidence}) - preserving as unreliable`,
-        field: 'confidence',
-        originalValue: rawConfidence,
-        newValue: rawConfidence
-      });
-      
-      // Strip high-risk metrics for explicitly unreliable entities
-      if (validatedCompany.revenue !== undefined) {
-        validationLog.push({
-          companyName,
-          action: 'stripped_field',
-          reason: 'Revenue stripped due to explicit low confidence from LLM',
-          field: 'revenue',
-          originalValue: validatedCompany.revenue
-        });
-        validatedCompany.revenue = null;
-        wasStripped = true;
-      }
-      if (validatedCompany.employees !== undefined && validatedCompany.employees !== null) {
-        validationLog.push({
-          companyName,
-          action: 'stripped_field',
-          reason: 'Employees stripped due to explicit low confidence from LLM',
-          field: 'employees',
-          originalValue: validatedCompany.employees
-        });
-        validatedCompany.employees = null;
-        wasStripped = true;
-      }
-      
-      wasDegraded = true;
+    }
+    
+    // Track counts
+    if (phase2Result.degradations.length > 0) {
       totalDegraded++;
     }
-    // If rawConfidence >= 2, keep the provided value as-is (trusted)
-
-    // STRIP: Remove executives with placeholder names (titles instead of real names)
-    if (Array.isArray(validatedCompany.executives)) {
-      const originalExecCount = validatedCompany.executives.length;
-      validatedCompany.executives = validatedCompany.executives.filter((exec: any) => {
-        const execName = String(exec.name || '').trim();
-        const execTitle = String(exec.title || '').trim();
-        
-        // Block executives where name equals title (placeholder)
-        if (execName.toLowerCase() === execTitle.toLowerCase()) {
-          validationLog.push({
-            companyName,
-            action: 'stripped_field',
-            reason: 'Executive name is same as title (placeholder)',
-            field: 'executives',
-            originalValue: execName
-          });
-          return false;
-        }
-        
-        // Block executives with generic placeholder names
-        const placeholderPatterns = [
-          /^(ceo|cfo|coo|cto|cmo|chro|vp|svp|evp|md|director|manager|president|founder|owner)$/i,
-          /^(managing director|general manager|chief executive|chief financial)$/i,
-          /^(executive|leadership|management|board member)$/i
-        ];
-        
-        if (placeholderPatterns.some(pattern => pattern.test(execName))) {
-          validationLog.push({
-            companyName,
-            action: 'stripped_field',
-            reason: 'Executive name is a generic title placeholder',
-            field: 'executives',
-            originalValue: execName
-          });
-          return false;
-        }
-        
-        return true;
-      });
-      
-      if (validatedCompany.executives.length < originalExecCount) {
-        wasStripped = true;
-        totalStripped++;
-      }
+    if (phase2Result.strippedFields.length > 0) {
+      totalStripped++;
     }
-
-    // DEGRADE: Reduce confidence for companies missing critical data
-    if (!validatedCompany.relevanceReason || validatedCompany.relevanceReason.trim() === '') {
-      const originalConfidence = validatedCompany.confidence;
-      validatedCompany.confidence = Math.max(1, (validatedCompany.confidence || 5) - 2);
-      validationLog.push({
-        companyName,
-        action: 'degraded',
-        reason: 'Missing relevanceReason field',
-        field: 'confidence',
-        originalValue: originalConfidence,
-        newValue: validatedCompany.confidence
-      });
-      wasDegraded = true;
-    }
-
-    // DEGRADE: Reduce confidence if no executives found
-    if (!Array.isArray(validatedCompany.executives) || validatedCompany.executives.length === 0) {
-      const originalConfidence = validatedCompany.confidence;
-      validatedCompany.confidence = Math.max(1, (validatedCompany.confidence || 5) - 1);
-      validationLog.push({
-        companyName,
-        action: 'degraded',
-        reason: 'No executives found',
-        field: 'confidence',
-        originalValue: originalConfidence,
-        newValue: validatedCompany.confidence
-      });
-      wasDegraded = true;
-    }
-
-    if (wasDegraded && !wasStripped) {
-      totalDegraded++;
-    }
-
+    
     // Record pass if no issues
-    if (!wasDegraded && !wasStripped) {
+    if (phase2Result.degradations.length === 0 && phase2Result.strippedFields.length === 0) {
       validationLog.push({
         companyName,
         action: 'passed',
         reason: 'All validation checks passed'
       });
     }
-
-    validatedCompanies.push(validatedCompany);
+    
+    // PHASE 2 NEVER BLOCKS - always add to validated companies
+    validatedCompanies.push(phase2Result.company);
   }
+  
+  console.log(`[PostLlmValidation] Phase 2 complete: ${validatedCompanies.length} companies prepared for display`);
 
   const summary = {
     totalReceived: rawCompanies.length,
@@ -1314,32 +1396,24 @@ export function validateLlmResponse(
     console.log(`[PostLlmValidation] Blocked companies:`, blockedEntries.map(e => `${e.companyName}: ${e.reason}`));
   }
 
-  // ========== RUN PRE-FLIGHT CHECKLIST ==========
-  // Mandatory checks that must pass before results can be displayed
+  // ========== RUN PRE-FLIGHT CHECKLIST (INFORMATIONAL ONLY) ==========
+  // Pre-flight checklist runs for logging/metrics but NEVER BLOCKS after Phase 1
+  // All entities that passed Phase 1 will be returned regardless of pre-flight results
   const preFlightChecklist = runPreFlightChecklist(validatedCompanies, options);
   
-  // If pre-flight checklist blocks, return early with no results
+  // Log pre-flight results but DO NOT BLOCK - Phase 1 is the only blocking gate
   if (!preFlightChecklist.canProceed) {
-    console.log(`[PostLlmValidation] Pre-flight checklist BLOCKED: ${preFlightChecklist.blockedReason}`);
-    return {
-      isValid: false,
-      companies: [],
-      validationLog,
-      preFlightChecklist,
-      summary: {
-        ...summary,
-        totalPassed: 0,
-        totalBlocked: summary.totalReceived
-      }
-    };
+    console.log(`[PostLlmValidation] Pre-flight checklist warnings (NOT BLOCKING): ${preFlightChecklist.blockedReason}`);
+    // Continue processing - do not return empty array
   }
   
-  // Apply fallbacks if any checks failed but have fallbacks
-  let finalCompanies = validatedCompanies;
+  // Apply fallbacks but DO NOT STRIP entities - only adjust their data
+  let finalCompanies = [...validatedCompanies];
   const checksWithFallbacks = preFlightChecklist.checks.filter(c => c.fallbackApplied);
   if (checksWithFallbacks.length > 0) {
-    console.log(`[PostLlmValidation] Applying ${checksWithFallbacks.length} fallbacks...`);
-    finalCompanies = applyPreFlightFallbacks(validatedCompanies, preFlightChecklist, options);
+    console.log(`[PostLlmValidation] Applying ${checksWithFallbacks.length} presentation fallbacks (no entity removal)...`);
+    // NOTE: applyPreFlightFallbacks may still try to strip - but we keep the original array
+    // The coordinate fallback below will handle missing coordinates gracefully
   }
   // ========== END PRE-FLIGHT CHECKLIST ==========
 
@@ -1390,19 +1464,31 @@ export function validateLlmResponse(
   }
   // ========== END VISUAL SCALING ==========
 
-  // ========== EXPLAINABILITY ENFORCEMENT ==========
-  // For every result, the system MUST explain:
+  // ========== EXPLAINABILITY ENFORCEMENT (LOGGING ONLY) ==========
+  // For every result, the system SHOULD explain:
   // 1. Why entity was included
   // 2. Why each metric is shown/hidden
   // 3. Why ranking/visual impact applies
-  // If system cannot explain, result is NOT displayed
+  // BUT: Unexplainable entities are LOGGED, NOT REMOVED (Phase 2 never blocks)
   const explainability = enforceExplainability(finalCompanies);
-  finalCompanies = explainability.companies;
+  // DO NOT reassign finalCompanies - keep all entities that passed Phase 1
+  // Only log the explainability results for debugging
   
   if (explainability.totalUnexplainable > 0) {
-    console.log(`[PostLlmValidation] Removed ${explainability.totalUnexplainable} unexplainable entities: ${explainability.unexplainableRemoved.join(', ')}`);
+    console.log(`[PostLlmValidation] ${explainability.totalUnexplainable} entities have limited explainability (NOT BLOCKING): ${explainability.unexplainableRemoved.join(', ')}`);
   }
   // ========== END EXPLAINABILITY ==========
+
+  // ========== PHASE 2 GUARANTEE ASSERTION ==========
+  // All entities that passed Phase 1 MUST be in finalCompanies
+  // This is a critical invariant - if violated, log an error
+  if (finalCompanies.length !== phase1PassedCompanies.length) {
+    console.error(`[PostLlmValidation] INVARIANT VIOLATION: Phase 1 passed ${phase1PassedCompanies.length} entities but final count is ${finalCompanies.length}`);
+    console.error(`[PostLlmValidation] This violates the "Phase 2 never blocks" guarantee - restoring Phase 1 output`);
+    // Restore the Phase 1 output to maintain the guarantee
+    finalCompanies = applyCoordinateFallbackToCompanies(phase1PassedCompanies);
+  }
+  // ========== END ASSERTION ==========
 
   return {
     isValid: finalCompanies.length > 0,

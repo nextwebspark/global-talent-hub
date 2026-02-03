@@ -435,6 +435,288 @@ export function validateMapScalingFactors(scalingFields: string[]): { valid: boo
   };
 }
 
+// ========== EXPLAINABILITY FRAMEWORK ==========
+// For every result, the system MUST be able to answer internally:
+// 1. Why the entity was included
+// 2. Why a metric is shown or hidden
+// 3. Why ranking or visual impact applies
+// If the system cannot explain, the result must NOT be displayed.
+
+export interface EntityExplanation {
+  entityId: string;
+  entityName: string;
+  isDisplayable: boolean;
+  explanations: {
+    inclusion: InclusionExplanation;
+    metrics: MetricExplanation[];
+    ranking: RankingExplanation;
+    visual: VisualExplanation;
+  };
+  missingExplanations: string[];
+}
+
+export interface InclusionExplanation {
+  explained: boolean;
+  reason: string;
+  criteria: string[];
+}
+
+export interface MetricExplanation {
+  metricName: string;
+  shown: boolean;
+  explained: boolean;
+  reason: string;
+}
+
+export interface RankingExplanation {
+  explained: boolean;
+  position: number;
+  reason: string;
+  factors: string[];
+}
+
+export interface VisualExplanation {
+  explained: boolean;
+  scalingApplied: boolean;
+  reason: string;
+}
+
+export interface ExplainabilityResult {
+  companies: any[];
+  totalExplainable: number;
+  totalUnexplainable: number;
+  unexplainableRemoved: string[];
+  explanationLog: EntityExplanation[];
+}
+
+/**
+ * Generate explanation for why an entity was included in results.
+ */
+function explainInclusion(company: any): InclusionExplanation {
+  const criteria: string[] = [];
+  const reasons: string[] = [];
+  
+  // Check name
+  if (company.name && String(company.name).trim().length > 0) {
+    criteria.push('has_valid_name');
+    reasons.push(`Named entity: "${company.name}"`);
+  }
+  
+  // Check coordinates
+  if (company.latitude !== undefined && company.latitude !== null &&
+      company.longitude !== undefined && company.longitude !== null) {
+    criteria.push('has_coordinates');
+    reasons.push(`Location: (${company.latitude}, ${company.longitude})`);
+  }
+  
+  // Check country
+  if (company.country && String(company.country).trim().length > 0) {
+    criteria.push('has_country');
+    reasons.push(`Country: ${company.country}`);
+  }
+  
+  // Check relevance reason from LLM
+  if (company.relevanceReason && String(company.relevanceReason).trim().length > 0) {
+    criteria.push('has_relevance_reason');
+    reasons.push(`Relevance: ${company.relevanceReason}`);
+  }
+  
+  const hasMinimumCriteria = criteria.includes('has_valid_name') && 
+                              criteria.includes('has_coordinates') && 
+                              criteria.includes('has_country');
+  
+  return {
+    explained: hasMinimumCriteria,
+    reason: hasMinimumCriteria 
+      ? reasons.join('; ')
+      : 'Missing minimum criteria for inclusion (name, coordinates, or country)',
+    criteria
+  };
+}
+
+/**
+ * Generate explanations for why each metric is shown or hidden.
+ */
+function explainMetrics(company: any): MetricExplanation[] {
+  const metricsToExplain = ['revenue', 'employees', 'confidence'];
+  const explanations: MetricExplanation[] = [];
+  
+  for (const metricName of metricsToExplain) {
+    const value = company[metricName];
+    const hasValue = value !== null && value !== undefined;
+    const isNumeric = hasValue && !isNaN(Number(value));
+    
+    if (hasValue && isNumeric) {
+      explanations.push({
+        metricName,
+        shown: true,
+        explained: true,
+        reason: `${metricName} = ${value} (valid numeric value present)`
+      });
+    } else if (hasValue && !isNumeric) {
+      explanations.push({
+        metricName,
+        shown: false,
+        explained: true,
+        reason: `${metricName} hidden: value "${value}" is not numeric`
+      });
+    } else {
+      explanations.push({
+        metricName,
+        shown: false,
+        explained: true,
+        reason: `${metricName} hidden: no authoritative value available`
+      });
+    }
+  }
+  
+  return explanations;
+}
+
+/**
+ * Generate explanation for ranking position.
+ */
+function explainRanking(company: any, position: number): RankingExplanation {
+  const factors: string[] = [];
+  const reasons: string[] = [];
+  
+  // Confidence factor
+  const confidence = Number(company.confidence || 0);
+  factors.push(`confidence: ${confidence}`);
+  reasons.push(`Confidence score: ${confidence}/10`);
+  
+  // Revenue factor (if available)
+  if (company.revenue !== null && company.revenue !== undefined) {
+    factors.push(`revenue: ${company.revenue}`);
+    reasons.push(`Revenue: $${Number(company.revenue).toLocaleString()}`);
+  }
+  
+  // Employees factor (if available)
+  if (company.employees !== null && company.employees !== undefined) {
+    factors.push(`employees: ${company.employees}`);
+    reasons.push(`Employees: ${company.employees}`);
+  }
+  
+  return {
+    explained: factors.length > 0,
+    position,
+    reason: `Ranked #${position} based on: ${reasons.join(', ')}`,
+    factors
+  };
+}
+
+/**
+ * Generate explanation for visual scaling.
+ */
+function explainVisual(company: any): VisualExplanation {
+  const scalingApplied = company._scalingApplied === true;
+  const scalingValue = company._scalingValue;
+  const confidence = Number(company.confidence || 0);
+  
+  if (scalingApplied) {
+    return {
+      explained: true,
+      scalingApplied: true,
+      reason: `Visual scaling applied: metric value ${scalingValue} with confidence ${confidence} (≥6 threshold met)`
+    };
+  } else {
+    const reasons: string[] = [];
+    if (confidence < 6) {
+      reasons.push(`confidence ${confidence} < 6 threshold`);
+    }
+    if (scalingValue === null || scalingValue === undefined || scalingValue === 1) {
+      reasons.push('metric not available or using neutral fallback');
+    }
+    
+    return {
+      explained: true,
+      scalingApplied: false,
+      reason: `Neutral visual sizing used: ${reasons.join('; ')}`
+    };
+  }
+}
+
+/**
+ * Enforce explainability - every result must have complete explanations.
+ * If any explanation is missing, the result is NOT displayable.
+ */
+export function enforceExplainability(companies: any[]): ExplainabilityResult {
+  const explanationLog: EntityExplanation[] = [];
+  const displayableCompanies: any[] = [];
+  const unexplainableRemoved: string[] = [];
+  
+  console.log(`[Explainability] Checking ${companies.length} companies for complete explanations`);
+  
+  companies.forEach((company, index) => {
+    const entityId = String(company.id || `temp-${index}`);
+    const entityName = String(company.name || 'Unknown').trim();
+    
+    // Generate all explanations
+    const inclusion = explainInclusion(company);
+    const metrics = explainMetrics(company);
+    const ranking = explainRanking(company, index + 1);
+    const visual = explainVisual(company);
+    
+    // Check for missing explanations
+    const missingExplanations: string[] = [];
+    
+    if (!inclusion.explained) {
+      missingExplanations.push('inclusion_not_explained');
+    }
+    
+    const unexplainedMetrics = metrics.filter(m => !m.explained);
+    if (unexplainedMetrics.length > 0) {
+      missingExplanations.push(`metrics_not_explained: ${unexplainedMetrics.map(m => m.metricName).join(', ')}`);
+    }
+    
+    if (!ranking.explained) {
+      missingExplanations.push('ranking_not_explained');
+    }
+    
+    if (!visual.explained) {
+      missingExplanations.push('visual_not_explained');
+    }
+    
+    const isDisplayable = missingExplanations.length === 0 && inclusion.explained;
+    
+    const explanation: EntityExplanation = {
+      entityId,
+      entityName,
+      isDisplayable,
+      explanations: {
+        inclusion,
+        metrics,
+        ranking,
+        visual
+      },
+      missingExplanations
+    };
+    
+    explanationLog.push(explanation);
+    
+    if (isDisplayable) {
+      // Attach explanation to company for downstream use
+      displayableCompanies.push({
+        ...company,
+        _explanation: explanation
+      });
+    } else {
+      unexplainableRemoved.push(entityName);
+      console.log(`[Explainability] Removed unexplainable entity: ${entityName} - ${missingExplanations.join(', ')}`);
+    }
+  });
+  
+  console.log(`[Explainability] Result: ${displayableCompanies.length} displayable, ${unexplainableRemoved.length} removed`);
+  
+  return {
+    companies: displayableCompanies,
+    totalExplainable: displayableCompanies.length,
+    totalUnexplainable: unexplainableRemoved.length,
+    unexplainableRemoved,
+    explanationLog
+  };
+}
+
 // ========== VISUAL SCALING ENFORCEMENT ==========
 // Map bubbles and other visual scales may ONLY use:
 // 1. High-confidence metrics (confidence >= 6)
@@ -745,6 +1027,7 @@ export interface PostLlmValidationResult {
   narrativeSeparation?: NarrativeSeparationResult;
   rankingIntegrity?: RankingIntegrityResult;
   visualScaling?: VisualScalingResult;
+  explainability?: ExplainabilityResult;
   summary: {
     totalReceived: number;
     totalPassed: number;
@@ -987,6 +1270,20 @@ export function validateLlmResponse(
   }
   // ========== END VISUAL SCALING ==========
 
+  // ========== EXPLAINABILITY ENFORCEMENT ==========
+  // For every result, the system MUST explain:
+  // 1. Why entity was included
+  // 2. Why each metric is shown/hidden
+  // 3. Why ranking/visual impact applies
+  // If system cannot explain, result is NOT displayed
+  const explainability = enforceExplainability(finalCompanies);
+  finalCompanies = explainability.companies;
+  
+  if (explainability.totalUnexplainable > 0) {
+    console.log(`[PostLlmValidation] Removed ${explainability.totalUnexplainable} unexplainable entities: ${explainability.unexplainableRemoved.join(', ')}`);
+  }
+  // ========== END EXPLAINABILITY ==========
+
   return {
     isValid: finalCompanies.length > 0,
     companies: finalCompanies,
@@ -995,6 +1292,7 @@ export function validateLlmResponse(
     narrativeSeparation,
     rankingIntegrity,
     visualScaling,
+    explainability,
     summary: {
       ...summary,
       totalPassed: finalCompanies.length

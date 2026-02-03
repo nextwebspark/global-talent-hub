@@ -272,26 +272,81 @@ Extract up to ${limit} companies that match the query. Remember:
     return;
   }
   
-  yield { type: 'status', data: { message: `Found ${extractedCompanies.length} companies, verifying metrics...`, progress: 50 } };
+  yield { type: 'status', data: { message: `Found ${extractedCompanies.length} companies, enforcing tier-based validation...`, progress: 50 } };
+  
+  // ============================================================================
+  // HARD ENFORCEMENT: Tier-based metric validation
+  // This runs AFTER LLM extraction to ensure the LLM cannot invent metrics
+  // ============================================================================
   
   let processed = 0;
   for (const company of extractedCompanies.slice(0, limit)) {
     processed++;
     const progress = 50 + Math.round((processed / limit) * 40);
     
-    yield { type: 'status', data: { message: `Verifying ${company.name}...`, progress } };
+    yield { type: 'status', data: { message: `Validating ${company.name}...`, progress } };
     
-    let verifiedRevenue = company.revenue;
-    let verifiedCurrency = company.revenueCurrency;
-    let verifiedYear = company.revenueFiscalYear;
-    let verifiedSource = company.revenueSource;
+    // ============================================================================
+    // TIER-BASED ENFORCEMENT (Code level, not prompt level)
+    // ============================================================================
+    // Tier 3: Name only - ALL metrics forced to null regardless of what LLM returned
+    // Tier 2: Revenue allowed only with currency + year + source
+    // Tier 1: Revenue allowed only with currency + year + source
+    // ============================================================================
     
-    if (company.sourceTier === 3 || !company.revenue) {
+    let verifiedRevenue: number | null = null;
+    let verifiedCurrency: string | null = null;
+    let verifiedYear: number | null = null;
+    let verifiedSource: string | null = null;
+    let verifiedEmployees: number | null = null;
+    let verifiedEmployeesSource: string | null = null;
+    
+    // HARD RULE: Tier 3 sources = name discovery only
+    if (company.sourceTier === 3) {
+      console.log(`[RetrievalDiscovery] ${company.name}: Tier 3 source - forcing ALL metrics to null`);
       verifiedRevenue = null;
       verifiedCurrency = null;
       verifiedYear = null;
-      verifiedSource = company.sourceTier === 3 ? 'Tier 3 source - metrics not available' : 'No revenue found in sources';
-    } else if (company.sourceTier <= 2 && company.revenue) {
+      verifiedSource = 'Tier 3 source - name discovery only, metrics unavailable';
+      verifiedEmployees = null;
+      verifiedEmployeesSource = 'Tier 3 source - metrics unavailable';
+    } 
+    // HARD RULE: Tier 1/2 revenue requires currency + year + explicit source
+    else if (company.sourceTier <= 2) {
+      // Check if revenue has required metadata
+      const hasCurrency = company.revenueCurrency && company.revenueCurrency.length >= 2;
+      const hasYear = company.revenueFiscalYear && company.revenueFiscalYear >= 2015 && company.revenueFiscalYear <= 2030;
+      const hasSource = company.revenueSource && company.revenueSource.length > 5;
+      const hasRevenue = company.revenue && company.revenue > 0;
+      
+      if (hasRevenue && hasCurrency && hasYear && hasSource) {
+        // Revenue passes validation - keep it
+        verifiedRevenue = company.revenue!;
+        verifiedCurrency = company.revenueCurrency!;
+        verifiedYear = company.revenueFiscalYear!;
+        verifiedSource = company.revenueSource!;
+        console.log(`[RetrievalDiscovery] ${company.name}: Revenue validated (${verifiedCurrency} ${verifiedRevenue} FY${verifiedYear})`);
+      } else {
+        // Revenue FAILS validation - force to null
+        console.log(`[RetrievalDiscovery] ${company.name}: Revenue REJECTED - missing currency(${hasCurrency})/year(${hasYear})/source(${hasSource})`);
+        verifiedRevenue = null;
+        verifiedCurrency = null;
+        verifiedYear = null;
+        verifiedSource = `Revenue rejected: missing ${!hasCurrency ? 'currency ' : ''}${!hasYear ? 'year ' : ''}${!hasSource ? 'source' : ''}`.trim();
+      }
+      
+      // Employees from Tier 1/2 are allowed with source
+      if (company.employees && company.employees > 0 && company.employeesSource) {
+        verifiedEmployees = company.employees;
+        verifiedEmployeesSource = company.employeesSource;
+      }
+    }
+    
+    // ============================================================================
+    // VERIFICATION STEP: Search for additional authoritative sources
+    // ============================================================================
+    
+    if (verifiedRevenue && company.sourceTier <= 2) {
       try {
         const verificationResults = await webSearchService.searchForCompanyVerification(company.name);
         
@@ -350,8 +405,8 @@ Extract up to ${limit} companies that match the query. Remember:
       revenueCurrency: verifiedCurrency,
       revenueFiscalYear: verifiedYear,
       revenueSource: verifiedSource,
-      employees: company.employees,
-      employeesSource: company.employeesSource,
+      employees: verifiedEmployees,
+      employeesSource: verifiedEmployeesSource,
       confidence: company.confidence || 5,
       relevanceReason: company.relevanceReason,
     });

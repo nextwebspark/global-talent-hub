@@ -20,8 +20,9 @@ export const companies = pgTable("companies", {
   region: text("region"),
   country: text("country"),
   streetAddress: text("street_address"),
-  latitude: numeric("latitude", { precision: 10, scale: 7 }).notNull(),
-  longitude: numeric("longitude", { precision: 10, scale: 7 }).notNull(),
+  latitude: numeric("latitude", { precision: 10, scale: 7 }),
+  longitude: numeric("longitude", { precision: 10, scale: 7 }),
+  locationPrecision: text("location_precision").default("unknown"), // exact, city, country, unknown
   revenue: numeric("revenue", { precision: 15, scale: 2 }),
   revenueSource: text("revenue_source"),
   revenueCurrency: text("revenue_currency"), // Original currency (USD, AED, SAR, QAR, etc.) - REQUIRED for revenue display

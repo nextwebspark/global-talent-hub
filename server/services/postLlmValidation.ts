@@ -28,6 +28,7 @@ import {
   getNarrativeCompanyFields,
   isNarrativeField 
 } from './fieldClassification';
+import { applyCoordinateFallbackToCompanies } from './coordinateFallback';
 
 // ========== SEARCH PRE-FLIGHT CHECKLIST ==========
 // Mandatory checks that must pass before results can be displayed.
@@ -100,14 +101,17 @@ export function runPreFlightChecklist(
   }
   checks.push(confidenceCheck);
 
-  // CHECK 3: Required Fields Present
-  // Every company must have: name, country, latitude, longitude
-  const REQUIRED_FIELDS = ['name', 'country', 'latitude', 'longitude'];
+  // CHECK 3: Required Fields Present (ENTITY EXISTENCE ONLY)
+  // Entity existence requires ONLY: name, country, primary activity (sector OR businessType)
+  // Coordinates and other rendering fields can degrade gracefully
+  const ENTITY_EXISTENCE_FIELDS = ['name', 'country'];
   const companiesWithRequiredFields = companies.filter(c => {
-    return REQUIRED_FIELDS.every(field => {
-      const value = c[field];
-      return value !== undefined && value !== null && value !== '';
-    });
+    const hasName = c.name !== undefined && c.name !== null && String(c.name).trim() !== '';
+    const hasCountry = c.country !== undefined && c.country !== null && String(c.country).trim() !== '';
+    // Primary activity can be sector OR businessType
+    const hasPrimaryActivity = (c.sector && String(c.sector).trim() !== '') || 
+                                (c.businessType && String(c.businessType).trim() !== '');
+    return hasName && hasCountry && hasPrimaryActivity;
   });
   const allHaveRequiredFields = companiesWithRequiredFields.length === companies.length;
   
@@ -117,14 +121,18 @@ export function runPreFlightChecklist(
     passed: allHaveRequiredFields,
     fallbackApplied: false,
     reason: allHaveRequiredFields
-      ? 'All companies have required fields (name, country, coordinates)'
-      : `${companies.length - companiesWithRequiredFields.length} companies missing required fields`
+      ? 'All companies have required fields (name, country, primary activity)'
+      : `${companies.length - companiesWithRequiredFields.length} companies missing required fields (name, country, or primary activity)`
   };
   
-  // Fallback: Strip companies missing required fields
+  // Fallback: Strip companies missing required fields - but coordinates can be inferred
   if (!allHaveRequiredFields && companiesWithRequiredFields.length > 0) {
     requiredFieldsCheck.fallbackApplied = true;
-    requiredFieldsCheck.fallbackDescription = `${companies.length - companiesWithRequiredFields.length} incomplete companies will be stripped`;
+    requiredFieldsCheck.fallbackDescription = `${companies.length - companiesWithRequiredFields.length} companies missing entity existence fields will be stripped`;
+  } else if (!allHaveRequiredFields && companiesWithRequiredFields.length === 0) {
+    // All companies are missing required fields - still apply fallback to not block entirely
+    requiredFieldsCheck.fallbackApplied = true;
+    requiredFieldsCheck.fallbackDescription = 'All companies missing entity fields - coordinate fallback will be attempted';
   }
   checks.push(requiredFieldsCheck);
 
@@ -220,18 +228,20 @@ export function applyPreFlightFallbacks(
 ): any[] {
   let result = [...companies];
   
-  // Apply REQUIRED_FIELDS fallback: strip companies missing required fields
+  // Apply REQUIRED_FIELDS fallback: strip companies missing entity existence fields
+  // Entity existence requires ONLY: name, country, primary activity
+  // Coordinates will be inferred separately
   const requiredFieldsCheck = checklistResult.checks.find(c => c.id === 'REQUIRED_FIELDS');
   if (requiredFieldsCheck?.fallbackApplied) {
-    const REQUIRED_FIELDS = ['name', 'country', 'latitude', 'longitude'];
     const before = result.length;
     result = result.filter(c => {
-      return REQUIRED_FIELDS.every(field => {
-        const value = c[field];
-        return value !== undefined && value !== null && value !== '';
-      });
+      const hasName = c.name !== undefined && c.name !== null && String(c.name).trim() !== '';
+      const hasCountry = c.country !== undefined && c.country !== null && String(c.country).trim() !== '';
+      const hasPrimaryActivity = (c.sector && String(c.sector).trim() !== '') || 
+                                  (c.businessType && String(c.businessType).trim() !== '');
+      return hasName && hasCountry && hasPrimaryActivity;
     });
-    console.log(`[PreFlightFallback] REQUIRED_FIELDS: Stripped ${before - result.length} incomplete companies`);
+    console.log(`[PreFlightFallback] REQUIRED_FIELDS: Stripped ${before - result.length} companies missing entity existence fields`);
   }
   
   // Apply NO_DUPLICATES fallback: remove duplicate companies
@@ -503,45 +513,59 @@ export interface ExplainabilityResult {
 
 /**
  * Generate explanation for why an entity was included in results.
+ * Entity existence requires: name, country, primary activity (sector/businessType)
+ * Coordinates are NOT required - they can be inferred from city/country
  */
 function explainInclusion(company: any): InclusionExplanation {
   const criteria: string[] = [];
   const reasons: string[] = [];
   
-  // Check name
+  // Check name (REQUIRED)
   if (company.name && String(company.name).trim().length > 0) {
     criteria.push('has_valid_name');
     reasons.push(`Named entity: "${company.name}"`);
   }
   
-  // Check coordinates
-  if (company.latitude !== undefined && company.latitude !== null &&
-      company.longitude !== undefined && company.longitude !== null) {
-    criteria.push('has_coordinates');
-    reasons.push(`Location: (${company.latitude}, ${company.longitude})`);
-  }
-  
-  // Check country
+  // Check country (REQUIRED)
   if (company.country && String(company.country).trim().length > 0) {
     criteria.push('has_country');
     reasons.push(`Country: ${company.country}`);
   }
   
-  // Check relevance reason from LLM
+  // Check primary activity (REQUIRED - sector OR businessType)
+  const hasSector = company.sector && String(company.sector).trim().length > 0;
+  const hasBusinessType = company.businessType && String(company.businessType).trim().length > 0;
+  if (hasSector || hasBusinessType) {
+    criteria.push('has_primary_activity');
+    const activity = hasSector ? company.sector : company.businessType;
+    reasons.push(`Primary activity: ${activity}`);
+  }
+  
+  // Check coordinates (OPTIONAL - can be inferred)
+  if (company.latitude !== undefined && company.latitude !== null &&
+      company.longitude !== undefined && company.longitude !== null) {
+    criteria.push('has_coordinates');
+    const precision = company.locationPrecision || 'unknown';
+    reasons.push(`Location: (${company.latitude}, ${company.longitude}) [${precision}]`);
+  }
+  
+  // Check relevance reason from LLM (OPTIONAL but helpful)
   if (company.relevanceReason && String(company.relevanceReason).trim().length > 0) {
     criteria.push('has_relevance_reason');
     reasons.push(`Relevance: ${company.relevanceReason}`);
   }
   
+  // Entity existence requires: name, country, primary activity
+  // Coordinates NOT required - they can be inferred
   const hasMinimumCriteria = criteria.includes('has_valid_name') && 
-                              criteria.includes('has_coordinates') && 
-                              criteria.includes('has_country');
+                              criteria.includes('has_country') && 
+                              criteria.includes('has_primary_activity');
   
   return {
     explained: hasMinimumCriteria,
     reason: hasMinimumCriteria 
       ? reasons.join('; ')
-      : 'Missing minimum criteria for inclusion (name, coordinates, or country)',
+      : 'Missing minimum criteria for inclusion (name, country, or primary activity)',
     criteria
   };
 }
@@ -1318,6 +1342,20 @@ export function validateLlmResponse(
     finalCompanies = applyPreFlightFallbacks(validatedCompanies, preFlightChecklist, options);
   }
   // ========== END PRE-FLIGHT CHECKLIST ==========
+
+  // ========== COORDINATE FALLBACK ==========
+  // Apply graceful coordinate degradation:
+  // 1. If lat/long provided → use as-is, precision = "exact"
+  // 2. If missing but city provided → derive from city centroid, precision = "city"
+  // 3. If missing but country provided → derive from country centroid, precision = "country"
+  const beforeCoordFallback = finalCompanies.filter(c => c.latitude && c.longitude).length;
+  finalCompanies = applyCoordinateFallbackToCompanies(finalCompanies);
+  const afterCoordFallback = finalCompanies.filter(c => c.latitude && c.longitude).length;
+  
+  if (afterCoordFallback > beforeCoordFallback) {
+    console.log(`[PostLlmValidation] Coordinate fallback: ${afterCoordFallback - beforeCoordFallback} companies got inferred coordinates`);
+  }
+  // ========== END COORDINATE FALLBACK ==========
 
   // ========== NARRATIVE SEPARATION ENFORCEMENT ==========
   // Ensure narrative fields do not contaminate factual data

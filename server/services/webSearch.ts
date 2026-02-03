@@ -182,12 +182,72 @@ export class BingSearchProvider implements SearchProvider {
   }
 }
 
+export class GoogleSearchProvider implements SearchProvider {
+  name = 'google';
+  private apiKey: string;
+  private searchEngineId: string;
+  
+  constructor(apiKey: string, searchEngineId: string) {
+    this.apiKey = apiKey;
+    this.searchEngineId = searchEngineId;
+  }
+  
+  async search(query: string, numResults = 10): Promise<WebSearchResult[]> {
+    const endpoint = 'https://www.googleapis.com/customsearch/v1';
+    const results: WebSearchResult[] = [];
+    
+    const batchSize = 10;
+    const batches = Math.ceil(numResults / batchSize);
+    
+    for (let i = 0; i < batches && results.length < numResults; i++) {
+      const startIndex = i * batchSize + 1;
+      const params = new URLSearchParams({
+        key: this.apiKey,
+        cx: this.searchEngineId,
+        q: query,
+        num: String(Math.min(batchSize, numResults - results.length)),
+        start: String(startIndex),
+      });
+      
+      const response = await fetch(`${endpoint}?${params}`);
+      
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('[WebSearch] Google API error:', error);
+        throw new Error(`Google API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const items = data.items || [];
+      
+      for (const item of items) {
+        results.push({
+          url: item.link,
+          title: item.title,
+          snippet: item.snippet || '',
+          domain: extractDomain(item.link),
+          rank: results.length + 1,
+          provider: this.name,
+        });
+      }
+    }
+    
+    return results.slice(0, numResults);
+  }
+}
+
 export class WebSearchService {
   private provider: SearchProvider | null = null;
   
   constructor() {
+    const googleApiKey = process.env.GOOGLE_API_KEY;
+    const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
     const bingKey = process.env.BING_API_KEY;
-    if (bingKey) {
+    
+    if (googleApiKey && googleSearchEngineId) {
+      this.provider = new GoogleSearchProvider(googleApiKey, googleSearchEngineId);
+      console.log('[WebSearch] Initialized with Google provider');
+    } else if (bingKey) {
       this.provider = new BingSearchProvider(bingKey);
       console.log('[WebSearch] Initialized with Bing provider');
     } else {

@@ -11,10 +11,243 @@
  * - This is an additional guardrail layer, not a replacement
  */
 
+// ========== SEARCH PRE-FLIGHT CHECKLIST ==========
+// Mandatory checks that must pass before results can be displayed.
+// If a check fails, an allowed fallback may be applied.
+
+export interface PreFlightCheck {
+  id: string;
+  name: string;
+  passed: boolean;
+  fallbackApplied: boolean;
+  fallbackDescription?: string;
+  reason: string;
+}
+
+export interface PreFlightChecklistResult {
+  allChecksPassed: boolean;
+  checks: PreFlightCheck[];
+  canProceed: boolean;  // true if all passed OR all have valid fallbacks
+  blockedReason?: string;
+}
+
+/**
+ * SEARCH PRE-FLIGHT CHECKLIST
+ * Results must not be displayed unless all checks pass or an allowed fallback is applied.
+ */
+export function runPreFlightChecklist(
+  companies: any[],
+  options: PostLlmValidationOptions
+): PreFlightChecklistResult {
+  const checks: PreFlightCheck[] = [];
+  
+  console.log(`[PreFlightChecklist] Running mandatory checks...`);
+
+  // CHECK 1: Minimum Results Threshold
+  // Must have at least 1 result, or the search is considered failed
+  const minResultsCheck: PreFlightCheck = {
+    id: 'MIN_RESULTS',
+    name: 'Minimum Results Threshold',
+    passed: companies.length >= 1,
+    fallbackApplied: false,
+    reason: companies.length >= 1 
+      ? `${companies.length} results returned`
+      : 'No results returned from LLM'
+  };
+  // No fallback available for zero results - this blocks the search
+  checks.push(minResultsCheck);
+
+  // CHECK 2: Confidence Threshold
+  // At least one company must have confidence >= 5 (medium confidence)
+  const MIN_ACCEPTABLE_CONFIDENCE = 5;
+  const companiesWithAcceptableConfidence = companies.filter(
+    c => (c.confidence || 0) >= MIN_ACCEPTABLE_CONFIDENCE
+  );
+  const hasAcceptableConfidence = companiesWithAcceptableConfidence.length > 0;
+  
+  const confidenceCheck: PreFlightCheck = {
+    id: 'CONFIDENCE_THRESHOLD',
+    name: 'Confidence Threshold',
+    passed: hasAcceptableConfidence,
+    fallbackApplied: false,
+    reason: hasAcceptableConfidence
+      ? `${companiesWithAcceptableConfidence.length} companies meet confidence threshold (>=${MIN_ACCEPTABLE_CONFIDENCE})`
+      : `No companies meet minimum confidence threshold (>=${MIN_ACCEPTABLE_CONFIDENCE})`
+  };
+  
+  // Fallback: Allow low-confidence results but flag them
+  if (!hasAcceptableConfidence && companies.length > 0) {
+    confidenceCheck.fallbackApplied = true;
+    confidenceCheck.fallbackDescription = 'Low confidence results will be displayed with warning';
+  }
+  checks.push(confidenceCheck);
+
+  // CHECK 3: Required Fields Present
+  // Every company must have: name, country, latitude, longitude
+  const REQUIRED_FIELDS = ['name', 'country', 'latitude', 'longitude'];
+  const companiesWithRequiredFields = companies.filter(c => {
+    return REQUIRED_FIELDS.every(field => {
+      const value = c[field];
+      return value !== undefined && value !== null && value !== '';
+    });
+  });
+  const allHaveRequiredFields = companiesWithRequiredFields.length === companies.length;
+  
+  const requiredFieldsCheck: PreFlightCheck = {
+    id: 'REQUIRED_FIELDS',
+    name: 'Required Fields Present',
+    passed: allHaveRequiredFields,
+    fallbackApplied: false,
+    reason: allHaveRequiredFields
+      ? 'All companies have required fields (name, country, coordinates)'
+      : `${companies.length - companiesWithRequiredFields.length} companies missing required fields`
+  };
+  
+  // Fallback: Strip companies missing required fields
+  if (!allHaveRequiredFields && companiesWithRequiredFields.length > 0) {
+    requiredFieldsCheck.fallbackApplied = true;
+    requiredFieldsCheck.fallbackDescription = `${companies.length - companiesWithRequiredFields.length} incomplete companies will be stripped`;
+  }
+  checks.push(requiredFieldsCheck);
+
+  // CHECK 4: No Duplicate Companies
+  // Company names should be unique (case-insensitive)
+  const seenNames = new Set<string>();
+  const duplicates: string[] = [];
+  for (const c of companies) {
+    const normalizedName = String(c.name || '').toLowerCase().trim();
+    if (seenNames.has(normalizedName)) {
+      duplicates.push(c.name);
+    } else {
+      seenNames.add(normalizedName);
+    }
+  }
+  const noDuplicates = duplicates.length === 0;
+  
+  const duplicatesCheck: PreFlightCheck = {
+    id: 'NO_DUPLICATES',
+    name: 'No Duplicate Companies',
+    passed: noDuplicates,
+    fallbackApplied: false,
+    reason: noDuplicates
+      ? 'All company names are unique'
+      : `${duplicates.length} duplicate company names found`
+  };
+  
+  // Fallback: Duplicates will be stripped in validation
+  if (!noDuplicates) {
+    duplicatesCheck.fallbackApplied = true;
+    duplicatesCheck.fallbackDescription = 'Duplicate companies will be removed, keeping first occurrence';
+  }
+  checks.push(duplicatesCheck);
+
+  // CHECK 5: Result Count Reasonableness
+  // Results should not exceed 2x the requested limit (LLM hallucination check)
+  const maxReasonableResults = options.requestedLimit * 2;
+  const isReasonableCount = companies.length <= maxReasonableResults;
+  
+  const reasonableCountCheck: PreFlightCheck = {
+    id: 'REASONABLE_COUNT',
+    name: 'Result Count Reasonableness',
+    passed: isReasonableCount,
+    fallbackApplied: false,
+    reason: isReasonableCount
+      ? `Result count (${companies.length}) is reasonable for requested limit (${options.requestedLimit})`
+      : `Result count (${companies.length}) exceeds 2x requested limit (${options.requestedLimit})`
+  };
+  
+  // Fallback: Truncate to requested limit
+  if (!isReasonableCount) {
+    reasonableCountCheck.fallbackApplied = true;
+    reasonableCountCheck.fallbackDescription = `Results will be truncated to ${options.requestedLimit}`;
+  }
+  checks.push(reasonableCountCheck);
+
+  // Determine if we can proceed
+  const allChecksPassed = checks.every(c => c.passed);
+  const allHaveFallbacks = checks.every(c => c.passed || c.fallbackApplied);
+  const canProceed = allHaveFallbacks;
+  
+  // Find blocking reason if any
+  let blockedReason: string | undefined;
+  if (!canProceed) {
+    const blockingCheck = checks.find(c => !c.passed && !c.fallbackApplied);
+    blockedReason = blockingCheck 
+      ? `Pre-flight check failed: ${blockingCheck.name} - ${blockingCheck.reason}`
+      : 'Pre-flight checks failed';
+  }
+
+  console.log(`[PreFlightChecklist] Results: ${allChecksPassed ? 'ALL PASSED' : 'SOME FAILED'}, canProceed: ${canProceed}`);
+  checks.forEach(c => {
+    const status = c.passed ? 'PASS' : (c.fallbackApplied ? 'FALLBACK' : 'FAIL');
+    console.log(`[PreFlightChecklist]   ${c.id}: ${status} - ${c.reason}`);
+  });
+
+  return {
+    allChecksPassed,
+    checks,
+    canProceed,
+    blockedReason
+  };
+}
+
+/**
+ * Apply fallbacks from pre-flight checklist to the company data.
+ * This modifies the data according to the fallback rules.
+ */
+export function applyPreFlightFallbacks(
+  companies: any[],
+  checklistResult: PreFlightChecklistResult,
+  options: PostLlmValidationOptions
+): any[] {
+  let result = [...companies];
+  
+  // Apply REQUIRED_FIELDS fallback: strip companies missing required fields
+  const requiredFieldsCheck = checklistResult.checks.find(c => c.id === 'REQUIRED_FIELDS');
+  if (requiredFieldsCheck?.fallbackApplied) {
+    const REQUIRED_FIELDS = ['name', 'country', 'latitude', 'longitude'];
+    const before = result.length;
+    result = result.filter(c => {
+      return REQUIRED_FIELDS.every(field => {
+        const value = c[field];
+        return value !== undefined && value !== null && value !== '';
+      });
+    });
+    console.log(`[PreFlightFallback] REQUIRED_FIELDS: Stripped ${before - result.length} incomplete companies`);
+  }
+  
+  // Apply NO_DUPLICATES fallback: remove duplicate companies
+  const duplicatesCheck = checklistResult.checks.find(c => c.id === 'NO_DUPLICATES');
+  if (duplicatesCheck?.fallbackApplied) {
+    const seenNames = new Set<string>();
+    const before = result.length;
+    result = result.filter(c => {
+      const normalizedName = String(c.name || '').toLowerCase().trim();
+      if (seenNames.has(normalizedName)) {
+        return false;
+      }
+      seenNames.add(normalizedName);
+      return true;
+    });
+    console.log(`[PreFlightFallback] NO_DUPLICATES: Removed ${before - result.length} duplicate companies`);
+  }
+  
+  // Apply REASONABLE_COUNT fallback: truncate to requested limit
+  const reasonableCountCheck = checklistResult.checks.find(c => c.id === 'REASONABLE_COUNT');
+  if (reasonableCountCheck?.fallbackApplied) {
+    const before = result.length;
+    result = result.slice(0, options.requestedLimit);
+    console.log(`[PreFlightFallback] REASONABLE_COUNT: Truncated from ${before} to ${result.length} companies`);
+  }
+  
+  return result;
+}
+
 export interface PostLlmValidationResult {
   isValid: boolean;
   companies: any[];
   validationLog: ValidationLogEntry[];
+  preFlightChecklist: PreFlightChecklistResult;
   summary: {
     totalReceived: number;
     totalPassed: number;
@@ -195,10 +428,43 @@ export function validateLlmResponse(
     console.log(`[PostLlmValidation] Blocked companies:`, blockedEntries.map(e => `${e.companyName}: ${e.reason}`));
   }
 
+  // ========== RUN PRE-FLIGHT CHECKLIST ==========
+  // Mandatory checks that must pass before results can be displayed
+  const preFlightChecklist = runPreFlightChecklist(validatedCompanies, options);
+  
+  // If pre-flight checklist blocks, return early with no results
+  if (!preFlightChecklist.canProceed) {
+    console.log(`[PostLlmValidation] Pre-flight checklist BLOCKED: ${preFlightChecklist.blockedReason}`);
+    return {
+      isValid: false,
+      companies: [],
+      validationLog,
+      preFlightChecklist,
+      summary: {
+        ...summary,
+        totalPassed: 0,
+        totalBlocked: summary.totalReceived
+      }
+    };
+  }
+  
+  // Apply fallbacks if any checks failed but have fallbacks
+  let finalCompanies = validatedCompanies;
+  const checksWithFallbacks = preFlightChecklist.checks.filter(c => c.fallbackApplied);
+  if (checksWithFallbacks.length > 0) {
+    console.log(`[PostLlmValidation] Applying ${checksWithFallbacks.length} fallbacks...`);
+    finalCompanies = applyPreFlightFallbacks(validatedCompanies, preFlightChecklist, options);
+  }
+  // ========== END PRE-FLIGHT CHECKLIST ==========
+
   return {
-    isValid: validatedCompanies.length > 0,
-    companies: validatedCompanies,
+    isValid: finalCompanies.length > 0,
+    companies: finalCompanies,
     validationLog,
-    summary
+    preFlightChecklist,
+    summary: {
+      ...summary,
+      totalPassed: finalCompanies.length
+    }
   };
 }

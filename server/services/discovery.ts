@@ -343,8 +343,66 @@ function validateCompanyData(data: any): any {
   
   const revenueSource = String(data.revenueSource || data.revenue_source || '').trim();
   
-  // STRICT REVENUE RULES: Only accept revenue from authoritative sources
-  // Revenue must be explicitly stated, not inferred from project value, AUM, GMV, funding, etc.
+  // ============================================================================
+  // GOVERNMENT AUTHORITY DETECTION
+  // ============================================================================
+  // Authorities, ministries, regulators are NOT operating companies unless corporatised
+  // They should exist but with revenue = Unknown and isOperatingCompany = false
+  // ============================================================================
+  
+  const GOVERNMENT_AUTHORITY_PATTERNS = [
+    /\bauthority\b/i,
+    /\bministry\b/i,
+    /\bregulator\b/i,
+    /\bdepartment of\b/i,
+    /\bgovernment of\b/i,
+    /\bfederal\b.*\b(agency|commission|board)\b/i,
+    /\bpublic authority\b/i,
+    /\bregulatory commission\b/i,
+    /\bgovernance\b/i,
+  ];
+  
+  // Whitelist: Corporatised entities that ARE operating companies with financial reporting
+  const CORPORATISED_ENTITIES = [
+    'DEWA', 'Dubai Electricity and Water Authority', // Corporatised utility with audited reports
+    'ADNOC', 'Abu Dhabi National Oil Company',
+    'Emirates NBD', // Bank with public financials
+    'ENOC', 'Emirates National Oil Company',
+    'Masdar',
+    'Mubadala',
+    'ADDC', 'Abu Dhabi Distribution Company',
+    'TRANSCO', 'Abu Dhabi Transmission & Despatch Company',
+  ];
+  
+  const isGovernmentAuthority = GOVERNMENT_AUTHORITY_PATTERNS.some(pattern => pattern.test(name));
+  const isCorporatisedEntity = CORPORATISED_ENTITIES.some(entity => 
+    name.toLowerCase().includes(entity.toLowerCase())
+  );
+  
+  let entityType = 'operating_company';
+  let isOperatingCompany = true;
+  
+  if (isGovernmentAuthority && !isCorporatisedEntity) {
+    entityType = 'government_authority';
+    isOperatingCompany = false;
+    console.log(`[Discovery] ${name}: Detected as government authority - revenue will be Unknown, not an operating company`);
+  } else if (isCorporatisedEntity) {
+    entityType = 'corporatised_entity';
+    isOperatingCompany = true;
+    console.log(`[Discovery] ${name}: Corporatised entity - treated as operating company with financial reporting`);
+  }
+  
+  // ============================================================================
+  // STRICT REVENUE RULES: Currency + Year REQUIRED
+  // ============================================================================
+  // If the source does not explicitly include (Revenue, Year, Currency):
+  // → store revenue as NULL/Unknown
+  // Never show a USD number unless you also store the original currency and year
+  // ============================================================================
+  
+  // Extract currency and fiscal year from LLM response
+  const rawCurrency = String(data.revenueCurrency || data.currency || '').trim().toUpperCase();
+  const rawFiscalYear = parseNumber(data.revenueFiscalYear || data.fiscalYear || data.revenueYear);
   
   // Tier 1: Official audited sources (highest authority)
   const isTier1Source = revenueSource && 
@@ -361,25 +419,118 @@ function validateCompanyData(data: any): any {
     /aum|aum|project value|contract value|gmv|valuation|funding|investment/i.test(revenueSource);
   
   let revenue: number | null = parseNumber(data.revenue || data.revenue_usd || data.revenueUSD);
+  let revenueCurrency: string | null = null;
+  let revenueFiscalYear: number | null = null;
+  let revenueConvertedFromCurrency: string | null = null;
+  let revenueFxRate: number | null = null;
+  let revenueFxPolicy: string | null = null;
   let revenueConfidenceReduction = 0;
   
+  // ============================================================================
+  // FX RATES LOOKUP (used for both conversion and sanity checks)
+  // ============================================================================
+  const FX_RATES: Record<string, { rate: number; policy: string }> = {
+    'AED': { rate: 0.2723, policy: 'Fixed peg: 1 USD = 3.6725 AED' },
+    'SAR': { rate: 0.2667, policy: 'Fixed peg: 1 USD = 3.75 SAR' },
+    'QAR': { rate: 0.2747, policy: 'Fixed peg: 1 USD = 3.64 QAR' },
+    'BHD': { rate: 2.6526, policy: 'Fixed peg: 1 USD = 0.377 BHD' },
+    'OMR': { rate: 2.5974, policy: 'Fixed peg: 1 USD = 0.385 OMR' },
+    'KWD': { rate: 3.2573, policy: 'Fixed peg: 1 USD = 0.307 KWD' },
+    'EUR': { rate: 1.08, policy: 'Floating rate as of 2024-01' },
+    'GBP': { rate: 1.27, policy: 'Floating rate as of 2024-01' },
+    'USD': { rate: 1.0, policy: 'Base currency' },
+  };
+  
+  // Government authorities: Force revenue to null unless corporatised
+  if (!isOperatingCompany) {
+    console.log(`[Discovery] ${name}: Government authority - forcing revenue to null`);
+    revenue = null;
+  }
   // Apply strict revenue validation - NO REVENUE IS BETTER THAN WRONG REVENUE
-  // Only Tier 1 and Tier 2 sources are acceptable; all others must be null
-  if (revenue === 0 || revenue === null || !revenueSource) {
+  else if (revenue === 0 || revenue === null || !revenueSource) {
     console.log(`[Discovery] ${name}: No revenue data - setting to null`);
     revenue = null;
   } else if (isRejectedSource) {
     console.log(`[Discovery] ${name}: Revenue source "${revenueSource}" is not authoritative (estimate/inferred) - setting to null`);
     revenue = null;
   } else if (!isTier1Source && !isTier2Source) {
-    // Unverified sources do not meet strict rules - set to null
     console.log(`[Discovery] ${name}: Revenue source "${revenueSource}" is unverified (not Tier 1 or Tier 2) - setting to null`);
     revenue = null;
-  } else if (isTier2Source && !isTier1Source) {
-    // Tier 2 is acceptable but with minor confidence reduction
-    revenueConfidenceReduction = 1;
+  } else {
+    // ============================================================================
+    // HARD REQUIRE: Currency + Year for revenue display
+    // ============================================================================
+    const hasCurrency = rawCurrency && rawCurrency.length >= 2 && rawCurrency.length <= 4;
+    const hasFiscalYear = rawFiscalYear && rawFiscalYear >= 2015 && rawFiscalYear <= 2030;
+    
+    if (!hasCurrency || !hasFiscalYear) {
+      console.log(`[Discovery] ${name}: Revenue REJECTED - missing currency (${rawCurrency || 'none'}) or year (${rawFiscalYear || 'none'})`);
+      revenue = null;
+    } else {
+      revenueCurrency = rawCurrency;
+      revenueFiscalYear = rawFiscalYear;
+      
+      // FX CONVERSION: Convert non-USD currencies to USD using FX_RATES lookup
+      if (revenueCurrency !== 'USD' && FX_RATES[revenueCurrency]) {
+        const fx = FX_RATES[revenueCurrency];
+        const originalRevenue = revenue;
+        revenue = Math.round(revenue * fx.rate);
+        revenueConvertedFromCurrency = revenueCurrency;
+        revenueFxRate = fx.rate;
+        revenueFxPolicy = fx.policy;
+        revenueCurrency = 'USD'; // Store in USD after conversion
+        console.log(`[Discovery] ${name}: Converted revenue from ${revenueConvertedFromCurrency} to USD (rate: ${fx.rate}, original: ${originalRevenue})`);
+      }
+      
+      // Tier 2 sources get minor confidence reduction
+      if (isTier2Source && !isTier1Source) {
+        revenueConfidenceReduction = 1;
+      }
+    }
   }
-  // Tier 1 sources pass with no confidence reduction
+  
+  // ============================================================================
+  // REVENUE SANITY CHECKS FOR KNOWN LISTED UTILITIES
+  // ============================================================================
+  // For listed utilities where audited revenue is available, verify LLM output
+  // If it deviates wildly from known reported revenue → mark as Unknown
+  // Uses the same FX_RATES from above for consistent currency conversion
+  // ============================================================================
+  
+  const KNOWN_UTILITY_REVENUES: Record<string, { min: number; max: number; currency: string; year: number; source: string }> = {
+    'DEWA': { min: 20000000000, max: 30000000000, currency: 'AED', year: 2023, source: 'Dubai Electricity and Water Authority Annual Report 2023 (~AED 25.5B)' },
+    'Dubai Electricity and Water Authority': { min: 20000000000, max: 30000000000, currency: 'AED', year: 2023, source: 'DEWA Annual Report 2023 (~AED 25.5B)' },
+    'TAQA': { min: 45000000000, max: 60000000000, currency: 'AED', year: 2023, source: 'Abu Dhabi National Energy Company Annual Report 2023 (~AED 52B)' },
+    'Abu Dhabi National Energy Company': { min: 45000000000, max: 60000000000, currency: 'AED', year: 2023, source: 'TAQA Annual Report 2023' },
+    'SEC': { min: 60000000000, max: 85000000000, currency: 'SAR', year: 2023, source: 'Saudi Electricity Company Annual Report 2023 (~SAR 72B)' },
+    'Saudi Electricity Company': { min: 60000000000, max: 85000000000, currency: 'SAR', year: 2023, source: 'SEC Annual Report 2023' },
+    'QEWC': { min: 4000000000, max: 6000000000, currency: 'QAR', year: 2023, source: 'Qatar Electricity and Water Company Annual Report 2023 (~QAR 5B)' },
+    'Qatar Electricity and Water Company': { min: 4000000000, max: 6000000000, currency: 'QAR', year: 2023, source: 'QEWC Annual Report 2023' },
+  };
+  
+  if (revenue !== null && revenue > 0) {
+    const knownRevenue = Object.entries(KNOWN_UTILITY_REVENUES).find(([key]) => 
+      name.toLowerCase().includes(key.toLowerCase())
+    );
+    
+    if (knownRevenue) {
+      const [utilityName, bounds] = knownRevenue;
+      // Use the same FX_RATES lookup for consistent conversion
+      const fxRate = FX_RATES[bounds.currency]?.rate || 0.27; // Fallback to approximate rate
+      const minUSD = bounds.min * fxRate;
+      const maxUSD = bounds.max * fxRate;
+      
+      // Allow 50% below min and 200% above max to account for currency/year variations
+      if (revenue < minUSD * 0.5 || revenue > maxUSD * 2) {
+        console.warn(`[Discovery] ${name}: Revenue ${revenue} USD deviates wildly from known ${utilityName} range (${Math.round(minUSD)}-${Math.round(maxUSD)} USD, from ${bounds.currency} using rate ${fxRate}) - setting to null`);
+        revenue = null;
+        revenueCurrency = null;
+        revenueFiscalYear = null;
+      } else {
+        console.log(`[Discovery] ${name}: Revenue ${revenue} USD within acceptable range for known utility ${utilityName} (${Math.round(minUSD)}-${Math.round(maxUSD)} USD)`);
+      }
+    }
+  }
   
   // EMPLOYEES: Do not auto-set defaults - missing/unreliable data stays Unknown
   const rawEmployees = parseNumber(data.employees || data.employeeCount || data.headcount);
@@ -459,6 +610,8 @@ function validateCompanyData(data: any): any {
     name,
     sector,
     businessType,
+    entityType,
+    isOperatingCompany,
     region,
     country,
     city,
@@ -467,6 +620,11 @@ function validateCompanyData(data: any): any {
     longitude: coords.lng,
     revenue,
     revenueSource,
+    revenueCurrency,
+    revenueFiscalYear,
+    revenueConvertedFromCurrency,
+    revenueFxRate,
+    revenueFxPolicy,
     employees,
     employeesSource: String(data.employeesSource || data.employees_source || 'Unknown').trim(),
     confidence,
@@ -856,8 +1014,10 @@ IMPORTANT:
             streetAddress: { type: "string" as const, description: "Exact street address of headquarters" },
             latitude: { type: "number" as const, description: "GPS latitude of headquarters" },
             longitude: { type: "number" as const, description: "GPS longitude of headquarters" },
-            revenue: { type: ["number", "null"] as any, description: "Annual revenue in USD. MUST be null if not explicitly known from authoritative sources. Never infer from AUM, project value, or funding." },
-            revenueSource: { type: "string" as const, description: "REQUIRED: Exact source of revenue (e.g., 'Annual Report 2024', 'Forbes Global 2000'). If revenue is null, explain why (e.g., 'Private company - no public disclosure')." },
+            revenue: { type: ["number", "null"] as any, description: "Annual revenue in ORIGINAL CURRENCY (not converted to USD). MUST be null if not explicitly known from authoritative sources. Never infer from AUM, project value, or funding." },
+            revenueCurrency: { type: "string" as const, description: "REQUIRED if revenue is provided: 3-letter currency code (e.g., 'USD', 'AED', 'SAR', 'EUR'). Must match the currency of the revenue figure from the source." },
+            revenueFiscalYear: { type: "integer" as const, description: "REQUIRED if revenue is provided: Fiscal year of the revenue figure (e.g., 2023, 2024). Must match the year stated in the source document." },
+            revenueSource: { type: "string" as const, description: "REQUIRED: Exact source of revenue (e.g., 'Annual Report 2023', 'Forbes Global 2000 2024'). If revenue is null, explain why (e.g., 'Private company - no public disclosure')." },
             employees: { type: "integer" as const, description: "Number of employees" },
             employeesSource: { type: "string" as const, description: "Source of employee count" },
             confidence: { type: "integer" as const, minimum: 1, maximum: 10, description: "Data confidence score 1-10" },
@@ -885,7 +1045,7 @@ IMPORTANT:
               description: "Why this mode was chosen based on the query"
             }
           },
-          required: ["name", "businessType", "relevanceReason", "sector", "country", "latitude", "longitude", "revenue", "employees", "confidence", "executiveSearchMode", "executiveSearchReason"]
+          required: ["name", "businessType", "relevanceReason", "sector", "country", "latitude", "longitude", "revenue", "revenueCurrency", "revenueFiscalYear", "employees", "confidence", "executiveSearchMode", "executiveSearchReason"]
         }
       }
     },
@@ -1180,10 +1340,17 @@ IMPORTANT:
         ? validatedData.employees
         : null;
       
+      // Properly handle null values for FX rate
+      const safeFxRate = validatedData.revenueFxRate !== null && validatedData.revenueFxRate !== undefined
+        ? String(validatedData.revenueFxRate)
+        : null;
+      
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: validatedData.sector,
         businessType: validatedData.businessType || null,
+        entityType: validatedData.entityType || null,
+        isOperatingCompany: validatedData.isOperatingCompany ?? true,
         region: validatedData.region,
         country: validatedData.country,
         streetAddress: validatedData.streetAddress || null,
@@ -1191,6 +1358,11 @@ IMPORTANT:
         longitude: String(uniqueCoords.lng),
         revenue: safeRevenue,
         revenueSource: validatedData.revenueSource,
+        revenueCurrency: validatedData.revenueCurrency || null,
+        revenueFiscalYear: validatedData.revenueFiscalYear || null,
+        revenueConvertedFromCurrency: validatedData.revenueConvertedFromCurrency || null,
+        revenueFxRate: safeFxRate,
+        revenueFxPolicy: validatedData.revenueFxPolicy || null,
         employees: safeEmployees,
         employeesSource: validatedData.employeesSource,
         confidence: validatedData.confidence,

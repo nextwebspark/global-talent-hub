@@ -15,6 +15,8 @@ export const companies = pgTable("companies", {
   sector: text("sector"),
   businessType: text("business_type"), // distributor, retailer, manufacturer, wholesaler, service_provider, etc.
   ownershipType: text("ownership_type"), // public, private, family-owned, PE-backed, state-owned
+  entityType: text("entity_type"), // operating_company, government_authority, regulator, ministry, corporatised_entity
+  isOperatingCompany: boolean("is_operating_company").default(true), // false for authorities/regulators unless corporatised
   region: text("region"),
   country: text("country"),
   streetAddress: text("street_address"),
@@ -22,6 +24,11 @@ export const companies = pgTable("companies", {
   longitude: numeric("longitude", { precision: 10, scale: 7 }).notNull(),
   revenue: numeric("revenue", { precision: 15, scale: 2 }),
   revenueSource: text("revenue_source"),
+  revenueCurrency: text("revenue_currency"), // Original currency (USD, AED, SAR, QAR, etc.) - REQUIRED for revenue display
+  revenueFiscalYear: integer("revenue_fiscal_year"), // Fiscal year - REQUIRED for revenue display
+  revenueConvertedFromCurrency: text("revenue_converted_from_currency"), // If converted, original currency
+  revenueFxRate: numeric("revenue_fx_rate", { precision: 10, scale: 6 }), // FX rate used for conversion
+  revenueFxPolicy: text("revenue_fx_policy"), // Date or policy for FX rate (e.g., "2024-01-01" or "annual average 2023")
   employees: integer("employees"),
   employeesSource: text("employees_source"),
   geographicFootprint: integer("geographic_footprint"), // number of countries/regions

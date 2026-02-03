@@ -89,6 +89,14 @@ Only models that pass structured-output reliability tests are approved for disco
 
 All other models are disabled for discovery. Non-approved models are automatically overridden to the primary approved model with a warning logged. Functions `isApprovedForDiscovery()` and `getApprovedModel()` in `server/services/discovery.ts` enforce this restriction.
 
+### Discovery Status Tracking
+Discovery results include status tracking for transparency:
+- **complete**: Normal discovery with full results
+- **partial**: Fewer results returned than requested limit
+- **degraded**: Limitations applied (model override, fallback model used, web search unavailable)
+
+Degradation reasons are tracked and propagated to the client. The LeftPanel displays a dismissible banner when status is not 'complete', showing the first degradation reason. This provides transparency without blocking functionality.
+
 ### Audio/Voice Integration
 Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
 

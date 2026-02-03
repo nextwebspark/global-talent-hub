@@ -84,10 +84,11 @@ Server-side AI processing (OpenAI, OpenRouter) parses natural language queries t
 
 ### Approved Discovery Models (Locked Down)
 Only models that pass structured-output reliability tests are approved for discovery:
-- **Primary**: Gemini 3 Flash (`google/gemini-2.5-flash-preview`) - best structured output
-- **Fallbacks**: Claude Sonnet 4 (`anthropic/claude-sonnet-4`), Claude 3.5 Haiku (`anthropic/claude-3.5-haiku`)
+- **Gemini 3 Flash** (`google/gemini-2.5-flash-preview`) - best structured output
+- **Claude Sonnet 4** (`anthropic/claude-sonnet-4`) - reliable fallback
+- **Claude 3.5 Haiku** (`anthropic/claude-3.5-haiku`) - fast fallback
 
-All other models are disabled for discovery. Non-approved models are automatically overridden to the primary approved model with a warning logged. Functions `isApprovedForDiscovery()` and `getApprovedModel()` in `server/services/discovery.ts` enforce this restriction.
+The UI model dropdown shows ONLY these 3 approved models. The `/api/models` endpoint returns only approved models, ensuring the selected model matches the executed model (no silent overrides). Override logic remains as a safety net but will not trigger in normal UI flows. Non-approved models may be used for analysis/notes in the future, not for discovery searches.
 
 ### Discovery Status Tracking
 Discovery results include status tracking for transparency:

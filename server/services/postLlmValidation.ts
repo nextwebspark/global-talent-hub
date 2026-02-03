@@ -11,6 +11,12 @@
  * - This is an additional guardrail layer, not a replacement
  */
 
+import { 
+  getFactualCompanyFields, 
+  getNarrativeCompanyFields,
+  isNarrativeField 
+} from './fieldClassification';
+
 // ========== SEARCH PRE-FLIGHT CHECKLIST ==========
 // Mandatory checks that must pass before results can be displayed.
 // If a check fails, an allowed fallback may be applied.
@@ -243,11 +249,198 @@ export function applyPreFlightFallbacks(
   return result;
 }
 
+// ========== NARRATIVE SEPARATION ENFORCEMENT ==========
+// Narrative fields (summary, relevanceReason, AI text) must NEVER:
+// 1. Populate factual fields
+// 2. Influence ranking
+// 3. Influence map scaling
+// 4. Substitute missing data
+
+export interface NarrativeSeparationResult {
+  companies: any[];
+  violations: NarrativeViolation[];
+  enforced: boolean;
+}
+
+export interface NarrativeViolation {
+  companyName: string;
+  violationType: 'populated_factual' | 'influenced_ranking' | 'influenced_scaling' | 'substituted_data';
+  description: string;
+  field?: string;
+  correctionApplied: string;
+}
+
+/**
+ * Enforce narrative separation rules on company data.
+ * This function ensures narrative fields do not contaminate factual data.
+ */
+export function enforceNarrativeSeparation(companies: any[]): NarrativeSeparationResult {
+  const violations: NarrativeViolation[] = [];
+  const factualFields = getFactualCompanyFields();
+  const narrativeFields = getNarrativeCompanyFields();
+  
+  console.log(`[NarrativeSeparation] Enforcing separation on ${companies.length} companies`);
+  console.log(`[NarrativeSeparation] Factual fields: ${factualFields.join(', ')}`);
+  console.log(`[NarrativeSeparation] Narrative fields: ${narrativeFields.join(', ')}`);
+  
+  const enforcedCompanies = companies.map(company => {
+    const companyName = String(company.name || 'Unknown').trim();
+    const enforcedCompany = { ...company };
+    
+    // RULE 1: Narrative fields must not populate factual fields
+    // Check if any factual field contains obvious narrative content
+    for (const factualField of factualFields) {
+      const value = enforcedCompany[factualField];
+      if (typeof value === 'string' && value.length > 0) {
+        // Check for narrative patterns in factual fields
+        const narrativePatterns = [
+          /^This company/i,
+          /^The company/i,
+          /matches the query because/i,
+          /is included because/i,
+          /was selected because/i,
+          /demonstrates/i,
+          /appears to be/i,
+          /seems to be/i,
+          /is likely/i,
+          /probably/i
+        ];
+        
+        if (narrativePatterns.some(pattern => pattern.test(value))) {
+          violations.push({
+            companyName,
+            violationType: 'populated_factual',
+            description: `Factual field "${factualField}" contains narrative text`,
+            field: factualField,
+            correctionApplied: 'Field set to null'
+          });
+          enforcedCompany[factualField] = null;
+        }
+      }
+    }
+    
+    // RULE 2: Narrative fields must not influence ranking
+    // Ensure ranking is based only on factual metrics
+    // (Revenue, employees, confidence are the ranking factors - all factual)
+    // No action needed here - this is enforced by design in the ranking logic
+    
+    // RULE 3: Narrative fields must not influence map scaling
+    // Map scaling should be based on revenue/employees only
+    // Ensure these are numeric and not derived from narrative
+    if (enforcedCompany.revenue !== null && enforcedCompany.revenue !== undefined) {
+      const revenueValue = Number(enforcedCompany.revenue);
+      if (isNaN(revenueValue)) {
+        // Revenue contains non-numeric value (possibly narrative)
+        violations.push({
+          companyName,
+          violationType: 'influenced_scaling',
+          description: 'Revenue contains non-numeric value that could affect map scaling',
+          field: 'revenue',
+          correctionApplied: 'Revenue set to null'
+        });
+        enforcedCompany.revenue = null;
+      }
+    }
+    
+    if (enforcedCompany.employees !== null && enforcedCompany.employees !== undefined) {
+      const employeesValue = Number(enforcedCompany.employees);
+      if (isNaN(employeesValue) || employeesValue < 0) {
+        violations.push({
+          companyName,
+          violationType: 'influenced_scaling',
+          description: 'Employees contains invalid value that could affect map scaling',
+          field: 'employees',
+          correctionApplied: 'Employees set to null'
+        });
+        enforcedCompany.employees = null;
+      }
+    }
+    
+    // RULE 4: Narrative fields must not substitute missing data
+    // Check if narrative content is being used to fill factual gaps
+    for (const factualField of factualFields) {
+      const value = enforcedCompany[factualField];
+      
+      // Skip non-string fields
+      if (typeof value !== 'string') continue;
+      
+      // Check if the value looks like it was extracted from narrative
+      // (e.g., "Based on the summary..." or referencing narrative fields)
+      const substitutionPatterns = [
+        /based on (the )?summary/i,
+        /according to (the )?description/i,
+        /from (the )?relevance/i,
+        /as mentioned in/i,
+        /derived from/i,
+        /inferred from/i
+      ];
+      
+      if (substitutionPatterns.some(pattern => pattern.test(value))) {
+        violations.push({
+          companyName,
+          violationType: 'substituted_data',
+          description: `Factual field "${factualField}" appears to be derived from narrative`,
+          field: factualField,
+          correctionApplied: 'Field set to null'
+        });
+        enforcedCompany[factualField] = null;
+      }
+    }
+    
+    return enforcedCompany;
+  });
+  
+  // Log violations
+  if (violations.length > 0) {
+    console.log(`[NarrativeSeparation] Found ${violations.length} violations:`);
+    violations.forEach(v => {
+      console.log(`[NarrativeSeparation]   ${v.companyName}: ${v.violationType} - ${v.description}`);
+    });
+  } else {
+    console.log(`[NarrativeSeparation] No violations found`);
+  }
+  
+  return {
+    companies: enforcedCompanies,
+    violations,
+    enforced: true
+  };
+}
+
+/**
+ * Validate that ranking factors are factual-only.
+ * Returns true if the ranking is based only on factual fields.
+ */
+export function validateRankingFactors(rankingFields: string[]): { valid: boolean; invalidFields: string[] } {
+  const factualFields = getFactualCompanyFields();
+  const invalidFields = rankingFields.filter(field => !factualFields.includes(field));
+  
+  return {
+    valid: invalidFields.length === 0,
+    invalidFields
+  };
+}
+
+/**
+ * Validate that map scaling factors are factual-only.
+ * Returns true if scaling is based only on numeric factual fields.
+ */
+export function validateMapScalingFactors(scalingFields: string[]): { valid: boolean; invalidFields: string[] } {
+  const allowedScalingFields = ['revenue', 'employees', 'geographicFootprint', 'confidence'];
+  const invalidFields = scalingFields.filter(field => !allowedScalingFields.includes(field));
+  
+  return {
+    valid: invalidFields.length === 0,
+    invalidFields
+  };
+}
+
 export interface PostLlmValidationResult {
   isValid: boolean;
   companies: any[];
   validationLog: ValidationLogEntry[];
   preFlightChecklist: PreFlightChecklistResult;
+  narrativeSeparation?: NarrativeSeparationResult;
   summary: {
     totalReceived: number;
     totalPassed: number;
@@ -457,11 +650,23 @@ export function validateLlmResponse(
   }
   // ========== END PRE-FLIGHT CHECKLIST ==========
 
+  // ========== NARRATIVE SEPARATION ENFORCEMENT ==========
+  // Ensure narrative fields do not contaminate factual data
+  const narrativeSeparation = enforceNarrativeSeparation(finalCompanies);
+  finalCompanies = narrativeSeparation.companies;
+  
+  // Log any narrative violations
+  if (narrativeSeparation.violations.length > 0) {
+    console.log(`[PostLlmValidation] Narrative separation violations corrected: ${narrativeSeparation.violations.length}`);
+  }
+  // ========== END NARRATIVE SEPARATION ==========
+
   return {
     isValid: finalCompanies.length > 0,
     companies: finalCompanies,
     validationLog,
     preFlightChecklist,
+    narrativeSeparation,
     summary: {
       ...summary,
       totalPassed: finalCompanies.length

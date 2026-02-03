@@ -435,12 +435,140 @@ export function validateMapScalingFactors(scalingFields: string[]): { valid: boo
   };
 }
 
+// ========== RANKING INTEGRITY ENFORCEMENT ==========
+// Ranking must NEVER suppress valid entities.
+// If multiple entities meet criteria, ALL must be returned, even if confidence varies.
+
+export interface RankingIntegrityResult {
+  companies: any[];
+  totalValid: number;
+  totalReturned: number;
+  suppressionDetected: boolean;
+  integrityLog: RankingIntegrityEntry[];
+}
+
+export interface RankingIntegrityEntry {
+  companyName: string;
+  confidence: number;
+  meetsMinimumCriteria: boolean;
+  included: boolean;
+  reason: string;
+}
+
+/**
+ * MINIMUM CRITERIA FOR A VALID ENTITY
+ * An entity is valid if it has:
+ * 1. A non-empty name
+ * 2. Valid coordinates (for map display)
+ * 3. A country (for geographic filtering)
+ * 
+ * Confidence does NOT determine validity - only display order.
+ */
+export function meetsMinimumValidityCriteria(company: any): boolean {
+  const hasName = company.name && String(company.name).trim().length > 0;
+  const hasCountry = company.country && String(company.country).trim().length > 0;
+  const hasCoordinates = (
+    company.latitude !== undefined && 
+    company.latitude !== null && 
+    company.longitude !== undefined && 
+    company.longitude !== null
+  );
+  
+  return hasName && hasCountry && hasCoordinates;
+}
+
+/**
+ * Enforce ranking integrity - ensure no valid entities are suppressed.
+ * All entities that meet minimum criteria MUST be returned.
+ * Low confidence affects ORDER, not INCLUSION.
+ */
+export function enforceRankingIntegrity(companies: any[]): RankingIntegrityResult {
+  const integrityLog: RankingIntegrityEntry[] = [];
+  const validCompanies: any[] = [];
+  
+  console.log(`[RankingIntegrity] Checking ${companies.length} companies for suppression`);
+  
+  for (const company of companies) {
+    const companyName = String(company.name || 'Unknown').trim();
+    const confidence = Number(company.confidence || 0);
+    const meetsMinimum = meetsMinimumValidityCriteria(company);
+    
+    if (meetsMinimum) {
+      // Valid entity - MUST be included regardless of confidence
+      validCompanies.push(company);
+      integrityLog.push({
+        companyName,
+        confidence,
+        meetsMinimumCriteria: true,
+        included: true,
+        reason: 'Meets minimum criteria - included regardless of confidence'
+      });
+    } else {
+      // Does not meet minimum criteria - can be excluded
+      integrityLog.push({
+        companyName,
+        confidence,
+        meetsMinimumCriteria: false,
+        included: false,
+        reason: 'Does not meet minimum validity criteria (missing name, country, or coordinates)'
+      });
+    }
+  }
+  
+  // Sort by confidence for display order, but do NOT filter by confidence
+  // Ranking determines ORDER, not INCLUSION
+  validCompanies.sort((a, b) => {
+    const confA = Number(a.confidence || 0);
+    const confB = Number(b.confidence || 0);
+    return confB - confA; // Higher confidence first
+  });
+  
+  const suppressionDetected = validCompanies.length < companies.filter(c => meetsMinimumValidityCriteria(c)).length;
+  
+  console.log(`[RankingIntegrity] Result: ${validCompanies.length} valid entities returned (suppression: ${suppressionDetected})`);
+  
+  return {
+    companies: validCompanies,
+    totalValid: validCompanies.length,
+    totalReturned: validCompanies.length,
+    suppressionDetected,
+    integrityLog
+  };
+}
+
+/**
+ * Validate that a ranking/filtering operation did not suppress valid entities.
+ * Call this AFTER any ranking or filtering operation.
+ */
+export function validateNoSuppression(
+  beforeCount: number,
+  afterCount: number,
+  validBeforeCount: number
+): { valid: boolean; suppressedCount: number; message: string } {
+  const suppressedCount = validBeforeCount - afterCount;
+  
+  if (suppressedCount > 0) {
+    return {
+      valid: false,
+      suppressedCount,
+      message: `WARNING: ${suppressedCount} valid entities were suppressed by ranking/filtering`
+    };
+  }
+  
+  return {
+    valid: true,
+    suppressedCount: 0,
+    message: 'No valid entities suppressed'
+  };
+}
+
 export interface PostLlmValidationResult {
   isValid: boolean;
   companies: any[];
   validationLog: ValidationLogEntry[];
   preFlightChecklist: PreFlightChecklistResult;
   narrativeSeparation?: NarrativeSeparationResult;
+  rankingIntegrity?: RankingIntegrityResult;
   summary: {
     totalReceived: number;
     totalPassed: number;
@@ -661,12 +789,24 @@ export function validateLlmResponse(
   }
   // ========== END NARRATIVE SEPARATION ==========
 
+  // ========== RANKING INTEGRITY ENFORCEMENT ==========
+  // Ensure ranking never suppresses valid entities
+  // All entities meeting criteria MUST be returned, regardless of confidence
+  const rankingIntegrity = enforceRankingIntegrity(finalCompanies);
+  finalCompanies = rankingIntegrity.companies;
+  
+  if (rankingIntegrity.suppressionDetected) {
+    console.warn(`[PostLlmValidation] WARNING: Entity suppression was detected and corrected`);
+  }
+  // ========== END RANKING INTEGRITY ==========
+
   return {
     isValid: finalCompanies.length > 0,
     companies: finalCompanies,
     validationLog,
     preFlightChecklist,
     narrativeSeparation,
+    rankingIntegrity,
     summary: {
       ...summary,
       totalPassed: finalCompanies.length

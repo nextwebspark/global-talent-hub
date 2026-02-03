@@ -1,6 +1,18 @@
 /**
  * POST-LLM VALIDATION LAYER
  * 
+ * ╔══════════════════════════════════════════════════════════════════╗
+ * ║  CORE ARCHITECTURAL PRINCIPLE (NON-NEGOTIABLE)                   ║
+ * ╠══════════════════════════════════════════════════════════════════╣
+ * ║                                                                  ║
+ * ║  1. THE LLM PROPOSES.                                            ║
+ * ║  2. THE APPLICATION DECIDES.                                     ║
+ * ║  3. THE UI ONLY SHOWS VALIDATED TRUTH.                           ║
+ * ║                                                                  ║
+ * ║  NO EXCEPTIONS.                                                  ║
+ * ║                                                                  ║
+ * ╚══════════════════════════════════════════════════════════════════╝
+ * 
  * This module runs AFTER the LLM response is received and parsed,
  * but BEFORE any data is stored, ranked, visualized, or shown to the user.
  * 

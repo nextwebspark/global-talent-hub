@@ -675,33 +675,67 @@ Please provide a comprehensive business profile as JSON.`
       const useRetrieval = webSearchService.isConfigured();
       console.log(`[Routes SSE] Using ${useRetrieval ? 'retrieval-first' : 'LLM-only'} discovery`);
       
-      const discoveryStream = useRetrieval 
-        ? discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query)
-        : discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
+      let webSearchFailed = false;
       
-      for await (const event of discoveryStream) {
-        if (event.type === 'company') {
-          companyCount++;
-          sendEvent('company', event.data);
-        } else if (event.type === 'source') {
-          sendEvent('source', event.data);
-        } else if (event.type === 'verification') {
-          sendEvent('verification', event.data);
-        } else if (event.type === 'status') {
-          sendEvent('status', event.data);
-        } else if (event.type === 'error') {
-          sendEvent('error', event.data);
-        } else if (event.type === 'complete') {
-          // Update result count
-          await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
-          sendEvent('complete', { 
-            ...event.data,
-            searchQueryId: searchQuery.id 
-          });
+      // Helper to process a discovery stream
+      const processDiscoveryStream = async (stream: AsyncGenerator<any, void, unknown>, isLlmOnlyFallback: boolean = false): Promise<boolean> => {
+        for await (const event of stream) {
+          if (event.type === 'company') {
+            companyCount++;
+            sendEvent('company', event.data);
+          } else if (event.type === 'source') {
+            sendEvent('source', event.data);
+          } else if (event.type === 'verification') {
+            sendEvent('verification', event.data);
+          } else if (event.type === 'status') {
+            sendEvent('status', event.data);
+          } else if (event.type === 'error') {
+            // Check if this is a web search failure - signal to fall back
+            if (!isLlmOnlyFallback && event.data?.message?.includes('Web search failed')) {
+              return true; // Signal to fall back to LLM-only
+            }
+            sendEvent('error', event.data);
+          } else if (event.type === 'complete') {
+            // Update result count
+            await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
+            
+            // Mark as degraded if we fell back to LLM-only
+            const eventData = { ...event.data };
+            if (webSearchFailed || isLlmOnlyFallback) {
+              eventData.discoveryStatus = 'degraded';
+              eventData.degradationReasons = eventData.degradationReasons || [];
+              eventData.degradationReasons.push('Web search failed - used AI-only mode');
+            }
+            
+            sendEvent('complete', { 
+              ...eventData,
+              searchQueryId: searchQuery.id 
+            });
+          }
         }
+        return false;
+      };
+      
+      // Run retrieval-first discovery
+      if (useRetrieval) {
+        const retrievalStream = discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query);
+        webSearchFailed = await processDiscoveryStream(retrievalStream, false);
+        
+        // If web search failed, fall back to LLM-only
+        if (webSearchFailed) {
+          console.log(`[Routes SSE] Web search failed, falling back to LLM-only discovery`);
+          sendEvent('status', { message: 'Web search unavailable, using AI-only mode...', progress: 10, warning: true });
+          
+          const llmOnlyStream = discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
+          await processDiscoveryStream(llmOnlyStream, true);
+        }
+      } else {
+        // No web search configured, use LLM-only directly
+        const llmOnlyStream = discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
+        await processDiscoveryStream(llmOnlyStream, false);
       }
 
-      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies`);
+      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies${webSearchFailed ? ' (LLM-only fallback)' : ''}`);
       res.end();
       
     } catch (error: any) {

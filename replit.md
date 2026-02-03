@@ -82,6 +82,13 @@ Coordinate fallback service (`server/services/coordinateFallback.ts`) provides c
 ### AI Research Engine
 Server-side AI processing (OpenAI, OpenRouter) parses natural language queries to extract industry, geography, and roles. Results are ranked by revenue, then employees. The LLM is instructed to find precise HQ locations and street addresses for accurate map placement. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.
 
+### Approved Discovery Models (Locked Down)
+Only models that pass structured-output reliability tests are approved for discovery:
+- **Primary**: Gemini 3 Flash (`google/gemini-2.5-flash-preview`) - best structured output
+- **Fallbacks**: Claude Sonnet 4 (`anthropic/claude-sonnet-4`), Claude 3.5 Haiku (`anthropic/claude-3.5-haiku`)
+
+All other models are disabled for discovery. Non-approved models are automatically overridden to the primary approved model with a warning logged. Functions `isApprovedForDiscovery()` and `getApprovedModel()` in `server/services/discovery.ts` enforce this restriction.
+
 ### Audio/Voice Integration
 Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
 

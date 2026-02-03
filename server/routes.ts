@@ -505,15 +505,12 @@ Please provide a comprehensive business profile as JSON.`
     }
   });
 
-  // Discovery Layer: Fetch available AI models
+  // Discovery Layer: Return only approved discovery models
+  // UI must only show models that will actually be used (no silent overrides)
   app.get("/api/models", async (req, res) => {
-    try {
-      const models = await fetchAvailableModels();
-      res.json(models);
-    } catch (error) {
-      console.error("[Routes] Error fetching models:", error);
-      res.json(AVAILABLE_MODELS);
-    }
+    // Return the curated list of approved models directly
+    // Do NOT fetch from OpenRouter as that returns all models including non-approved ones
+    res.json(AVAILABLE_MODELS);
   });
 
   // Model health check - test if a model is working

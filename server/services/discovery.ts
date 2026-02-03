@@ -59,18 +59,12 @@ export const RELIABLE_ONLINE_MODELS = [
   "anthropic/claude-3.5-haiku",
 ];
 
-// All available models for UI display (includes non-approved for transparency)
+// Available models for discovery - ONLY approved schema-reliable models shown in UI
+// Non-approved models are NOT displayed to users for discovery selection
 export const AVAILABLE_MODELS = [
-  { id: "google/gemini-2.5-flash-preview", name: "Gemini 3 Flash (Primary)", provider: "Google", reliableOnline: true, approvedForDiscovery: true },
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (Fallback)", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
-  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku (Fallback)", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
-  { id: "openai/gpt-4o", name: "GPT-4o (Disabled)", provider: "OpenAI", reliableOnline: true, approvedForDiscovery: false },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini (Disabled)", provider: "OpenAI", reliableOnline: true, approvedForDiscovery: false },
-  { id: "deepseek/deepseek-chat-v3-0324", name: "DeepSeek V3 (Disabled)", provider: "DeepSeek", reliableOnline: false, approvedForDiscovery: false },
-  { id: "google/gemini-2.0-flash-001", name: "Gemini 2.0 Flash (Disabled)", provider: "Google", reliableOnline: true, approvedForDiscovery: false },
-  { id: "meta-llama/llama-3.3-70b-instruct", name: "Llama 3.3 70B (Disabled)", provider: "Meta", reliableOnline: false, approvedForDiscovery: false },
-  { id: "mistralai/mistral-large-2411", name: "Mistral Large (Disabled)", provider: "Mistral", reliableOnline: false, approvedForDiscovery: false },
-  { id: "perplexity/sonar-pro", name: "Perplexity Sonar Pro (Disabled)", provider: "Perplexity", reliableOnline: true, approvedForDiscovery: false },
+  { id: "google/gemini-2.5-flash-preview", name: "Gemini 3 Flash", provider: "Google", reliableOnline: true, approvedForDiscovery: true },
+  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
+  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
 ];
 
 // Parse OpenRouter error responses for user-friendly messages

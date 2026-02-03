@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 export default function Landing() {
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-chat');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash-preview');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [, setLocation] = useLocation();

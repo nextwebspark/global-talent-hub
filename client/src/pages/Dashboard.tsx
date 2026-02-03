@@ -25,7 +25,7 @@ export default function Dashboard() {
   const loadSearchResults = useLoadSearchResults();
   const testModelMutation = useTestModel();
   const [searchInput, setSearchInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('anthropic/claude-sonnet-4');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash-preview');
   const [modelTestStatus, setModelTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);

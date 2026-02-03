@@ -139,11 +139,22 @@ export default function MapComponent() {
   });
 
   // Scale revenue/employees to radius
-  const getRadius = (value: number) => {
-    if (!value || filteredCompanies.length === 0) return 20;
+  // Unknown/null values get neutral sizing (no influence on scaling)
+  const getRadius = (value: number | null | undefined) => {
+    const neutralRadius = 20;
+    
+    // Unknown/null values get neutral sizing - they don't influence the scale
+    if (!value || value === 0) return neutralRadius;
+    if (filteredCompanies.length === 0) return neutralRadius;
 
-    // Calculate min/max from current filtered dataset for relative scaling
-    const values = filteredCompanies.map(c => scalingMetric === 'revenue' ? c.revenue_usd : c.employees);
+    // Only include companies with valid values for scaling calculation
+    const values = filteredCompanies
+      .map(c => scalingMetric === 'revenue' ? c.revenue_usd : c.employees)
+      .filter((v): v is number => v !== null && v !== undefined && v > 0);
+    
+    // If no valid values, use neutral sizing
+    if (values.length === 0) return neutralRadius;
+    
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
     

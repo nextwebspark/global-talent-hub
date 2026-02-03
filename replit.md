@@ -53,11 +53,18 @@ The project is divided into `client/` (React frontend), `server/` (Express backe
 
 ### Layered Architecture
 The backend employs a strict layered architecture:
-- **Discovery Layer** (`server/services/discovery.ts`): Handles all LLM-related search logic (via OpenRouter), processes natural language queries verbatim, and creates new company/executive records with self-verification (e.g., `relevanceReason`). It runs once per search and only creates new records, never updates.
+- **Web Search Layer** (`server/services/webSearch.ts`): Retrieval-first architecture using Google Custom Search API. All searches start with web retrieval to find actual sources. Classifies sources into tiers: Tier 1 (regulatory filings, annual reports), Tier 2 (reputable business news), Tier 3 (general web - name discovery only). Stores all search results in `searchResults` table for audit trail.
+- **Retrieval Discovery Layer** (`server/services/retrievalDiscovery.ts`): Hybrid architecture that retrieves sources first, then uses LLM only for extraction from retrieved content. LLM cannot invent company lists, revenues, or metrics from model memory. Includes per-company verification retrieval step and LLM retry/fallback logic without relaxing validation rules.
+- **Discovery Layer** (`server/services/discovery.ts`): Legacy LLM-only fallback when web search is not configured. Processes natural language queries via OpenRouter and creates new company/executive records with self-verification (e.g., `relevanceReason`).
 - **Enrichment Layer** (`server/services/enrichment.ts`): Integrates with Clockwork API for fuzzy matching and data enrichment. It runs on user trigger, is read-only, and only enriches empty fields without overwriting existing data. It orchestrates deterministic matching, handles Clockwork API specifics (pagination, rate limiting, position fetching), and can use AI to research company details for newly imported candidates.
 - **Persistence Layer** (`server/storage.ts`): Serves as the single source of truth, enforcing write restrictions based on the calling layer (discovery, enrichment, manual).
 - **UI/Manual Layer**: Allows users to create and edit records directly, with full create/update capabilities that override imported data.
 - **Routes Layer** (`server/routes.ts`): A thin orchestration layer delegating to services without containing business logic.
+
+### Source Tier Classification
+- **Tier 1**: SEC filings, investor relations pages, annual reports, stock exchange filings (DFM, ADX, Tadawul, etc.) - Full metric extraction allowed
+- **Tier 2**: Reuters, Bloomberg, Forbes, WSJ, regional business sources (Zawya, Gulf Business) - Full metric extraction with confidence reduction
+- **Tier 3**: General web pages - Name discovery only, all metrics must be null/Unknown
 
 ### AI Research Engine
 Server-side AI processing (OpenAI, OpenRouter) parses natural language queries to extract industry, geography, and roles. Results are ranked by revenue, then employees. The LLM is instructed to find precise HQ locations and street addresses for accurate map placement. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.

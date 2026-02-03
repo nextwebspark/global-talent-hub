@@ -229,13 +229,22 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     });
 
     const sorted = Array.from(countryMap.values()).sort((a, b) => {
-      const revenueA = a.companies.reduce((sum, c) => sum + c.revenue_usd, 0);
-      const revenueB = b.companies.reduce((sum, c) => sum + c.revenue_usd, 0);
+      // Exclude null/0 revenues from totals (Unknown shouldn't affect ranking)
+      const revenueA = a.companies.reduce((sum, c) => sum + (c.revenue_usd || 0), 0);
+      const revenueB = b.companies.reduce((sum, c) => sum + (c.revenue_usd || 0), 0);
       return revenueB - revenueA;
     });
 
     sorted.forEach(country => {
-      country.companies.sort((a, b) => b.revenue_usd - a.revenue_usd);
+      // Companies with known revenue first, then by revenue descending
+      // Unknown revenues sorted to end
+      country.companies.sort((a, b) => {
+        const aHasRevenue = a.revenue_usd && a.revenue_usd > 0;
+        const bHasRevenue = b.revenue_usd && b.revenue_usd > 0;
+        if (aHasRevenue && !bHasRevenue) return -1;
+        if (!aHasRevenue && bHasRevenue) return 1;
+        return (b.revenue_usd || 0) - (a.revenue_usd || 0);
+      });
     });
 
     return sorted;
@@ -446,7 +455,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           <div className="p-2 space-y-1 min-w-[280px]">
             {filteredCountries.map((country) => {
               const isCountryExpanded = expandedCountries.has(country.name);
-              const totalRevenue = country.companies.reduce((sum, c) => sum + c.revenue_usd, 0);
+              // Only sum known revenues (exclude null/0 from totals)
+              const companiesWithRevenue = country.companies.filter(c => c.revenue_usd && c.revenue_usd > 0);
+              const totalRevenue = companiesWithRevenue.reduce((sum, c) => sum + (c.revenue_usd || 0), 0);
+              const unknownCount = country.companies.length - companiesWithRevenue.length;
               
               const isCountryHidden = hiddenCountries.has(country.name);
               
@@ -467,7 +479,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                         </span>
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'} • ${(totalRevenue / 1000000000).toFixed(1)}B
+                        {country.companies.length} {country.companies.length === 1 ? 'company' : 'companies'} • {totalRevenue > 0 ? `$${(totalRevenue / 1000000000).toFixed(1)}B` : 'Unknown'}{unknownCount > 0 && totalRevenue > 0 ? ` (+${unknownCount} unknown)` : ''}
                       </div>
                     </div>
                     <TooltipProvider delayDuration={0}>
@@ -521,7 +533,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                   {company.name}
                                 </div>
                                 <div className="text-xs text-muted-foreground truncate">
-                                  ${(company.revenue_usd / 1000000000).toFixed(1)}B • {company.employees.toLocaleString()} emp • {company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}
+                                  {company.revenue_usd ? `$${(company.revenue_usd / 1000000000).toFixed(1)}B` : 'Unknown'} • {company.employees ? `${company.employees.toLocaleString()} emp` : 'Unknown'} • {company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">

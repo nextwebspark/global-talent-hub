@@ -14,6 +14,11 @@ import {
   RELIABLE_ONLINE_MODELS
 } from "./services/discovery";
 import { 
+  discoverCompaniesWithRetrieval,
+  discoverCompaniesWithRetrievalSync 
+} from "./services/retrievalDiscovery";
+import { webSearchService } from "./services/webSearch";
+import { 
   enrichExecutive, 
   enrichCompany, 
   getAvailableSources,
@@ -667,12 +672,24 @@ Please provide a comprehensive business profile as JSON.`
       // Step 4: Clear previous results
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
 
-      // Step 5: Stream companies as they're discovered (pass original query for better results)
+      // Step 5: Stream companies as they're discovered
+      // Use retrieval-first if web search is configured, otherwise fall back to LLM-only
       let companyCount = 0;
-      for await (const event of discoverCompaniesStreaming(criteria, searchQuery.id, model, query)) {
+      const useRetrieval = webSearchService.isConfigured();
+      console.log(`[Routes SSE] Using ${useRetrieval ? 'retrieval-first' : 'LLM-only'} discovery`);
+      
+      const discoveryStream = useRetrieval 
+        ? discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query)
+        : discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
+      
+      for await (const event of discoveryStream) {
         if (event.type === 'company') {
           companyCount++;
           sendEvent('company', event.data);
+        } else if (event.type === 'source') {
+          sendEvent('source', event.data);
+        } else if (event.type === 'verification') {
+          sendEvent('verification', event.data);
         } else if (event.type === 'status') {
           sendEvent('status', event.data);
         } else if (event.type === 'error') {

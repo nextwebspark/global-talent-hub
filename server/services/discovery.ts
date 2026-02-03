@@ -323,7 +323,7 @@ function normalizeBusinessType(rawType: string): string {
   return normalized || 'unknown';
 }
 
-function validateCompanyData(data: any): any {
+export function validateCompanyData(data: any): any {
   const rawName = String(data.name || data.companyName || '').trim();
   // Filter out Unknown companies
   if (!rawName || rawName.toLowerCase() === 'unknown' || rawName.toLowerCase() === 'unknown company') {

@@ -3,9 +3,10 @@ import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
 import { useSearch, useModels, useSearchHistory } from '@/lib/api';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, Bot, ChevronDown, History } from 'lucide-react';
+import { Search, Loader2, Bot, ChevronDown, ChevronUp, History, Maximize2, Minimize2 } from 'lucide-react';
 import logoImage from '@/assets/images/logo.png';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -14,8 +15,9 @@ export default function Landing() {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-chat');
   const [showHistory, setShowHistory] = useState(false);
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [, setLocation] = useLocation();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   
   const { setProject, loadFromAPI } = useAppStore();
@@ -148,27 +150,59 @@ export default function Landing() {
           <div className="flex flex-col gap-4">
             <div className="relative" ref={historyRef}>
               <div className="relative group">
-                <div className="absolute inset-0 bg-primary/5 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <div className="relative flex items-center bg-card shadow-lg rounded-full border border-border/50 overflow-hidden hover:shadow-xl transition-shadow duration-300">
-                  <Search className="ml-4 h-5 w-5 text-muted-foreground shrink-0" />
-                  <Input 
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onFocus={() => setShowHistory(true)}
-                    placeholder="e.g. 'Top 20 CFOs in luxury watch brands globally'" 
-                    className="border-0 shadow-none focus-visible:ring-0 h-14 text-lg bg-transparent px-4 flex-1"
-                    disabled={searchMutation.isPending}
-                    data-testid="input-search-query"
-                    title={input}
-                  />
-                  <button 
-                    type="button"
-                    onClick={() => setShowHistory(!showHistory)}
-                    className="p-2 mr-3 hover:bg-muted rounded-full transition-colors"
-                  >
-                    <ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${showHistory ? 'rotate-180' : ''}`} />
-                  </button>
+                <div className={`absolute inset-0 bg-primary/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-full'}`} />
+                <div className={`relative bg-card shadow-lg border border-border/50 overflow-hidden hover:shadow-xl transition-all duration-300 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-2xl'}`}>
+                  <div className="flex items-center px-4 py-3 border-b border-border/30">
+                    <Search className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <span className="text-sm text-muted-foreground ml-2">Search Prompt</span>
+                    <div className="flex-1" />
+                    <div className="flex items-center gap-1">
+                      <button 
+                        type="button"
+                        onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+                        className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
+                        title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
+                        data-testid="button-toggle-prompt-expand"
+                      >
+                        {isPromptExpanded ? (
+                          <Minimize2 className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Maximize2 className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                        title="Search history"
+                        data-testid="button-toggle-history"
+                      >
+                        <History className="h-4 w-4 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    <Textarea 
+                      ref={inputRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onFocus={() => {
+                        if (!isPromptExpanded && input.length < 50) {
+                          setShowHistory(true);
+                        }
+                      }}
+                      placeholder={isPromptExpanded 
+                        ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies involved in renewable power transmission...\n\nInclusion criteria:\n- Entity must be a company, not a project or SPV\n- Must have operational involvement in target sector\n\nExclusion criteria:\n- Exclude pure contractors with no operating assets\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
+                        : "e.g. 'Top 20 CFOs in luxury watch brands globally' — Click Expand for detailed prompts"
+                      }
+                      className={`border-0 shadow-none focus-visible:ring-0 text-base bg-transparent resize-none transition-all duration-200 ${
+                        isPromptExpanded ? 'min-h-[280px] max-h-[500px]' : 'min-h-[50px] max-h-[100px]'
+                      }`}
+                      disabled={searchMutation.isPending}
+                      data-testid="input-search-query"
+                    />
+                  </div>
                 </div>
               </div>
               

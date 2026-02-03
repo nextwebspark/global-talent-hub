@@ -397,7 +397,8 @@ export default function Dashboard() {
         setSearchStatus('');
         searchCleanupRef.current = null;
         refetchHistory();
-        refetchCompanies(); // Sync with server state
+        // NOTE: Do NOT call refetchCompanies() here - streaming already added companies via addCompany()
+        // Calling refetchCompanies() would fetch ALL companies from ALL searches and overwrite the current results
         
         // Update discovery status in store
         useAppStore.getState().setDiscoveryStatus(result.discoveryStatus, result.degradationReasons);

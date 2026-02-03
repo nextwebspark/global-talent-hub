@@ -1908,9 +1908,9 @@ export interface ResearchedCompany {
   streetAddress: string;
   latitude: number;
   longitude: number;
-  revenue: number;
+  revenue: number | null;  // null if not available (no false precision)
   revenueSource: string;
-  employees: number;
+  employees: number | null;  // null if not available (no false precision)
   employeesSource: string;
   confidence: number;
 }
@@ -2048,16 +2048,25 @@ CRITICAL REQUIREMENTS:
       console.log(`[Enrichment:Research] Estimated revenue for ${name}: $${revenue}`);
     }
     
-    // Parse employees - ensure non-zero
-    let employees = Math.round(parseNumeric(data.employees, 0));
-    if (employees <= 0) {
-      employees = 100; // Default estimate for unknown company size
-      console.log(`[Enrichment:Research] Estimated employees for ${name}: ${employees}`);
+    // EMPLOYEES: Do not auto-set defaults - missing data stays Unknown (no false precision)
+    const rawEmployees = parseNumeric(data.employees, 0);
+    let employees: number | null = rawEmployees > 0 ? Math.round(rawEmployees) : null;
+    
+    if (employees === null) {
+      console.log(`[Enrichment:Research] ${name}: No employee data available - keeping as Unknown`);
     }
     
-    // Confidence score
-    let confidence = parseNumeric(data.confidence, 5);
-    confidence = Math.max(1, Math.min(10, confidence));
+    // CONFIDENCE: Do not auto-assign default without justification
+    const rawConfidence = data.confidence;
+    let confidence: number;
+    
+    if (rawConfidence === undefined || rawConfidence === null) {
+      confidence = 3; // Low confidence when not explicitly justified
+      console.log(`[Enrichment:Research] ${name}: No confidence provided - defaulting to low (3)`);
+    } else {
+      confidence = parseNumeric(rawConfidence, 3);
+      confidence = Math.max(1, Math.min(10, confidence));
+    }
     
     console.log(`[Enrichment:Research] Successfully researched company: ${name} (Revenue: $${revenue}, Employees: ${employees}, Location: ${country})`);
     
@@ -2079,22 +2088,22 @@ CRITICAL REQUIREMENTS:
   } catch (error: any) {
     console.error(`[Enrichment:Research] Failed to research company: ${error.message}`);
     
-    // Return fallback with reasonable estimates instead of zeros
+    // Return fallback with null values - no false precision when research fails
     const defaultCoords = REGION_COORDINATES['default'];
     return {
       name: companyName,
-      sector: 'Business Services',
+      sector: 'Unknown',
       region: 'Unknown',
       country: 'Unknown',
       city: '',
       streetAddress: '',
       latitude: defaultCoords.lat + (Math.random() - 0.5) * 0.1,
       longitude: defaultCoords.lng + (Math.random() - 0.5) * 0.1,
-      revenue: 10000000, // $10M default estimate
-      revenueSource: 'Estimate (research failed)',
-      employees: 100,
-      employeesSource: 'Estimate (research failed)',
-      confidence: 1
+      revenue: null, // Unknown - research failed
+      revenueSource: 'Unknown (research failed)',
+      employees: null, // Unknown - research failed
+      employeesSource: 'Unknown (research failed)',
+      confidence: 1 // Low confidence due to research failure
     };
   }
 }

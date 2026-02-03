@@ -380,23 +380,34 @@ function validateCompanyData(data: any): any {
   }
   // Tier 1 sources pass with no confidence reduction
   
-  let employees = Math.round(parseNumber(data.employees || data.employeeCount || data.headcount));
+  // EMPLOYEES: Do not auto-set defaults - missing/unreliable data stays Unknown
+  const rawEmployees = parseNumber(data.employees || data.employeeCount || data.headcount);
+  let employees: number | null = rawEmployees > 0 ? Math.round(rawEmployees) : null;
   
-  if (employees === 0 || employees < 10) {
-    console.warn(`[Discovery] Warning: ${name} has zero/low employees, using minimum default`);
-    employees = 100;
+  if (employees === null || employees === 0) {
+    console.log(`[Discovery] ${name}: No employee data available - keeping as Unknown (no false precision)`);
   }
   
-  let confidence = parseNumber(data.confidence || data.score, 5);
-  confidence = Math.max(1, Math.min(10, confidence));
+  // CONFIDENCE: Do not auto-assign default - require explicit justification
+  const rawConfidence = data.confidence || data.score;
+  let confidence: number;
+  
+  if (rawConfidence === undefined || rawConfidence === null) {
+    // No confidence provided by LLM - set to low value indicating uncertainty
+    confidence = 3; // Low confidence when not explicitly justified
+    console.log(`[Discovery] ${name}: No confidence score provided - defaulting to low (3) for transparency`);
+  } else {
+    confidence = parseNumber(rawConfidence, 3);
+    confidence = Math.max(1, Math.min(10, confidence));
+  }
   
   // Apply confidence reduction for non-authoritative revenue sources
   if (revenueConfidenceReduction > 0) {
     confidence = Math.max(1, confidence - revenueConfidenceReduction);
   }
   
-  // Revenue sanity checks (only if revenue exists)
-  if (revenue !== null && revenue > 0 && employees > 0) {
+  // Revenue sanity checks (only if both revenue and employees exist)
+  if (revenue !== null && revenue > 0 && employees !== null && employees > 0) {
     const revenuePerEmployee = revenue / employees;
     const MAX_REASONABLE_RATIO = 3000000;
     

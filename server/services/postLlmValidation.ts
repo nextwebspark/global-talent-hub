@@ -435,6 +435,181 @@ export function validateMapScalingFactors(scalingFields: string[]): { valid: boo
   };
 }
 
+// ========== VISUAL SCALING ENFORCEMENT ==========
+// Map bubbles and other visual scales may ONLY use:
+// 1. High-confidence metrics (confidence >= 6)
+// 2. Comparable metrics (same unit, same definition)
+// 3. Correctly defined metrics (not null, not inferred)
+// If conditions are not met, visuals MUST fall back to neutral defaults.
+
+export interface VisualScalingResult {
+  companies: any[];
+  scalingMetric: string;
+  scalingApplied: boolean;
+  fallbackUsed: boolean;
+  fallbackReason?: string;
+  scalingLog: VisualScalingEntry[];
+}
+
+export interface VisualScalingEntry {
+  companyName: string;
+  metricValue: any;
+  meetsScalingCriteria: boolean;
+  usedForScaling: boolean;
+  reason: string;
+}
+
+// Minimum confidence required for a metric to influence visual scaling
+const MIN_SCALING_CONFIDENCE = 6;
+
+/**
+ * Check if a metric value is suitable for visual scaling.
+ * Requirements:
+ * 1. Value must be defined (not null/undefined)
+ * 2. Value must be numeric and positive
+ * 3. Company confidence must be >= MIN_SCALING_CONFIDENCE
+ */
+export function isMetricSuitableForScaling(
+  value: any,
+  confidence: number
+): { suitable: boolean; reason: string } {
+  // Check if value exists
+  if (value === null || value === undefined) {
+    return { suitable: false, reason: 'Metric value is null/undefined' };
+  }
+  
+  // Check if value is numeric
+  const numericValue = Number(value);
+  if (isNaN(numericValue)) {
+    return { suitable: false, reason: 'Metric value is not numeric' };
+  }
+  
+  // Check if value is positive (for scaling purposes)
+  if (numericValue <= 0) {
+    return { suitable: false, reason: 'Metric value is not positive' };
+  }
+  
+  // Check confidence threshold
+  if (confidence < MIN_SCALING_CONFIDENCE) {
+    return { suitable: false, reason: `Confidence (${confidence}) below threshold (${MIN_SCALING_CONFIDENCE})` };
+  }
+  
+  return { suitable: true, reason: 'Meets all scaling criteria' };
+}
+
+/**
+ * Enforce visual scaling rules on company data.
+ * Determines which metric to use for scaling and applies neutral fallback
+ * when metrics don't meet quality requirements.
+ */
+export function enforceVisualScaling(
+  companies: any[],
+  preferredMetric: string = 'revenue'
+): VisualScalingResult {
+  const scalingLog: VisualScalingEntry[] = [];
+  const NEUTRAL_SCALE_VALUE = 1; // Default neutral scale when metrics unsuitable
+  
+  console.log(`[VisualScaling] Evaluating ${companies.length} companies for ${preferredMetric} scaling`);
+  
+  // Count how many companies have suitable metrics
+  let suitableCount = 0;
+  
+  const processedCompanies = companies.map(company => {
+    const companyName = String(company.name || 'Unknown').trim();
+    const confidence = Number(company.confidence || 0);
+    const metricValue = company[preferredMetric];
+    
+    const suitability = isMetricSuitableForScaling(metricValue, confidence);
+    
+    if (suitability.suitable) {
+      suitableCount++;
+      scalingLog.push({
+        companyName,
+        metricValue,
+        meetsScalingCriteria: true,
+        usedForScaling: true,
+        reason: suitability.reason
+      });
+      
+      // Keep original value for scaling
+      return {
+        ...company,
+        _scalingValue: Number(metricValue),
+        _scalingApplied: true
+      };
+    } else {
+      scalingLog.push({
+        companyName,
+        metricValue,
+        meetsScalingCriteria: false,
+        usedForScaling: false,
+        reason: suitability.reason
+      });
+      
+      // Apply neutral fallback
+      return {
+        ...company,
+        _scalingValue: NEUTRAL_SCALE_VALUE,
+        _scalingApplied: false
+      };
+    }
+  });
+  
+  // Determine if we should use scaling at all
+  // Require at least 50% of companies to have suitable metrics for meaningful comparison
+  const minimumSuitableRatio = 0.5;
+  const actualRatio = companies.length > 0 ? suitableCount / companies.length : 0;
+  const useScaling = actualRatio >= minimumSuitableRatio;
+  
+  let fallbackReason: string | undefined;
+  
+  if (!useScaling && companies.length > 0) {
+    fallbackReason = `Only ${suitableCount}/${companies.length} (${Math.round(actualRatio * 100)}%) companies have suitable ${preferredMetric} for scaling. Falling back to neutral sizing.`;
+    console.log(`[VisualScaling] ${fallbackReason}`);
+    
+    // Apply neutral fallback to ALL companies when scaling isn't meaningful
+    processedCompanies.forEach(company => {
+      company._scalingValue = NEUTRAL_SCALE_VALUE;
+      company._scalingApplied = false;
+    });
+  } else {
+    console.log(`[VisualScaling] Scaling applied: ${suitableCount}/${companies.length} companies have suitable ${preferredMetric}`);
+  }
+  
+  return {
+    companies: processedCompanies,
+    scalingMetric: preferredMetric,
+    scalingApplied: useScaling,
+    fallbackUsed: !useScaling,
+    fallbackReason,
+    scalingLog
+  };
+}
+
+/**
+ * Get the appropriate bubble size for a company based on scaling rules.
+ * Returns a normalized size value for map visualization.
+ */
+export function getBubbleSize(
+  company: any,
+  minSize: number = 20,
+  maxSize: number = 80
+): number {
+  // If scaling was not applied, use neutral size
+  if (!company._scalingApplied) {
+    return (minSize + maxSize) / 2; // Middle size as neutral
+  }
+  
+  const scalingValue = company._scalingValue || 1;
+  
+  // Normalize to a reasonable range
+  // Using log scale to prevent extreme outliers from dominating
+  const logValue = Math.log10(Math.max(1, scalingValue));
+  const normalizedValue = Math.min(1, Math.max(0, logValue / 12)); // Assuming max ~$1T (10^12)
+  
+  return minSize + (normalizedValue * (maxSize - minSize));
+}
+
 // ========== RANKING INTEGRITY ENFORCEMENT ==========
 // Ranking must NEVER suppress valid entities.
 // If multiple entities meet criteria, ALL must be returned, even if confidence varies.
@@ -569,6 +744,7 @@ export interface PostLlmValidationResult {
   preFlightChecklist: PreFlightChecklistResult;
   narrativeSeparation?: NarrativeSeparationResult;
   rankingIntegrity?: RankingIntegrityResult;
+  visualScaling?: VisualScalingResult;
   summary: {
     totalReceived: number;
     totalPassed: number;
@@ -800,6 +976,17 @@ export function validateLlmResponse(
   }
   // ========== END RANKING INTEGRITY ==========
 
+  // ========== VISUAL SCALING ENFORCEMENT ==========
+  // Map bubbles may ONLY use high-confidence, comparable, correctly-defined metrics
+  // Otherwise, fall back to neutral defaults
+  const visualScaling = enforceVisualScaling(finalCompanies, 'revenue');
+  finalCompanies = visualScaling.companies;
+  
+  if (visualScaling.fallbackUsed) {
+    console.log(`[PostLlmValidation] Visual scaling fallback: ${visualScaling.fallbackReason}`);
+  }
+  // ========== END VISUAL SCALING ==========
+
   return {
     isValid: finalCompanies.length > 0,
     companies: finalCompanies,
@@ -807,6 +994,7 @@ export function validateLlmResponse(
     preFlightChecklist,
     narrativeSeparation,
     rankingIntegrity,
+    visualScaling,
     summary: {
       ...summary,
       totalPassed: finalCompanies.length

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
 import { validateLlmResponse } from "./postLlmValidation";
+import { validateQuery, validateResults, type QueryValidationResult } from "./queryValidation";
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -745,6 +746,29 @@ export async function* discoverCompaniesStreaming(
   const limit = criteria.limit || 10;
   const query = originalQuery.trim();
   
+  // ========== QUERY VALIDATION ==========
+  // Validate query against edge cases before processing
+  const queryValidation = validateQuery(query);
+  
+  console.log(`[Discovery] Query validation result: type=${queryValidation.classification.type}, risk=${queryValidation.overallRisk}`);
+  
+  if (queryValidation.warnings.length > 0) {
+    console.log(`[Discovery] Query warnings: ${queryValidation.warnings.join('; ')}`);
+  }
+  
+  // Yield warnings to frontend for user awareness
+  if (queryValidation.overallRisk === 'high') {
+    yield { 
+      type: 'status', 
+      data: { 
+        message: `High-risk query detected: ${queryValidation.warnings[0] || 'Results may have reduced confidence'}`,
+        progress: 2,
+        warning: true
+      } 
+    };
+  }
+  // ========== END QUERY VALIDATION ==========
+  
   const client = openrouter;
   const baseModel = selectedModel || DEFAULT_MODEL;
   
@@ -1066,7 +1090,7 @@ IMPORTANT:
   console.log(`[Discovery Streaming] Post-LLM validation summary:`, postLlmValidation.summary);
   
   // Use validated companies instead of raw data
-  const validatedCompaniesData = postLlmValidation.companies;
+  let validatedCompaniesData = postLlmValidation.companies;
   
   if (validatedCompaniesData.length === 0) {
     console.warn("[Discovery Streaming] All companies blocked by post-LLM validation");
@@ -1074,6 +1098,31 @@ IMPORTANT:
     return;
   }
   // ========== END POST-LLM VALIDATION LAYER ==========
+  
+  // ========== CONFIDENTLY WRONG DETECTION ==========
+  // Validate results against query context to detect and block confidently wrong results
+  yield { type: 'status', data: { message: 'Checking for data quality issues...', progress: 50 } };
+  
+  const resultValidation = validateResults(validatedCompaniesData, queryValidation);
+  validatedCompaniesData = resultValidation.companies;
+  
+  console.log(`[Discovery Streaming] Result validation: ${resultValidation.totalPassed} passed, ${resultValidation.totalBlocked} blocked, ${resultValidation.totalFlagged} flagged`);
+  
+  if (resultValidation.confidenceAdjustments > 0) {
+    console.log(`[Discovery Streaming] Applied ${resultValidation.confidenceAdjustments} confidence adjustments based on query risk profile`);
+  }
+  
+  if (resultValidation.totalBlocked > 0) {
+    yield { 
+      type: 'status', 
+      data: { 
+        message: `Removed ${resultValidation.totalBlocked} suspicious results to ensure data quality`,
+        progress: 52,
+        warning: true
+      } 
+    };
+  }
+  // ========== END CONFIDENTLY WRONG DETECTION ==========
 
   console.log(`[Discovery Streaming] Processing ${validatedCompaniesData.length} validated companies`);
   let processed = 0;

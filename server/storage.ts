@@ -3,6 +3,7 @@ import {
   companies, 
   executives, 
   searchQueries, 
+  searchResults,
   users,
   careerHistory,
   education,
@@ -17,6 +18,8 @@ import {
   type InsertExecutive,
   type SearchQuery,
   type InsertSearchQuery,
+  type SearchResult,
+  type InsertSearchResult,
   type CareerHistory,
   type InsertCareerHistory,
   type Education,
@@ -101,6 +104,12 @@ export interface IStorage {
   
   getCompanyNotes(companyId: number): Promise<CompanyNotes | undefined>;
   upsertCompanyNotes(companyId: number, content: string): Promise<CompanyNotes>;
+  
+  getSearchResultsByQuery(searchQueryId: number): Promise<SearchResult[]>;
+  getSearchResultsByCompany(companyId: number): Promise<SearchResult[]>;
+  createSearchResult(result: InsertSearchResult): Promise<SearchResult>;
+  createSearchResults(results: InsertSearchResult[]): Promise<SearchResult[]>;
+  updateSearchResultCompanyLink(id: number, companyId: number): Promise<SearchResult>;
   
   getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
@@ -719,6 +728,34 @@ export class DatabaseStorage implements IStorage {
       remuneration: remunerationData,
       notes: notesData
     };
+  }
+
+  async getSearchResultsByQuery(searchQueryId: number): Promise<SearchResult[]> {
+    return await db.select().from(searchResults).where(eq(searchResults.searchQueryId, searchQueryId));
+  }
+
+  async getSearchResultsByCompany(companyId: number): Promise<SearchResult[]> {
+    return await db.select().from(searchResults).where(eq(searchResults.companyId, companyId));
+  }
+
+  async createSearchResult(result: InsertSearchResult): Promise<SearchResult> {
+    const [created] = await db.insert(searchResults).values(result).returning();
+    return created;
+  }
+
+  async createSearchResults(results: InsertSearchResult[]): Promise<SearchResult[]> {
+    if (results.length === 0) return [];
+    const created = await db.insert(searchResults).values(results).returning();
+    return created;
+  }
+
+  async updateSearchResultCompanyLink(id: number, companyId: number): Promise<SearchResult> {
+    const [updated] = await db
+      .update(searchResults)
+      .set({ companyId })
+      .where(eq(searchResults.id, id))
+      .returning();
+    return updated;
   }
 }
 

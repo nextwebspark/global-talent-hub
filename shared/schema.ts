@@ -78,6 +78,24 @@ export const searchQueries = pgTable("search_queries", {
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+export const searchResults = pgTable("search_results", {
+  id: serial("id").primaryKey(),
+  searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "cascade" }),
+  companyId: integer("company_id").references(() => companies.id, { onDelete: "set null" }),
+  url: text("url").notNull(),
+  title: text("title"),
+  snippet: text("snippet"),
+  domain: text("domain"),
+  rank: integer("rank"),
+  provider: text("provider").notNull(),
+  sourceTier: integer("source_tier"),
+  tierReason: text("tier_reason"),
+  documentType: text("document_type"),
+  isVerificationSource: boolean("is_verification_source").default(false),
+  extractedData: text("extracted_data"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -110,6 +128,11 @@ export const insertExecutiveSchema = createInsertSchema(executives).omit({
 });
 
 export const insertSearchQuerySchema = createInsertSchema(searchQueries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertSearchResultSchema = createInsertSchema(searchResults).omit({
   id: true,
   createdAt: true,
 });
@@ -216,6 +239,8 @@ export type Executive = typeof executives.$inferSelect;
 export type InsertExecutive = z.infer<typeof insertExecutiveSchema>;
 export type SearchQuery = typeof searchQueries.$inferSelect;
 export type InsertSearchQuery = z.infer<typeof insertSearchQuerySchema>;
+export type SearchResult = typeof searchResults.$inferSelect;
+export type InsertSearchResult = z.infer<typeof insertSearchResultSchema>;
 export type Conversation = typeof conversations.$inferSelect;
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Message = typeof messages.$inferSelect;

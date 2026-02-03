@@ -162,9 +162,15 @@ export async function* discoverCompaniesWithRetrieval(
   const modelValidation = getApprovedModel(selectedModel);
   const approvedModel = modelValidation.model;
   
+  // ========== DISCOVERY STATUS TRACKING ==========
+  const degradationReasons: string[] = [];
+  let discoveryStatus: 'complete' | 'partial' | 'degraded' = 'complete';
+  
   if (modelValidation.wasOverridden) {
     console.warn(`[RetrievalDiscovery] ${modelValidation.reason}`);
     yield { type: 'status', data: { message: `Using approved model: ${approvedModel}`, progress: 1 } };
+    degradationReasons.push('Non-approved model overridden');
+    discoveryStatus = 'degraded';
   }
   // ========== END MODEL ENFORCEMENT ==========
   
@@ -175,6 +181,15 @@ export async function* discoverCompaniesWithRetrieval(
   
   if (!webSearchService.isConfigured()) {
     yield { type: 'status', data: { message: 'Web search not configured - falling back to LLM-only mode', progress: 5, warning: true } };
+    // Emit complete event with degraded status for robustness
+    yield { 
+      type: 'complete', 
+      data: { 
+        total: 0,
+        discoveryStatus: 'degraded' as const,
+        degradationReasons: ['Web search not configured - using LLM-only mode']
+      } 
+    };
     return;
   }
   
@@ -275,6 +290,9 @@ Extract up to ${limit} companies that match the query. Remember:
     
     if (retried) {
       yield { type: 'status', data: { message: 'Used fallback model for extraction', progress: 40 } };
+      // Track fallback model usage as degradation
+      degradationReasons.push(`Fallback model used: ${model}`);
+      if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
     }
     
   } catch (error: any) {
@@ -438,8 +456,21 @@ Extract up to ${limit} companies that match the query. Remember:
     }
   }
   
+  // Determine final discovery status based on results
+  if (processed < limit && processed > 0 && discoveryStatus === 'complete') {
+    discoveryStatus = 'partial';
+    degradationReasons.push(`Found ${processed} of ${limit} requested companies`);
+  }
+  
   yield { type: 'status', data: { message: 'Search complete', progress: 100 } };
-  yield { type: 'complete', data: { total: processed } };
+  yield { 
+    type: 'complete', 
+    data: { 
+      total: processed,
+      discoveryStatus,
+      degradationReasons: degradationReasons.length > 0 ? degradationReasons : undefined
+    } 
+  };
 }
 
 export async function discoverCompaniesWithRetrievalSync(

@@ -990,9 +990,16 @@ export async function* discoverCompaniesStreaming(
   const modelValidation = getApprovedModel(selectedModel || DEFAULT_MODEL);
   const baseModel = modelValidation.model;
   
+  // ========== DISCOVERY STATUS TRACKING ==========
+  // Track degradation conditions throughout the discovery process
+  const degradationReasons: string[] = [];
+  let discoveryStatus: 'complete' | 'partial' | 'degraded' = 'complete';
+  
   if (modelValidation.wasOverridden) {
     console.warn(`[Discovery Streaming] ${modelValidation.reason}`);
     yield { type: 'status', data: { message: `Using approved model: ${baseModel}`, progress: 2 } };
+    degradationReasons.push('Non-approved model overridden');
+    discoveryStatus = 'degraded';
   }
   // ========== END MODEL ENFORCEMENT ==========
   
@@ -1180,6 +1187,11 @@ IMPORTANT:
       const retryOnline = !useOnline;
       console.log(`[Discovery Streaming] Retrying with online=${retryOnline}...`);
       yield { type: 'status', data: { message: `Web search unavailable for this model. ${retryOnline ? 'Enabling' : 'Using'} model's training data...`, progress: 18 } };
+      // Track web search unavailability as degradation
+      if (!retryOnline) {
+        degradationReasons.push('Web search unavailable - using model training data only');
+        if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
+      }
       
       try {
         response = await makeRequest(retryOnline);
@@ -1203,6 +1215,9 @@ IMPORTANT:
             usedOnline = fallbackResult.usedOnline;
             console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel} (online=${usedOnline})`);
             fallbackSuccess = true;
+            // Track fallback usage as degradation
+            degradationReasons.push(`Fallback model used: ${fallbackModel}`);
+            if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
             break;
           }
           console.log(`[Discovery Streaming] Fallback model ${fallbackModel} also failed`);
@@ -1251,6 +1266,9 @@ IMPORTANT:
           usedOnline = fallbackResult.usedOnline;
           console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel}`);
           fallbackSuccess = true;
+          // Track fallback usage as degradation
+          degradationReasons.push(`Fallback model used: ${fallbackModel}`);
+          if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
           break;
         }
       }
@@ -1450,8 +1468,21 @@ IMPORTANT:
     }
   }
 
-  console.log(`[Discovery Streaming] Complete: ${processed} companies created`);
-  yield { type: 'complete', data: { total: processed } };
+  // Determine final discovery status based on results
+  if (processed < limit && processed > 0 && discoveryStatus === 'complete') {
+    discoveryStatus = 'partial';
+    degradationReasons.push(`Found ${processed} of ${limit} requested companies`);
+  }
+  
+  console.log(`[Discovery Streaming] Complete: ${processed} companies created, status: ${discoveryStatus}`);
+  yield { 
+    type: 'complete', 
+    data: { 
+      total: processed,
+      discoveryStatus,
+      degradationReasons: degradationReasons.length > 0 ? degradationReasons : undefined
+    } 
+  };
 }
 
 export async function discoverCompaniesAndExecutives(

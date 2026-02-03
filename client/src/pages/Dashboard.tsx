@@ -390,7 +390,7 @@ export default function Dashboard() {
         }
         setSearchStatus(`Found ${companyCount} companies...`);
       },
-      onComplete: (total, searchQueryId) => {
+      onComplete: (result) => {
         if (searchSessionRef.current !== currentSession) return;
         setIsSearching(false);
         setSearchProgress(100);
@@ -398,10 +398,19 @@ export default function Dashboard() {
         searchCleanupRef.current = null;
         refetchHistory();
         refetchCompanies(); // Sync with server state
-        if (total === 0) {
+        
+        // Update discovery status in store
+        useAppStore.getState().setDiscoveryStatus(result.discoveryStatus, result.degradationReasons);
+        
+        if (result.total === 0) {
           toast.error('No results found. Try a different search query.');
         } else {
-          toast.success(`Found ${total} companies matching your criteria`);
+          const statusMsg = result.discoveryStatus === 'degraded' 
+            ? ` (some limitations applied)` 
+            : result.discoveryStatus === 'partial' 
+              ? ` (partial results)` 
+              : '';
+          toast.success(`Found ${result.total} companies matching your criteria${statusMsg}`);
         }
       },
       onError: (message) => {

@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -42,7 +42,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   const { 
     companies, executives, selectCompany, selectExecutive, selectedCompanyId, 
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
-    hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility
+    hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
+    discoveryStatus, degradationReasons, clearDiscoveryStatus
   } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
@@ -450,6 +451,49 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
             />
           </div>
         </div>
+
+        {/* Discovery Status Banner */}
+        {discoveryStatus && discoveryStatus !== 'complete' && (
+          <div 
+            className={`mx-2 mb-2 p-3 rounded-lg border flex items-start gap-2 ${
+              discoveryStatus === 'degraded' 
+                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' 
+                : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+            }`}
+            data-testid="discovery-status-banner"
+          >
+            {discoveryStatus === 'degraded' ? (
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            ) : (
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-medium ${
+                discoveryStatus === 'degraded' 
+                  ? 'text-amber-800 dark:text-amber-200' 
+                  : 'text-blue-800 dark:text-blue-200'
+              }`}>
+                {discoveryStatus === 'degraded' ? 'Results may be limited' : 'Partial results'}
+              </p>
+              {degradationReasons && degradationReasons.length > 0 && (
+                <p className={`text-xs mt-0.5 ${
+                  discoveryStatus === 'degraded' 
+                    ? 'text-amber-700 dark:text-amber-300' 
+                    : 'text-blue-700 dark:text-blue-300'
+                }`}>
+                  {degradationReasons[0]}
+                </p>
+              )}
+            </div>
+            <button 
+              onClick={() => clearDiscoveryStatus()} 
+              className="text-muted-foreground hover:text-foreground"
+              data-testid="dismiss-discovery-banner"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
 
         <ScrollArea className="flex-1 w-full">
           <div className="p-2 space-y-1 min-w-[280px]">

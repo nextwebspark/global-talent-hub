@@ -165,6 +165,8 @@ export interface ExecutiveDetails {
   notes: { id: number; content: string } | null;
 }
 
+export type DiscoveryStatus = 'complete' | 'partial' | 'degraded';
+
 interface AppState {
   currentProject: Project | null;
   companies: Company[];
@@ -177,6 +179,10 @@ interface AppState {
   searchQuery: string;
   scalingMetric: 'revenue' | 'employees';
   revenueFilter: number;
+  
+  // Discovery status tracking
+  discoveryStatus: DiscoveryStatus | null;
+  degradationReasons: string[] | undefined;
   
   // Map visibility state (UI-only, does not persist to database)
   hiddenCountries: Set<string>;
@@ -201,6 +207,10 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
   setRevenueFilter: (value: number) => void;
+  
+  // Discovery status actions
+  setDiscoveryStatus: (status: DiscoveryStatus | undefined, reasons?: string[]) => void;
+  clearDiscoveryStatus: () => void;
   
   // Map visibility actions
   toggleCountryVisibility: (countryName: string) => void;
@@ -310,6 +320,8 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: '',
   scalingMetric: 'revenue',
   revenueFilter: 0,
+  discoveryStatus: null,
+  degradationReasons: undefined,
   hiddenCountries: new Set<string>(),
   hiddenCompanies: new Set<string>(),
 
@@ -353,6 +365,16 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
   setRevenueFilter: (value) => set({ revenueFilter: value }),
+  
+  // Discovery status actions
+  setDiscoveryStatus: (status, reasons) => set({ 
+    discoveryStatus: status || null, 
+    degradationReasons: reasons 
+  }),
+  clearDiscoveryStatus: () => set({ 
+    discoveryStatus: null, 
+    degradationReasons: undefined 
+  }),
 
   // Map visibility controls
   toggleCountryVisibility: (countryName) => set((state) => {
@@ -410,6 +432,8 @@ export const useAppStore = create<AppState>((set) => ({
     searchQuery: '',
     scalingMetric: 'revenue',
     revenueFilter: 0,
+    discoveryStatus: null,
+    degradationReasons: undefined,
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>()
   })

@@ -235,11 +235,20 @@ export function useSearch() {
   });
 }
 
+export type DiscoveryStatus = 'complete' | 'partial' | 'degraded';
+
+export interface DiscoveryResult {
+  total: number;
+  searchQueryId: number;
+  discoveryStatus?: DiscoveryStatus;
+  degradationReasons?: string[];
+}
+
 export interface StreamingSearchCallbacks {
   onStatus?: (message: string, progress: number) => void;
   onCompany?: (company: Company) => void;
   onSearchCreated?: (data: { searchQueryId: number; query: string; interpretation: string }) => void;
-  onComplete?: (total: number, searchQueryId: number) => void;
+  onComplete?: (result: DiscoveryResult) => void;
   onError?: (message: string) => void;
 }
 
@@ -270,7 +279,12 @@ export function streamingSearch(
   
   eventSource.addEventListener('complete', (e) => {
     const data = JSON.parse(e.data);
-    callbacks.onComplete?.(data.total, data.searchQueryId);
+    callbacks.onComplete?.({
+      total: data.total,
+      searchQueryId: data.searchQueryId,
+      discoveryStatus: data.discoveryStatus,
+      degradationReasons: data.degradationReasons
+    });
     eventSource.close();
   });
   

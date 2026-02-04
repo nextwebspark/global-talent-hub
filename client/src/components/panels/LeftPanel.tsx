@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -63,6 +63,43 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   });
   const [isAdding, setIsAdding] = useState(false);
   const [isAddingExec, setIsAddingExec] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
+
+  const handleEnrichAll = async () => {
+    if (!currentProject?.id) {
+      toast.error('No active project');
+      return;
+    }
+
+    setIsEnriching(true);
+    toast.info('Starting enrichment... This may take a few minutes.');
+    
+    try {
+      const response = await fetch(`/api/search/${currentProject.id}/enrich-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+
+      if (!response.ok) throw new Error('Enrichment failed');
+      
+      const result = await response.json();
+      const { enrichment } = result;
+      
+      toast.success(
+        `Enriched ${enrichment.companiesProcessed} companies: ` +
+        `${enrichment.revenueEnriched} revenues, ` +
+        `${enrichment.employeesEnriched} employee counts, ` +
+        `${enrichment.executivesAdded} executives added`
+      );
+      
+      window.location.reload();
+    } catch (error) {
+      toast.error('Enrichment failed. Please try again.');
+    } finally {
+      setIsEnriching(false);
+    }
+  };
 
   const handleDeleteCompany = async (e: React.MouseEvent, companyId: string, companyName: string) => {
     e.stopPropagation();
@@ -364,16 +401,41 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               <img src={logoImage} alt="Logo" className="h-6 w-auto" />
               <h2 className="text-lg font-serif font-bold text-foreground">Results</h2>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="h-7 px-2 text-xs"
-              data-testid="button-add-company"
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              Add
-            </Button>
+            <div className="flex gap-1">
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleEnrichAll}
+                      disabled={isEnriching || totalCompanies === 0}
+                      className="h-7 px-2 text-xs"
+                      data-testid="button-enrich-all"
+                    >
+                      {isEnriching ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Zap className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    {isEnriching ? 'Enriching...' : 'Enrich all companies with revenue, employees & executives'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="h-7 px-2 text-xs"
+                data-testid="button-add-company"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add
+              </Button>
+            </div>
           </div>
           <div className="flex gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">

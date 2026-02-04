@@ -1,7 +1,37 @@
 import type { Express } from "express";
 import type { Server } from "http";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
+
+// Configure multer for image uploads
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const imageStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `exec-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({ 
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.'));
+    }
+  }
+});
 import { 
   parseSearchQuery, 
   generateSearchUniqueKey
@@ -127,6 +157,24 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating executive:", error);
       res.status(500).json({ error: "Failed to update executive" });
+    }
+  });
+
+  // Executive image upload endpoint
+  app.post("/api/executives/:id/image", upload.single('image'), async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      if (!req.file) {
+        return res.status(400).json({ error: "No image file provided" });
+      }
+      
+      const imageUrl = `/uploads/${req.file.filename}`;
+      await storage.updateExecutiveManual(id, { imageUrl });
+      
+      res.json({ imageUrl });
+    } catch (error) {
+      console.error("Error uploading executive image:", error);
+      res.status(500).json({ error: "Failed to upload image" });
     }
   });
 
@@ -435,7 +483,7 @@ export async function registerRoutes(
               role: 'system',
               content: `You are a business research analyst with deep knowledge of global companies. Research and provide accurate, factual information about companies.
 
-Return ONLY valid JSON with these fields:
+Return ONLY valid JSON (no markdown code blocks, just raw JSON) with these fields:
 - summary: A 2-4 sentence description of the company including what they do, their market position, and key facts
 - coreActivity: What the company primarily does (1-2 sentences describing their main business)
 - operatingModel: How the company operates - B2B, B2C, franchise, direct sales, etc. (1-2 sentences)
@@ -450,10 +498,9 @@ Be accurate and factual. If you're not confident about specific information, pro
 Company Name: ${companyName}
 Country/Region: ${country || 'Unknown'}
 
-Please provide a comprehensive business profile as JSON.`
+Please provide a comprehensive business profile as JSON. Remember: return ONLY raw JSON, no markdown formatting.`
             }
-          ],
-          response_format: { type: 'json_object' }
+          ]
         })
       });
 
@@ -467,10 +514,13 @@ Please provide a comprehensive business profile as JSON.`
       
       let enrichedInfo;
       try {
-        enrichedInfo = JSON.parse(aiData.choices[0].message.content);
+        let content = aiData.choices[0].message.content;
+        // Remove markdown code blocks if present
+        content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        enrichedInfo = JSON.parse(content);
       } catch (parseError) {
-        console.error('[DeepSeek] Failed to parse response:', aiData.choices[0].message.content);
-        return res.status(500).json({ error: "Failed to parse AI response" });
+        console.error('[AI Enrich] Failed to parse response:', aiData.choices[0].message.content);
+        return res.status(500).json({ error: "Failed to parse AI response - model may not support structured output" });
       }
       
       await storage.updateCompanyManual(id, {

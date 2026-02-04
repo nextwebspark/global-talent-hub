@@ -7,24 +7,23 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck, Search, Bot } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models first - openrouter/free auto-routes to available free models
-  { id: 'openrouter/free', name: 'Auto (Best Free)', free: true },
-  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', free: true },
-  { id: 'deepseek/deepseek-v3', name: 'DeepSeek V3', free: true },
-  { id: 'zhipu/glm-4.5-air', name: 'GLM 4.5 Air', free: true },
-  { id: 'stepfun/step-3.5-flash', name: 'Step 3.5 Flash', free: true },
-  // Paid models
-  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', free: false },
-  { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', free: false },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', free: false },
-  { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', free: false },
+  // Free models first - these are confirmed working free models on OpenRouter
+  { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B (Free)', free: true },
+  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B (Free)', free: true },
+  { id: 'google/gemma-2-9b-it:free', name: 'Gemma 2 9B (Free)', free: true },
+  { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B (Free)', free: true },
+  { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (Free)', free: true },
+  // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
+  { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', free: false },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', free: false },
+  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
 ];
 
 const EditableField = ({ 
@@ -549,23 +548,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                   )}
                 </div>
 
-                <div className="p-3 rounded-lg border bg-muted/30 border-border">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                    <Globe className="w-3 h-3" /> Geographic Footprint
-                  </div>
-                  <div className="text-lg font-mono font-semibold">
-                    {company.geographicFootprint ? `${company.geographicFootprint} countries` : 'Unknown'}
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-lg border bg-muted/30 border-border">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                    <Target className="w-3 h-3" /> Customer Model
-                  </div>
-                  <div className="text-lg font-mono font-semibold">
-                    {company.customerModel || 'Unknown'}
-                  </div>
-                </div>
               </div>
             </div>
 
@@ -862,6 +844,13 @@ function ExecutiveDetailView({
     // Update local state immediately
     setLocalExecutive(prev => prev ? { ...prev, [field]: value } : prev);
     
+    // Also update the executives list in the store so it syncs with company view
+    const { executives, setExecutives } = useAppStore.getState();
+    const updatedExecutives = executives.map(e => 
+      e.id === String(localExecutive.id) ? { ...e, [field]: value } : e
+    );
+    setExecutives(updatedExecutives);
+    
     try {
       await fetch(`/api/executives/${localExecutive.id}`, {
         method: 'PATCH',
@@ -1150,8 +1139,41 @@ function ExecutiveDetailView({
         <div className="p-6 space-y-6">
           <div>
             <div className="flex items-center gap-4 mb-4">
-              <div className={`relative w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
-                {executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+              <div className="relative group">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all overflow-hidden ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                  {executive.imageUrl ? (
+                    <img src={executive.imageUrl} alt={executive.name} className="w-full h-full object-cover" />
+                  ) : (
+                    executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+                  )}
+                </div>
+                <label className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                  <Camera className="h-5 w-5 text-white" />
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !localExecutive) return;
+                      const formData = new FormData();
+                      formData.append('image', file);
+                      try {
+                        const response = await fetch(`/api/executives/${localExecutive.id}/image`, {
+                          method: 'POST',
+                          body: formData
+                        });
+                        if (response.ok) {
+                          const { imageUrl } = await response.json();
+                          setLocalExecutive(prev => prev ? { ...prev, imageUrl } : prev);
+                          toast.success('Profile picture updated');
+                        }
+                      } catch (error) {
+                        toast.error('Failed to upload image');
+                      }
+                    }}
+                  />
+                </label>
                 {executive.isEnriched && (
                   <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center ring-2 ring-background">
                     <CheckCircle2 className="h-3 w-3 text-white" />
@@ -1180,11 +1202,16 @@ function ExecutiveDetailView({
                   placeholder="Enter position/title"
                 />
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {executive.confidence && (
-                    <Badge variant="secondary" className={`text-xs ${executive.confidence >= 7 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : executive.confidence >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
-                      Confidence: {executive.confidence}/10
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-muted-foreground">Confidence:</span>
+                    <EditableField
+                      type="number"
+                      value={executive.confidence || 5}
+                      onSave={(val) => handleUpdateExecutiveField('confidence', String(Math.min(10, Math.max(1, Number(val)))))}
+                      className={`text-xs font-medium px-1.5 py-0.5 rounded ${(executive.confidence || 5) >= 7 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : (executive.confidence || 5) >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}
+                      displayFormatter={(val) => `${val}/10`}
+                    />
+                  </div>
                   {executive.isEnriched && (
                     <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700">
                       <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -1241,37 +1268,39 @@ function ExecutiveDetailView({
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => handleDeleteCareerEntry(entry.id)}
+                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteCareerEntry(entry.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
-                    <EditableField
-                      value={entry.company}
-                      onSave={(val) => handleUpdateCareerEntry(entry.id, 'company', String(val))}
-                      className="font-medium text-sm"
-                      placeholder="Company name"
-                    />
-                    <EditableField
-                      value={entry.title}
-                      onSave={(val) => handleUpdateCareerEntry(entry.id, 'title', String(val))}
-                      className="text-xs text-muted-foreground"
-                      placeholder="Job title"
-                    />
-                    <div className="flex gap-2 mt-1">
+                    <div className="pr-8">
                       <EditableField
-                        value={entry.startDate || ''}
-                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'startDate', String(val))}
-                        className="text-xs text-muted-foreground"
-                        placeholder="Start date"
+                        value={entry.company}
+                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'company', String(val))}
+                        className="font-medium text-sm"
+                        placeholder="Company name"
                       />
-                      <span className="text-xs text-muted-foreground">-</span>
                       <EditableField
-                        value={entry.endDate || ''}
-                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'endDate', String(val))}
+                        value={entry.title}
+                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'title', String(val))}
                         className="text-xs text-muted-foreground"
-                        placeholder="End date"
+                        placeholder="Job title"
                       />
+                      <div className="flex gap-2 mt-1">
+                        <EditableField
+                          value={entry.startDate || ''}
+                          onSave={(val) => handleUpdateCareerEntry(entry.id, 'startDate', String(val))}
+                          className="text-xs text-muted-foreground"
+                          placeholder="Start date"
+                        />
+                        <span className="text-xs text-muted-foreground">-</span>
+                        <EditableField
+                          value={entry.endDate || ''}
+                          onSave={(val) => handleUpdateCareerEntry(entry.id, 'endDate', String(val))}
+                          className="text-xs text-muted-foreground"
+                          placeholder="End date"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))
@@ -1301,35 +1330,32 @@ function ExecutiveDetailView({
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => handleDeleteEducation(entry.id)}
+                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteEducation(entry.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
-                    <EditableField
-                      value={entry.institution}
-                      onSave={(val) => handleUpdateEducation(entry.id, 'institution', String(val))}
-                      className="font-medium text-sm"
-                      placeholder="Institution"
-                    />
-                    <div className="flex gap-2">
+                    <div className="pr-8">
                       <EditableField
-                        value={entry.degree || ''}
-                        onSave={(val) => handleUpdateEducation(entry.id, 'degree', String(val))}
-                        className="text-xs text-muted-foreground"
-                        placeholder="Degree"
+                        value={entry.institution}
+                        onSave={(val) => handleUpdateEducation(entry.id, 'institution', String(val))}
+                        className="font-medium text-sm"
+                        placeholder="Institution"
                       />
-                      {entry.fieldOfStudy && (
-                        <>
-                          <span className="text-xs text-muted-foreground">in</span>
-                          <EditableField
-                            value={entry.fieldOfStudy || ''}
-                            onSave={(val) => handleUpdateEducation(entry.id, 'fieldOfStudy', String(val))}
-                            className="text-xs text-muted-foreground"
-                            placeholder="Field of study"
-                          />
-                        </>
-                      )}
+                      <div className="flex gap-2">
+                        <EditableField
+                          value={entry.degree || ''}
+                          onSave={(val) => handleUpdateEducation(entry.id, 'degree', String(val))}
+                          className="text-xs text-muted-foreground"
+                          placeholder="Degree"
+                        />
+                        <EditableField
+                          value={entry.fieldOfStudy || ''}
+                          onSave={(val) => handleUpdateEducation(entry.id, 'fieldOfStudy', String(val))}
+                          className="text-xs text-muted-foreground"
+                          placeholder="Field of study"
+                        />
+                      </div>
                     </div>
                   </div>
                 ))
@@ -1359,25 +1385,26 @@ function ExecutiveDetailView({
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => handleDeleteRemuneration(entry.id)}
+                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteRemuneration(entry.id); }}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>
-                    <div className="flex items-center gap-2 mb-2">
-                      <EditableField
-                        value={entry.year || ''}
-                        onSave={(val) => handleUpdateRemuneration(entry.id, 'year', String(val))}
-                        className="font-medium text-sm"
-                        placeholder="Year"
-                      />
-                      <EditableField
-                        value={entry.currency || 'USD'}
-                        onSave={(val) => handleUpdateRemuneration(entry.id, 'currency', String(val))}
-                        className="text-xs text-muted-foreground"
-                        placeholder="Currency"
-                      />
-                    </div>
+                    <div className="pr-8">
+                      <div className="flex items-center gap-2 mb-2">
+                        <EditableField
+                          value={entry.year || ''}
+                          onSave={(val) => handleUpdateRemuneration(entry.id, 'year', String(val))}
+                          className="font-medium text-sm"
+                          placeholder="Year"
+                        />
+                        <EditableField
+                          value={entry.currency || 'USD'}
+                          onSave={(val) => handleUpdateRemuneration(entry.id, 'currency', String(val))}
+                          className="text-xs text-muted-foreground"
+                          placeholder="Currency"
+                        />
+                      </div>
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <div>
                         <span className="text-muted-foreground">Base: </span>
@@ -1407,6 +1434,7 @@ function ExecutiveDetailView({
                         />
                       </div>
                     </div>
+                    </div>
                   </div>
                 ))
               )}
@@ -1416,45 +1444,33 @@ function ExecutiveDetailView({
           <Separator />
 
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Notes</h3>
-              </div>
-              {!isEditingNotes && (
-                <Button variant="ghost" size="sm" onClick={() => setIsEditingNotes(true)} className="h-6 text-xs">
-                  <Edit2 className="h-3 w-3 mr-1" /> Edit
-                </Button>
-              )}
+            <div className="flex items-center gap-2 mb-3">
+              <FileText className="h-4 w-4 text-primary" />
+              <h3 className="font-semibold">Notes</h3>
             </div>
             
             {isEditingNotes ? (
               <div className="space-y-2">
                 <Textarea
+                  autoFocus
                   value={notesContent}
                   onChange={(e) => setNotesContent(e.target.value)}
+                  onBlur={handleSaveNotes}
                   placeholder="Add internal notes and assessments..."
                   className="min-h-[100px]"
                 />
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSaveNotes} disabled={isSavingNotes}>
-                    {isSavingNotes ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                    Save
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    setIsEditingNotes(false);
-                    setNotesContent(executiveDetails.notes?.content || '');
-                  }}>
-                    Cancel
-                  </Button>
-                </div>
+                <p className="text-xs text-muted-foreground">Click outside to save</p>
               </div>
             ) : (
-              <div className="p-3 border rounded-lg bg-card min-h-[60px]">
+              <div 
+                className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                onClick={() => setIsEditingNotes(true)}
+                title="Click to edit"
+              >
                 {notesContent ? (
                   <p className="text-sm whitespace-pre-wrap">{notesContent}</p>
                 ) : (
-                  <p className="text-sm text-muted-foreground italic">No notes yet. Click Edit to add notes.</p>
+                  <p className="text-sm text-muted-foreground italic">Click to add notes...</p>
                 )}
               </div>
             )}

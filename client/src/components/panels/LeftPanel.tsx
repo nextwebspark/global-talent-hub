@@ -43,7 +43,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     companies, executives, selectCompany, selectExecutive, selectedCompanyId, 
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
     hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
-    discoveryStatus, degradationReasons, clearDiscoveryStatus
+    discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI
   } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
@@ -72,7 +72,25 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     }
 
     setIsEnriching(true);
-    toast.info('Starting enrichment... This may take a few minutes.');
+    toast.info('Enriching companies... Watch for real-time updates!');
+    
+    let pollInterval: NodeJS.Timeout | null = null;
+    
+    const refreshCompanies = async () => {
+      try {
+        const res = await fetch(`/api/search-results/${currentProject.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.companies) {
+            loadFromAPI(data.companies);
+          }
+        }
+      } catch (e) {
+        console.error('Refresh failed:', e);
+      }
+    };
+    
+    pollInterval = setInterval(refreshCompanies, 3000);
     
     try {
       const response = await fetch(`/api/search/${currentProject.id}/enrich-all`, {
@@ -81,10 +99,14 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         body: JSON.stringify({})
       });
 
+      if (pollInterval) clearInterval(pollInterval);
+
       if (!response.ok) throw new Error('Enrichment failed');
       
       const result = await response.json();
       const { enrichment } = result;
+      
+      await refreshCompanies();
       
       toast.success(
         `Enriched ${enrichment.companiesProcessed} companies: ` +
@@ -92,9 +114,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         `${enrichment.employeesEnriched} employee counts, ` +
         `${enrichment.executivesAdded} executives added`
       );
-      
-      window.location.reload();
     } catch (error) {
+      if (pollInterval) clearInterval(pollInterval);
       toast.error('Enrichment failed. Please try again.');
     } finally {
       setIsEnriching(false);

@@ -553,7 +553,13 @@ export async function* discoverWithTavilyResearch(
     console.log(`[TavilyResearch] Got ${researchResult.companies.length} companies`);
   } catch (error: any) {
     console.error('[TavilyResearch] Research failed:', error);
-    yield { type: 'error', data: { message: `Research failed: ${error.message}` } };
+    yield { 
+      type: 'error', 
+      data: { 
+        message: error.message || 'Research failed',
+        code: error.code || 'UNKNOWN_ERROR'
+      } 
+    };
     return;
   }
   

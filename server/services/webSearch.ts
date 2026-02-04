@@ -427,9 +427,14 @@ IMPORTANT: Only include revenue if you find it explicitly stated as "revenue" fr
   
   private async pollForResult(requestId: string, maxAttempts = 60, intervalMs = 2000): Promise<TavilyResearchResult> {
     const statusEndpoint = `https://api.tavily.com/research/${requestId}`;
+    let consecutiveRateLimits = 0;
+    const maxRateLimitRetries = 5;
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      // Skip delay on first attempt
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+      }
       
       const response = await fetch(statusEndpoint, {
         method: 'GET',
@@ -437,6 +442,21 @@ IMPORTANT: Only include revenue if you find it explicitly stated as "revenue" fr
           'Authorization': `Bearer ${this.apiKey}`,
         },
       });
+      
+      if (response.status === 429) {
+        consecutiveRateLimits++;
+        if (consecutiveRateLimits >= maxRateLimitRetries) {
+          const error = new Error('The research service is temporarily busy. Please wait a minute and try again.');
+          (error as any).code = 'RATE_LIMIT';
+          throw error;
+        }
+        const backoffMs = Math.min(intervalMs * Math.pow(2, consecutiveRateLimits), 30000);
+        console.log(`[TavilyResearch] Rate limited (attempt ${consecutiveRateLimits}/${maxRateLimitRetries}), backing off for ${backoffMs}ms`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      
+      consecutiveRateLimits = 0;
       
       if (!response.ok) {
         throw new Error(`Failed to poll research status: ${response.status}`);

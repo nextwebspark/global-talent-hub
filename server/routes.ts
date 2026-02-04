@@ -534,11 +534,25 @@ Please provide a comprehensive business profile as JSON.`
 
       console.log("[Routes] Running Tavily Research discovery for:", query);
       const companies: any[] = [];
+      let discoveryError: string | null = null;
+      
+      let discoveryErrorCode: string | null = null;
       
       for await (const event of discoverWithTavilyResearch(criteria, searchQuery.id, query)) {
         if (event.type === 'company' && event.data?.company) {
           companies.push(event.data.company);
+        } else if (event.type === 'error' && event.data?.message) {
+          discoveryError = event.data.message;
+          discoveryErrorCode = event.data.code || null;
+          console.error(`[Routes] Discovery error (${discoveryErrorCode}): ${discoveryError}`);
         }
+      }
+      
+      // If we got an error and no companies, return the error
+      if (discoveryError && companies.length === 0) {
+        const isRateLimit = discoveryErrorCode === 'RATE_LIMIT';
+        const statusCode = isRateLimit ? 429 : 500;
+        return res.status(statusCode).json({ error: discoveryError });
       }
       
       console.log(`[Routes] Tavily Research complete: ${companies.length} companies found`);

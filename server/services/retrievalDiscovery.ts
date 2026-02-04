@@ -42,6 +42,51 @@ export interface ExtractedCompany {
   sourceTier: number;
 }
 
+/**
+ * NON-DROP RULE UTILITIES
+ * These functions ensure field-level parsing failures don't block company persistence
+ */
+
+function safeParseField<T>(
+  value: unknown,
+  parser: (v: any) => T,
+  defaultValue: T
+): T {
+  try {
+    if (value === null || value === undefined || value === '') {
+      return defaultValue;
+    }
+    const result = parser(value);
+    if (result === null || result === undefined || (typeof result === 'number' && isNaN(result))) {
+      return defaultValue;
+    }
+    return result;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function safeParseNumericField(value: unknown): string | null {
+  try {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    if (typeof value === 'number') {
+      return String(value);
+    }
+    if (typeof value === 'string') {
+      const cleaned = value.replace(/[^0-9.-]/g, '');
+      const num = parseFloat(cleaned);
+      if (!isNaN(num)) {
+        return String(num);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const EXTRACTION_PROMPT = `You are a data extraction expert. Extract company information from web search results.
 
 CRITICAL: Return ONLY a valid JSON object. Do NOT include any explanatory text, preamble, or markdown. Start your response with { and end with }.
@@ -949,31 +994,31 @@ Extract up to ${limit} companies that match the query. Include ALL executives, r
         lng = fallback.longitude;
       }
       
-      // Prepare company data for storage
+      // NON-DROP RULE: Parse each field independently - one field failure must not block others
       const companyData = {
         name: company.name,
-        sector: company.sector || null,
-        businessType: company.businessType || null,
-        description: company.description || null,
-        website: company.website || null,
-        country: company.country || 'Unknown',
-        city: company.city || null,
-        streetAddress: company.streetAddress || null,
+        sector: safeParseField(company.sector, String, null),
+        businessType: safeParseField(company.businessType, String, null),
+        summary: safeParseField(company.description, String, null),
+        website: safeParseField(company.website, String, null),
+        country: safeParseField(company.country, String, null),
+        city: safeParseField(company.city, String, null),
+        streetAddress: safeParseField(company.streetAddress, String, null),
         latitude: lat?.toString() || null,
         longitude: lng?.toString() || null,
-        revenue: company.revenue || null,
-        revenueCurrency: company.revenueCurrency || null,
-        revenueFiscalYear: company.revenueFiscalYear || null,
-        revenueSource: company.revenueSource || null,
-        employees: company.employees || null,
-        employeesSource: company.employeesSource || null,
-        confidence: company.confidence || 5,
-        relevanceReason: company.relevanceReason || 'Found via search',
-        searchQueryId,
+        revenue: safeParseNumericField(company.revenue),
+        revenueCurrency: safeParseField(company.revenueCurrency, String, null),
+        revenueFiscalYear: safeParseField(company.revenueFiscalYear, (v) => parseInt(String(v)), null),
+        revenueSource: safeParseField(company.revenueSource, String, null),
+        employees: safeParseField(company.employees, (v) => parseInt(String(v)), null),
+        employeesSource: safeParseField(company.employeesSource, String, null),
+        confidence: safeParseField(company.confidence, (v) => parseInt(String(v)), 5),
+        relevanceReason: safeParseField(company.relevanceReason, String, 'Found via search'),
       };
       
-      // Create company in database
-      const created = await storage.createCompany(companyData);
+      // Use non-destructive upsert - NEVER drop a company due to missing fields
+      const { company: created, isNew } = await storage.upsertCompanyNonDestructive(companyData, searchQueryId);
+      console.log(`[TavilySearch] ${isNew ? 'Created' : 'Updated'} company: ${company.name}`);
       
       // Create executives if present
       if (company.executives && Array.isArray(company.executives)) {

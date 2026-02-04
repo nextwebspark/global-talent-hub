@@ -70,6 +70,10 @@ export interface IStorage {
   enrichCompanyEmptyFields(id: number, data: Partial<InsertCompany>): Promise<{ updated: Company; enrichedFields: string[] }>;
   updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company>;
   
+  // Non-destructive upsert - creates if not exists, patches only non-null fields if exists
+  upsertCompanyNonDestructive(company: InsertCompany, searchQueryId: number): Promise<{ company: Company; isNew: boolean }>;
+  findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined>;
+  
   getAllSearchQueries(): Promise<SearchQuery[]>;
   getUniqueSearchQueries(): Promise<SearchQuery[]>;
   getSearchQuery(id: number): Promise<SearchQuery | undefined>;
@@ -478,6 +482,69 @@ export class DatabaseStorage implements IStorage {
       .where(eq(companies.id, id))
       .returning();
     return updated;
+  }
+
+  /**
+   * Find a company by name within a specific search query.
+   * Uses case-insensitive matching.
+   */
+  async findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(
+        and(
+          ilike(companies.name, name),
+          eq(companies.searchQueryId, searchQueryId)
+        )
+      );
+    return company;
+  }
+
+  /**
+   * NON-DESTRUCTIVE UPSERT: Creates company if not exists, patches only non-null fields if exists.
+   * - NEVER drops a company due to missing fields
+   * - Uses patch semantics: only updates fields that have non-null values in the input
+   * - Critical for the "absolute non-drop rule"
+   */
+  async upsertCompanyNonDestructive(
+    company: InsertCompany, 
+    searchQueryId: number
+  ): Promise<{ company: Company; isNew: boolean }> {
+    const existing = await this.findCompanyByNameAndQuery(company.name, searchQueryId);
+    
+    if (existing) {
+      const patchData: Partial<InsertCompany> = {};
+      
+      for (const [key, value] of Object.entries(company)) {
+        if (value !== null && value !== undefined && value !== '') {
+          const existingValue = (existing as any)[key];
+          if (existingValue === null || existingValue === undefined || existingValue === '') {
+            (patchData as any)[key] = value;
+          }
+        }
+      }
+      
+      if (Object.keys(patchData).length > 0) {
+        console.log(`[Storage:NonDestructive] Patching ${Object.keys(patchData).length} fields for company "${company.name}"`);
+        const [updated] = await db
+          .update(companies)
+          .set({ ...patchData, updatedAt: sql`CURRENT_TIMESTAMP` })
+          .where(eq(companies.id, existing.id))
+          .returning();
+        return { company: updated, isNew: false };
+      }
+      
+      console.log(`[Storage:NonDestructive] Company "${company.name}" exists, no new data to patch`);
+      return { company: existing, isNew: false };
+    }
+    
+    console.log(`[Storage:NonDestructive] Creating new company: "${company.name}"`);
+    const [newCompany] = await db
+      .insert(companies)
+      .values({ ...company, searchQueryId })
+      .returning();
+    return { company: newCompany, isNew: true };
   }
 
   async getAllSearchQueries(): Promise<SearchQuery[]> {

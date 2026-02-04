@@ -151,86 +151,24 @@ export function useDeleteExecutive() {
   });
 }
 
-export interface LLMModel {
-  id: string;
-  name: string;
-  provider: string;
-}
-
-export function useModels() {
-  return useQuery<LLMModel[]>({
-    queryKey: ['models'],
-    queryFn: async () => {
-      const response = await fetch('/api/models');
-      if (!response.ok) throw new Error('Failed to fetch models');
-      return response.json();
-    },
-  });
-}
-
-export interface ModelTestResult {
-  success: boolean;
-  model: string;
-  withOnline: boolean;
-  latencyMs: number;
-  isReliableOnline?: boolean;
-  recommendation?: string;
-  error?: {
-    code: string;
-    message: string;
-    suggestion: string;
-  };
-}
-
-export interface ComprehensiveModelTestResult {
-  model: string;
-  baseTest: { success: boolean; latencyMs: number; error?: any };
-  onlineTest: { success: boolean; latencyMs: number; error?: any };
-  recommendation: string;
-}
-
-export function useTestModel() {
-  return useMutation<ModelTestResult, Error, { modelId: string; comprehensive?: boolean }>({
-    mutationFn: async ({ modelId, comprehensive = false }) => {
-      const response = await fetch('/api/models/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelId, comprehensive }),
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Failed to test model');
-      }
-      return response.json();
-    },
-  });
-}
-
-export function useReliableModels() {
-  return useQuery<{ reliableModels: LLMModel[]; allModels: LLMModel[]; reliableIds: string[] }>({
-    queryKey: ['reliable-models'],
-    queryFn: async () => {
-      const response = await fetch('/api/models/reliable');
-      if (!response.ok) throw new Error('Failed to fetch reliable models');
-      return response.json();
-    },
-  });
-}
-
 export function useSearch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ query, model }: { query: string; model?: string }) => {
+    mutationFn: async ({ query }: { query: string }) => {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, model }),
+        body: JSON.stringify({ query }),
       });
-      if (!response.ok) throw new Error('Failed to execute search');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to execute search');
+      }
       return response.json() as Promise<SearchResult>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies'] });
+      queryClient.invalidateQueries({ queryKey: ['search-history'] });
     },
   });
 }
@@ -254,16 +192,10 @@ export interface StreamingSearchCallbacks {
 
 export function streamingSearch(
   query: string,
-  model: string | undefined,
   callbacks: StreamingSearchCallbacks
 ): () => void {
-  // Use Tavily Research API directly (no LLM layer) when no model is specified
-  const params = new URLSearchParams({ query });
-  if (model) {
-    params.set('model', model);
-  } else {
-    params.set('research', 'true');  // Use Tavily Research API
-  }
+  // Always use Tavily Research API directly (no LLM layer)
+  const params = new URLSearchParams({ query, research: 'true' });
   const url = `/api/search/stream?${params.toString()}`;
   const eventSource = new EventSource(url);
   

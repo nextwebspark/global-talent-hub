@@ -43,7 +43,7 @@ All search results, companies, and executives are persistently stored in a Postg
 The frontend is built with React 18 and TypeScript, using Wouter for routing and Zustand for global state management. Data fetching is handled by TanStack React Query. UI components are from shadcn/ui (based on Radix UI), styled with Tailwind CSS v4. Interactive maps are rendered using Leaflet with React-Leaflet. Vite is used as the build tool.
 
 ### Backend Architecture
-The backend uses Node.js with Express.js, written in TypeScript. It provides a RESTful JSON API. AI integration is managed via OpenAI API and OpenRouter. Session management utilizes Express sessions with a PostgreSQL session store.
+The backend uses Node.js with Express.js, written in TypeScript. It provides a RESTful JSON API. AI research is powered by Tavily Research API (no LLM layer required). Session management utilizes Express sessions with a PostgreSQL session store.
 
 ### Data Storage
 PostgreSQL is the primary database, with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`. `companies` store details like geo-coordinates, revenue, and `relevanceReason` (LLM's justification). `executives` are linked to companies.
@@ -81,15 +81,15 @@ Rendering fields (coordinates, map zoom, icons) degrade gracefully:
 Coordinate fallback service (`server/services/coordinateFallback.ts`) provides city/country centroids for major global cities and countries.
 
 ### AI Research Engine
-Server-side AI processing (OpenAI, OpenRouter) parses natural language queries to extract industry, geography, and roles. Results are ranked by revenue, then employees. The LLM is instructed to find precise HQ locations and street addresses for accurate map placement. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.
+Server-side AI processing uses Tavily Research API exclusively (no OpenRouter/LLM layer). The Tavily Research API uses `output_schema` for structured output, returning companies with nested executives, revenue data with currency/fiscal year validation, and coordinates. Query parsing uses a simple heuristic (regex-based limit extraction) - no LLM required. Results are ranked by revenue, then employees. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.
 
-### Approved Discovery Models (Locked Down)
-Only models that pass structured-output reliability tests are approved for discovery:
-- **Gemini 3 Flash** (`google/gemini-2.5-flash-preview`) - best structured output
-- **Claude Sonnet 4** (`anthropic/claude-sonnet-4`) - reliable fallback
-- **Claude 3.5 Haiku** (`anthropic/claude-3.5-haiku`) - fast fallback
-
-The UI model dropdown shows ONLY these 3 approved models. The `/api/models` endpoint returns only approved models, ensuring the selected model matches the executed model (no silent overrides). Override logic remains as a safety net but will not trigger in normal UI flows. Non-approved models may be used for analysis/notes in the future, not for discovery searches.
+### Research Flow (No LLM Layer)
+1. User enters natural language query (e.g., "Top 5 banks in UAE")
+2. Simple heuristic extracts limit from query (regex-based, no LLM)
+3. Tavily Research API performs AI-powered web research with structured output schema
+4. Source tier classification validates data quality (Tier 1/2/3)
+5. Companies and executives are persisted to database with proper validation
+6. Results displayed on interactive map with revenue-based bubble sizing
 
 ### Discovery Status Tracking
 Discovery results include status tracking for transparency:

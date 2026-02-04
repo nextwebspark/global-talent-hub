@@ -321,7 +321,7 @@ export default function Dashboard() {
     let companyCount = 0;
     
     // Use Tavily Research API directly (no LLM layer needed)
-    const cleanup = streamingSearch(searchInput, undefined, {
+    const cleanup = streamingSearch(searchInput, {
       onStatus: (message, progress) => {
         if (searchSessionRef.current !== currentSession) return;
         setSearchStatus(message);

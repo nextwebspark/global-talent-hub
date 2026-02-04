@@ -4,14 +4,8 @@ import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
 import { 
   parseSearchQuery, 
-  discoverCompaniesAndExecutives, 
   discoverCompaniesStreaming,
-  fetchAvailableModels,
-  generateSearchUniqueKey,
-  AVAILABLE_MODELS,
-  testModel,
-  testModelComprehensive,
-  RELIABLE_ONLINE_MODELS
+  generateSearchUniqueKey
 } from "./services/discovery";
 import { 
   discoverCompaniesWithRetrieval,
@@ -506,86 +500,25 @@ Please provide a comprehensive business profile as JSON.`
     }
   });
 
-  // Discovery Layer: Return only approved discovery models
-  // UI must only show models that will actually be used (no silent overrides)
-  app.get("/api/models", async (req, res) => {
-    // Return the curated list of approved models directly
-    // Do NOT fetch from OpenRouter as that returns all models including non-approved ones
-    res.json(AVAILABLE_MODELS);
-  });
-
-  // Model health check - test if a model is working
-  app.post("/api/models/test", async (req, res) => {
-    try {
-      const { modelId, comprehensive } = req.body;
-      
-      if (!modelId) {
-        return res.status(400).json({ error: "Model ID is required" });
-      }
-
-      console.log(`[Routes] Testing model: ${modelId}, comprehensive: ${comprehensive}`);
-      
-      if (comprehensive) {
-        const result = await testModelComprehensive(modelId);
-        res.json(result);
-      } else {
-        // Quick test with :online suffix (default search behavior)
-        const isReliable = RELIABLE_ONLINE_MODELS.some(m => modelId.includes(m) || m.includes(modelId));
-        const result = await testModel(modelId, isReliable);
-        res.json({
-          ...result,
-          isReliableOnline: isReliable,
-          recommendation: result.success 
-            ? (isReliable ? "Full web search support" : "Works without web search")
-            : result.error?.suggestion
-        });
-      }
-    } catch (error: any) {
-      console.error("[Routes] Error testing model:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: { code: "TEST_FAILED", message: error.message, suggestion: "Check your OpenRouter API key" }
-      });
-    }
-  });
-
-  // Get list of reliable models known to work with web search
-  app.get("/api/models/reliable", async (req, res) => {
-    try {
-      const reliableModels = AVAILABLE_MODELS.filter(m => 
-        RELIABLE_ONLINE_MODELS.some(r => m.id.includes(r) || r.includes(m.id))
-      );
-      res.json({
-        reliableModels,
-        allModels: AVAILABLE_MODELS,
-        reliableIds: RELIABLE_ONLINE_MODELS
-      });
-    } catch (error: any) {
-      console.error("[Routes] Error fetching reliable models:", error);
-      res.status(500).json({ error: "Failed to fetch reliable models" });
-    }
-  });
-
-  // Discovery Layer: Search endpoint - runs LLM once per search
+  // Discovery Layer: Search endpoint using Tavily Research API (no LLM layer)
   app.post("/api/search", async (req, res) => {
     try {
-      const { query, model } = req.body;
+      const { query } = req.body;
       
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      const selectedModel = model || "deepseek/deepseek-chat";
-      console.log(`[Routes] Processing search: "${query}" with model: ${selectedModel}`);
+      console.log(`[Routes] Processing search with Tavily Research: "${query}"`);
 
-      // Step 1: Parse the search query using Discovery Layer
-      const { criteria, interpretation } = await parseSearchQuery(query, selectedModel);
+      // Step 1: Parse query to get limit and criteria (simple heuristic, no LLM)
+      const { criteria, interpretation } = await parseSearchQuery(query);
 
       // Step 2: Generate unique key to prevent duplicate searches
       const uniqueKey = generateSearchUniqueKey(query);
       console.log("[Routes] Generated unique search key:", uniqueKey);
 
-      // Step 3: Persist search query (Discovery runs once, results persist)
+      // Step 3: Persist search query
       const searchQuery = await storage.upsertSearchQuery({
         uniqueKey,
         query,
@@ -593,16 +526,27 @@ Please provide a comprehensive business profile as JSON.`
         resultCount: 0
       });
 
-      // Step 4: Clear previous results for this exact search before new discovery
+      // Step 4: Clear previous results
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
       console.log("[Routes] Cleared previous results for search ID:", searchQuery.id);
 
-      // Step 5: Run Discovery Layer to find companies and executives (pass original query for accuracy)
-      console.log("[Routes] Running discovery with original query:", query);
-      const companies = await discoverCompaniesAndExecutives(criteria, searchQuery.id, selectedModel, query);
-      console.log(`[Routes] Discovery complete: ${companies.length} companies found`);
+      // Step 5: Run Tavily Research API discovery (no LLM layer)
+      if (!webSearchService.isResearchConfigured()) {
+        return res.status(503).json({ error: "Tavily Research API is not configured. Please add TAVILY_API_KEY to your secrets." });
+      }
 
-      // Step 6: Update result count in persistence layer
+      console.log("[Routes] Running Tavily Research discovery for:", query);
+      const companies: any[] = [];
+      
+      for await (const event of discoverWithTavilyResearch(criteria, searchQuery.id, query)) {
+        if (event.type === 'company' && event.data?.company) {
+          companies.push(event.data.company);
+        }
+      }
+      
+      console.log(`[Routes] Tavily Research complete: ${companies.length} companies found`);
+
+      // Step 6: Update result count
       await storage.updateSearchQueryResultCount(searchQuery.id, companies.length);
 
       res.json({
@@ -612,9 +556,9 @@ Please provide a comprehensive business profile as JSON.`
         criteria,
         results: companies
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("[Routes] Error processing search:", error);
-      res.status(500).json({ error: "Failed to process search. Please try again." });
+      res.status(500).json({ error: error.message || "Failed to process search. Please try again." });
     }
   });
 

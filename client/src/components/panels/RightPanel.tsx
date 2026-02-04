@@ -12,14 +12,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models - verified working on OpenRouter (Feb 2026)
-  { id: 'openrouter/auto', name: 'Auto (Best Available)', free: true },
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  // Free models - verified from OpenRouter Feb 2026
+  { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', free: true },
   { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
-  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', free: true },
-  { id: 'qwen/qwen2.5-vl-72b-instruct:free', name: 'Qwen 2.5 72B', free: true },
-  { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  { id: 'openai/gpt-oss-120b:free', name: 'GPT OSS 120B', free: true },
+  { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B', free: true },
+  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash', free: true },
+  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', free: true },
   // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
@@ -136,7 +136,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
-  const [enrichmentModel, setEnrichmentModel] = useState('openrouter/auto');
+  const [enrichmentModel, setEnrichmentModel] = useState('deepseek/deepseek-r1-0528:free');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
@@ -1142,8 +1142,8 @@ function ExecutiveDetailView({
             <div className="flex items-center gap-4 mb-4">
               <div className="relative group">
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all overflow-hidden ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
-                  {executive.imageUrl ? (
-                    <img src={executive.imageUrl} alt={executive.name} className="w-full h-full object-cover" />
+                  {(localExecutive?.imageUrl || executive.imageUrl) ? (
+                    <img src={(localExecutive?.imageUrl || executive.imageUrl) as string} alt={executive.name} className="w-full h-full object-cover" />
                   ) : (
                     executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
                   )}

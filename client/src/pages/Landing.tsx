@@ -11,29 +11,27 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models - verified working on OpenRouter (Feb 2026)
-  { id: 'openrouter/auto', name: 'Auto (Best Available)', provider: 'OpenRouter', free: true },
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', provider: 'Google', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
+  // Free models - verified from OpenRouter Feb 2026
+  { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', provider: 'DeepSeek', free: true },
   { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', provider: 'Meta', free: true },
-  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', provider: 'DeepSeek', free: true },
-  { id: 'qwen/qwen2.5-vl-72b-instruct:free', name: 'Qwen 2.5 72B', provider: 'Qwen', free: true },
-  { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1', provider: 'Mistral', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
+  { id: 'openai/gpt-oss-120b:free', name: 'GPT OSS 120B', provider: 'OpenAI', free: true },
+  { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B', provider: 'Qwen', free: true },
+  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash', provider: 'StepFun', free: true },
+  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', provider: 'TNG', free: true },
   // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', free: false },
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', provider: 'Anthropic', free: false },
   { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', free: false },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', free: false },
-  { id: 'google/gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro', provider: 'Google', free: false },
-  { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', provider: 'Google', free: false },
 ];
 
 export default function Landing() {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('openrouter/auto');
+  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-r1-0528:free');
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);

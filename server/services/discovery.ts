@@ -432,8 +432,8 @@ export function validateCompanyData(data: any): any {
   
   // Tier 2: Trusted aggregators OR industry estimates
   const isTier2Source = revenueSource && (
-    (/forbes|fortune|bloomberg|reuters|financial times/i.test(revenueSource) &&
-     /revenue|sales|turnover/i.test(revenueSource)) ||
+    (/forbes|fortune|bloomberg|reuters|financial times|kpmg|pwc|deloitte|ey|ernst|s&p|moody|fitch|zawya|argaam/i.test(revenueSource) &&
+     /revenue|sales|turnover|results|report|financial/i.test(revenueSource)) ||
     /industry estimate|market estimate|estimated based on|analyst estimate/i.test(revenueSource)
   );
   

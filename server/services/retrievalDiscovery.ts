@@ -41,28 +41,44 @@ export interface ExtractedCompany {
   sourceTier: number;
 }
 
-const EXTRACTION_PROMPT = `You are a data extraction expert. Your ONLY job is to extract company information from the provided web search results.
+const EXTRACTION_PROMPT = `You are a data extraction expert. Extract company information from web search results.
 
-CRITICAL RULES:
-1. You can ONLY extract information that is explicitly stated in the provided sources
-2. You MUST NOT invent, hallucinate, or guess any company names, revenues, or metrics
-3. If a piece of information is not in the sources, set it to null
-4. Revenue is ONLY valid if:
-   - The source explicitly uses the word "revenue" (not AUM, funding, valuation, contract value)
-   - The currency is stated (e.g., USD, AED, SAR)
-   - The year is stated (e.g., FY2023, 2024)
-   - The source is Tier 1 (annual report, SEC filing) or Tier 2 (reputable business news)
-5. For Tier 3 sources (general web), you can ONLY extract the company name - all metrics must be null
-6. Include the source URL for every piece of data you extract
+CRITICAL: Return ONLY a valid JSON object. Do NOT include any explanatory text, preamble, or markdown. Start your response with { and end with }.
 
-OUTPUT FORMAT:
-Return a JSON object with a "companies" array. Each company must have:
-- name: The exact company name from the source
-- sourceUrls: Array of URLs where this company was found
-- sourceTier: The best (lowest) tier among sources (1=regulatory, 2=business news, 3=web)
-- All other fields should be null unless explicitly found in Tier 1 or Tier 2 sources with proper attribution`;
+EXTRACTION RULES:
+1. ONLY extract information explicitly stated in the provided sources - NO hallucination
+2. For Tier 3 sources: ONLY extract company name, set ALL other fields to null
+3. For Tier 1/2 sources: Extract as much data as available
+
+REQUIRED OUTPUT FIELDS FOR EACH COMPANY:
+- name: Exact company name (REQUIRED)
+- sector: Industry sector (e.g., "Banking", "Technology") or null
+- businessType: "bank", "corporation", "service_provider", etc. or null
+- country: HQ country (e.g., "United Arab Emirates") or null
+- city: HQ city (e.g., "Abu Dhabi", "Dubai") or null
+- streetAddress: Full address if available or null
+- latitude/longitude: GPS coordinates if known, otherwise null
+- revenue: Annual revenue as NUMBER (e.g., 15200000000 not "15.2 billion") or null
+- revenueCurrency: 3-letter code like "USD", "AED", "EUR" - REQUIRED if revenue is provided
+- revenueFiscalYear: Year as integer like 2023, 2024 - REQUIRED if revenue is provided
+- revenueSource: Where you found this (e.g., "Annual Report 2023") - REQUIRED if revenue is provided
+- employees: Number of employees as integer or null
+- employeesSource: Source of employee count or null
+- confidence: 1-10 score for data quality (REQUIRED)
+- relevanceReason: Why this company matches the query (REQUIRED)
+- sourceUrls: Array of URLs where found (REQUIRED)
+- sourceTier: Best tier (1=regulatory filing, 2=business news, 3=general web) (REQUIRED)
+
+REVENUE RULES:
+- Only accept if source explicitly says "revenue" (NOT profit, AUM, valuation, funding)
+- Must include currency code (USD, AED, SAR, etc.)
+- Must include fiscal year
+- Convert text to numbers: "AED 15.2 billion" → revenue: 15200000000, revenueCurrency: "AED"
+- If any part is missing, set revenue to null`;
 
 const VERIFICATION_PROMPT = `You are verifying company financial data from authoritative sources.
+
+CRITICAL: Return ONLY a valid JSON object. Do NOT include any explanatory text, preamble, or markdown. Start your response with { and end with }.
 
 Your task: Extract and verify the revenue figure for the specified company from the provided search results.
 
@@ -122,7 +138,25 @@ async function callLlmWithRetry(
           throw new Error("Empty response from LLM");
         }
         
-        const data = JSON.parse(content);
+        // Extract JSON from response - handle markdown, preamble text, etc.
+        let cleanContent = content.trim();
+        
+        // Strip markdown code fences
+        if (cleanContent.includes('```json')) {
+          const match = cleanContent.match(/```json\s*([\s\S]*?)\s*```/);
+          if (match) cleanContent = match[1].trim();
+        } else if (cleanContent.includes('```')) {
+          const match = cleanContent.match(/```\s*([\s\S]*?)\s*```/);
+          if (match) cleanContent = match[1].trim();
+        }
+        
+        // If still not starting with {, try to find JSON object in the text
+        if (!cleanContent.startsWith('{') && !cleanContent.startsWith('[')) {
+          const jsonMatch = cleanContent.match(/(\{[\s\S]*\})/);
+          if (jsonMatch) cleanContent = jsonMatch[1];
+        }
+        
+        const data = JSON.parse(cleanContent);
         return { data, model, retried: isRetry || attempt > 0 };
         
       } catch (error: any) {

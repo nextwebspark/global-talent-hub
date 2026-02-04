@@ -9,6 +9,7 @@ const openrouter = new OpenAI({
 });
 
 const DEFAULT_MODEL = "anthropic/claude-3.5-haiku";
+const FALLBACK_MODEL = "anthropic/claude-sonnet-4";
 
 interface EnrichmentResult<T> {
   value: T | null;
@@ -34,13 +35,24 @@ interface ExecutiveEnrichment {
 async function callLlm(
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
-  const response = await openrouter.chat.completions.create({
-    model: DEFAULT_MODEL,
-    messages: messages as any,
-    temperature: 0.1,
-    max_tokens: 1000,
-  });
-  return response.choices[0]?.message?.content || '';
+  try {
+    const response = await openrouter.chat.completions.create({
+      model: DEFAULT_MODEL,
+      messages: messages as any,
+      temperature: 0.1,
+      max_tokens: 1000,
+    });
+    return response.choices[0]?.message?.content || '';
+  } catch (error) {
+    console.log(`[Enrichment] Primary model failed, trying fallback...`);
+    const response = await openrouter.chat.completions.create({
+      model: FALLBACK_MODEL,
+      messages: messages as any,
+      temperature: 0.1,
+      max_tokens: 1000,
+    });
+    return response.choices[0]?.message?.content || '';
+  }
 }
 
 function parseJsonFromResponse(content: string): any {
@@ -84,10 +96,10 @@ export async function enrichRevenue(
       context += `Summary: ${searchResults.answer}\n\n`;
     }
     context += searchResults.results.slice(0, 4).map((r, i) => 
-      `[${i+1}] ${r.title}\n${r.snippet}`
+      `[${i+1}] ${r.title} (${r.url})\n${r.snippet}`
     ).join('\n\n');
 
-    const prompt = `Extract ANNUAL REVENUE for "${companyName}". Only use figures labeled "revenue". Return JSON: {"found":bool,"revenue":number,"currency":"USD","fiscalYear":2024,"sourceDescription":"source"} or {"found":false}
+    const prompt = `Extract ANNUAL REVENUE for "${companyName}". Only use figures labeled "revenue/total revenue". Return JSON: {"found":bool,"revenue":number,"currency":"USD","fiscalYear":2024,"sourceUrl":"https://...","sourceDescription":"Annual Report"} or {"found":false}
 
 ${context}`;
 
@@ -100,7 +112,7 @@ ${context}`;
         value: parsed.revenue,
         currency: parsed.currency,
         fiscalYear: parsed.fiscalYear,
-        sourceUrl: null,
+        sourceUrl: parsed.sourceUrl || null,
         sourceDescription: parsed.sourceDescription,
         confidence: 7,
         found: true,
@@ -136,10 +148,10 @@ export async function enrichEmployees(
       context += `Summary: ${searchResults.answer}\n\n`;
     }
     context += searchResults.results.slice(0, 3).map((r, i) => 
-      `[${i+1}] ${r.title}\n${r.snippet}`
+      `[${i+1}] ${r.title} (${r.url})\n${r.snippet}`
     ).join('\n\n');
 
-    const prompt = `Extract employee count for "${companyName}". Return JSON: {"found":bool,"employees":number,"sourceDescription":"source"} or {"found":false}
+    const prompt = `Extract employee count for "${companyName}". Return JSON: {"found":bool,"employees":number,"sourceUrl":"https://...","sourceDescription":"LinkedIn"} or {"found":false}
 
 ${context}`;
 
@@ -150,7 +162,7 @@ ${context}`;
       console.log(`[Enrichment] Found employees for ${companyName}: ${parsed.employees}`);
       return {
         value: parsed.employees,
-        sourceUrl: null,
+        sourceUrl: parsed.sourceUrl || null,
         sourceDescription: parsed.sourceDescription,
         confidence: 6,
         found: true,
@@ -249,6 +261,8 @@ export async function runMultiPassEnrichment(
       revenueCurrency: revenueData.currency,
       revenueFiscalYear: revenueData.fiscalYear,
       revenueSource: revenueData.sourceDescription,
+      revenueSourceUrl: revenueData.sourceUrl,
+      revenueConfidence: revenueData.confidence,
     });
     result.revenueUpdated = true;
   }
@@ -257,6 +271,8 @@ export async function runMultiPassEnrichment(
     await storage.updateCompany(companyId, {
       employees: employeesData.value,
       employeesSource: employeesData.sourceDescription,
+      employeesSourceUrl: employeesData.sourceUrl,
+      employeesConfidence: employeesData.confidence,
     });
     result.employeesUpdated = true;
   }

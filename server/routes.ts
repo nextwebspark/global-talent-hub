@@ -4,12 +4,9 @@ import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
 import { 
   parseSearchQuery, 
-  discoverCompaniesStreaming,
   generateSearchUniqueKey
 } from "./services/discovery";
 import { 
-  discoverCompaniesWithRetrieval,
-  discoverCompaniesWithRetrievalSync,
   discoverWithTavilyResearch
 } from "./services/retrievalDiscovery";
 import { webSearchService } from "./services/webSearch";
@@ -565,8 +562,6 @@ Please provide a comprehensive business profile as JSON.`
   // Streaming search endpoint using Server-Sent Events
   app.get("/api/search/stream", async (req, res) => {
     const query = req.query.query as string;
-    const model = (req.query.model as string) || "anthropic/claude-sonnet-4";
-    const useTavilyResearch = req.query.research === 'true'; // New: Use Tavily Research API (no LLM layer)
     
     if (!query) {
       res.status(400).json({ error: "Search query is required" });
@@ -586,12 +581,12 @@ Please provide a comprehensive business profile as JSON.`
     };
 
     try {
-      console.log(`[Routes SSE] Starting streaming search: "${query}" with model: ${model}`);
+      console.log(`[Routes SSE] Starting streaming search: "${query}"`);
       
       sendEvent('status', { message: 'Starting search...', progress: 0 });
       
-      // Step 1: Parse the search query
-      const { criteria, interpretation } = await parseSearchQuery(query, model);
+      // Step 1: Parse the search query (simple heuristic, no LLM)
+      const { criteria, interpretation } = await parseSearchQuery(query);
       sendEvent('status', { message: 'Criteria parsed', progress: 10, interpretation });
 
       // Step 2: Generate unique key
@@ -615,94 +610,45 @@ Please provide a comprehensive business profile as JSON.`
       // Step 4: Clear previous results
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
 
-      // Step 5: Stream companies as they're discovered
-      // Options: 1) Tavily Research (no LLM), 2) Retrieval + LLM, 3) LLM-only
+      // Step 5: Stream companies using Tavily Research API (only option now - no LLM layer)
       let companyCount = 0;
-      const useRetrieval = webSearchService.isConfigured();
       
-      if (useTavilyResearch) {
-        console.log(`[Routes SSE] Using Tavily Research API (no LLM layer)`);
-      } else {
-        console.log(`[Routes SSE] Using ${useRetrieval ? 'retrieval-first' : 'LLM-only'} discovery`);
+      // Check if Tavily Research is configured
+      if (!webSearchService.isResearchConfigured()) {
+        sendEvent('error', { message: 'Tavily Research API is not configured. Please add TAVILY_API_KEY to your secrets.' });
+        res.end();
+        return;
       }
       
-      let webSearchFailed = false;
+      console.log(`[Routes SSE] Using Tavily Research API for: "${query}"`);
       
-      // Helper to process a discovery stream
-      // Returns { fallbackNeeded: boolean, completeSent: boolean }
-      const processDiscoveryStream = async (stream: AsyncGenerator<any, void, unknown>, isLlmOnlyFallback: boolean = false): Promise<{ fallbackNeeded: boolean, completeSent: boolean }> => {
-        let completeSent = false;
-        for await (const event of stream) {
-          if (event.type === 'company') {
-            companyCount++;
-            sendEvent('company', event.data);
-          } else if (event.type === 'executive') {
-            // New: Forward executive events from Tavily Research
-            sendEvent('executive', event.data);
-          } else if (event.type === 'source') {
-            sendEvent('source', event.data);
-          } else if (event.type === 'verification') {
-            sendEvent('verification', event.data);
-          } else if (event.type === 'status') {
-            sendEvent('status', event.data);
-          } else if (event.type === 'error') {
-            // Check if this is a web search failure - signal to fall back
-            // Only trigger fallback for web search specific errors, not general LLM errors
-            if (!isLlmOnlyFallback && event.data?.message?.includes('Web search failed')) {
-              return { fallbackNeeded: true, completeSent: false }; // Signal to fall back to LLM-only
-            }
-            sendEvent('error', event.data);
-          } else if (event.type === 'complete') {
-            // Update result count
-            await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
-            
-            // Mark as degraded if we fell back to LLM-only
-            const eventData = { ...event.data };
-            if (webSearchFailed || isLlmOnlyFallback) {
-              eventData.discoveryStatus = 'degraded';
-              eventData.degradationReasons = eventData.degradationReasons || [];
-              if (!eventData.degradationReasons.includes('Web search failed - used AI-only mode')) {
-                eventData.degradationReasons.push('Web search failed - used AI-only mode');
-              }
-            }
-            
-            sendEvent('complete', { 
-              ...eventData,
-              searchQueryId: searchQuery.id 
-            });
-            completeSent = true;
-          }
-        }
-        return { fallbackNeeded: false, completeSent };
-      };
+      // Process the discovery stream
+      const researchStream = discoverWithTavilyResearch(criteria, searchQuery.id, query);
       
-      // NEW: Use Tavily Research API (no LLM layer) if requested
-      if (useTavilyResearch && webSearchService.isResearchConfigured()) {
-        console.log(`[Routes SSE] Using Tavily Research for: "${query}"`);
-        const researchStream = discoverWithTavilyResearch(criteria, searchQuery.id, query);
-        await processDiscoveryStream(researchStream, false);
-      }
-      // Run retrieval-first discovery (Search + LLM)
-      else if (useRetrieval) {
-        const retrievalStream = discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query);
-        const result = await processDiscoveryStream(retrievalStream, false);
-        webSearchFailed = result.fallbackNeeded;
-        
-        // If web search failed, fall back to LLM-only
-        if (webSearchFailed) {
-          console.log(`[Routes SSE] Web search failed, falling back to LLM-only discovery`);
-          sendEvent('status', { message: 'Web search unavailable, using AI-only mode...', progress: 10, warning: true });
-          
-          const llmOnlyStream = discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
-          await processDiscoveryStream(llmOnlyStream, true);
+      for await (const event of researchStream) {
+        if (event.type === 'company') {
+          companyCount++;
+          sendEvent('company', event.data);
+        } else if (event.type === 'executive') {
+          sendEvent('executive', event.data);
+        } else if (event.type === 'source') {
+          sendEvent('source', event.data);
+        } else if (event.type === 'verification') {
+          sendEvent('verification', event.data);
+        } else if (event.type === 'status') {
+          sendEvent('status', event.data);
+        } else if (event.type === 'error') {
+          sendEvent('error', event.data);
+        } else if (event.type === 'complete') {
+          await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
+          sendEvent('complete', { 
+            ...event.data,
+            searchQueryId: searchQuery.id 
+          });
         }
-      } else {
-        // No web search configured, use LLM-only directly
-        const llmOnlyStream = discoverCompaniesStreaming(criteria, searchQuery.id, model, query);
-        await processDiscoveryStream(llmOnlyStream, false);
       }
 
-      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies${webSearchFailed ? ' (LLM-only fallback)' : ''}`);
+      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies`);
       res.end();
       
     } catch (error: any) {

@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera, Link2, FileDown } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
@@ -148,6 +149,13 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
   const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
+  
+  // LinkedIn import dialog state
+  const [showLinkedInDialog, setShowLinkedInDialog] = useState(false);
+  const [linkedInUrl, setLinkedInUrl] = useState('');
+  const [linkedInContent, setLinkedInContent] = useState('');
+  const [isParsingLinkedIn, setIsParsingLinkedIn] = useState(false);
+  const [linkedInModel, setLinkedInModel] = useState('openrouter/free');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
@@ -310,6 +318,133 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       const { executives } = useAppStore.getState();
       useAppStore.getState().setExecutives(executives.filter(e => e.id !== tempId));
       toast.error('Failed to add executive');
+    }
+  };
+
+  const handleLinkedInImport = async () => {
+    if (!company || !linkedInContent.trim()) return;
+    
+    setIsParsingLinkedIn(true);
+    const modelName = LLM_MODELS.find(m => m.id === linkedInModel)?.name || linkedInModel;
+    toast.info(`Extracting profile with ${modelName}...`);
+    
+    try {
+      // Parse LinkedIn content with AI
+      const parseResponse = await fetch('/api/parse-linkedin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          linkedinUrl: linkedInUrl,
+          profileContent: linkedInContent,
+          model: linkedInModel
+        })
+      });
+      
+      if (!parseResponse.ok) {
+        const error = await parseResponse.json();
+        throw new Error(error.message || error.error || 'Failed to parse LinkedIn profile');
+      }
+      
+      const profile = await parseResponse.json();
+      
+      // Create the executive
+      const createdExecutive = await createExecutiveMutation.mutateAsync({
+        companyId: parseInt(company.id),
+        name: profile.name || 'New Executive',
+        title: profile.title || 'Position TBD'
+      });
+      
+      const execId = createdExecutive.id;
+      
+      // Update with additional fields if available
+      const updates: Record<string, any> = {};
+      if (profile.linkedin) updates.linkedin = profile.linkedin;
+      if (profile.email) updates.email = profile.email;
+      if (profile.phone) updates.phone = profile.phone;
+      if (linkedInUrl) updates.linkedin = linkedInUrl;
+      
+      if (Object.keys(updates).length > 0) {
+        await updateExecutiveMutation.mutateAsync({ id: execId, data: updates });
+      }
+      
+      // Add career history entries
+      if (profile.careerHistory && Array.isArray(profile.careerHistory)) {
+        for (let i = 0; i < profile.careerHistory.length; i++) {
+          const ch = profile.careerHistory[i];
+          try {
+            await fetch('/api/career-history', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                executiveId: execId,
+                company: ch.company || '',
+                title: ch.title || '',
+                startDate: ch.startDate || null,
+                endDate: ch.endDate || null,
+                description: ch.description || '',
+                sortOrder: i
+              })
+            });
+          } catch (e) {
+            console.error('Failed to add career history entry:', e);
+          }
+        }
+      }
+      
+      // Add education entries
+      if (profile.education && Array.isArray(profile.education)) {
+        for (let i = 0; i < profile.education.length; i++) {
+          const ed = profile.education[i];
+          try {
+            await fetch('/api/education', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                executiveId: execId,
+                institution: ed.institution || '',
+                degree: ed.degree || '',
+                fieldOfStudy: ed.fieldOfStudy || '',
+                startDate: ed.startDate || null,
+                endDate: ed.endDate || null,
+                sortOrder: i
+              })
+            });
+          } catch (e) {
+            console.error('Failed to add education entry:', e);
+          }
+        }
+      }
+      
+      // Update local store
+      const newExec = {
+        id: String(execId),
+        company_id: company.id,
+        name: profile.name || 'New Executive',
+        title: profile.title || 'Position TBD',
+        source: 'LinkedIn Import',
+        confidence: 7,
+        isEnriched: true,
+        enrichmentSource: 'LinkedIn',
+        linkedin: linkedInUrl || profile.linkedin
+      };
+      
+      const { executives: currentExecs, setExecutives } = useAppStore.getState();
+      setExecutives([...currentExecs, newExec]);
+      
+      // Select the new executive
+      selectExecutive(String(execId));
+      
+      // Reset dialog
+      setShowLinkedInDialog(false);
+      setLinkedInUrl('');
+      setLinkedInContent('');
+      
+      toast.success(`Imported ${profile.name || 'executive'} from LinkedIn`);
+    } catch (error) {
+      console.error('LinkedIn import error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to import from LinkedIn');
+    } finally {
+      setIsParsingLinkedIn(false);
     }
   };
 
@@ -722,15 +857,27 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
                   <Users className="h-4 w-4" /> Key Executives
                 </h3>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="h-6 text-xs text-primary hover:bg-primary/10"
-                  onClick={handleAddExecutive}
-                  data-testid="button-add-executive"
-                >
-                  <Plus className="h-3 w-3 mr-1" /> Add
-                </Button>
+                <div className="flex gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-xs text-primary hover:bg-primary/10"
+                    onClick={handleAddExecutive}
+                    data-testid="button-add-executive"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-6 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                    onClick={() => setShowLinkedInDialog(true)}
+                    data-testid="button-import-linkedin"
+                    title="Import from LinkedIn"
+                  >
+                    <Linkedin className="h-3 w-3 mr-1" /> Import
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -801,6 +948,97 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
         </div>
       </div>
       </div>
+
+      {/* LinkedIn Import Dialog */}
+      <Dialog open={showLinkedInDialog} onOpenChange={setShowLinkedInDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Linkedin className="h-5 w-5 text-blue-600" />
+              Import Executive from LinkedIn
+            </DialogTitle>
+            <DialogDescription>
+              Paste the LinkedIn profile content below and AI will extract the executive's details automatically.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">LinkedIn URL (optional)</label>
+              <Input
+                placeholder="https://linkedin.com/in/username"
+                value={linkedInUrl}
+                onChange={(e) => setLinkedInUrl(e.target.value)}
+                data-testid="input-linkedin-url"
+              />
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">
+                Profile Content <span className="text-red-500">*</span>
+              </label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Go to the LinkedIn profile, select all text (Ctrl+A), copy (Ctrl+C), and paste below.
+                Include the About section, Experience, and Education.
+              </p>
+              <Textarea
+                placeholder="Paste the LinkedIn profile content here...&#10;&#10;Example:&#10;John Smith&#10;CEO at Example Corp&#10;New York, NY&#10;&#10;About&#10;Experienced executive with 20+ years...&#10;&#10;Experience&#10;CEO&#10;Example Corp&#10;Jan 2020 - Present&#10;..."
+                value={linkedInContent}
+                onChange={(e) => setLinkedInContent(e.target.value)}
+                className="min-h-[200px] font-mono text-sm"
+                data-testid="textarea-linkedin-content"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {linkedInContent.length} characters {linkedInContent.length < 50 && linkedInContent.length > 0 && '(minimum 50 required)'}
+              </p>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">AI Model</label>
+              <Select value={linkedInModel} onValueChange={setLinkedInModel}>
+                <SelectTrigger className="w-full" data-testid="select-linkedin-model">
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LLM_MODELS.filter(m => m.free).map(model => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.name} {model.free && <span className="text-green-600 ml-1">(Free)</span>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowLinkedInDialog(false)}
+              disabled={isParsingLinkedIn}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleLinkedInImport}
+              disabled={isParsingLinkedIn || linkedInContent.trim().length < 50}
+              className="bg-blue-600 hover:bg-blue-700"
+              data-testid="button-extract-linkedin"
+            >
+              {isParsingLinkedIn ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Extracting...
+                </>
+              ) : (
+                <>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Extract & Import
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

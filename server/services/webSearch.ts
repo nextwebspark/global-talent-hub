@@ -220,6 +220,7 @@ export interface TavilyResearchResult {
   companies: TavilyResearchCompany[];
   sources: string[];
   responseTime?: number;
+  rawMarkdown?: string;
 }
 
 // Revenue parsing utility - handles formats like "SAR 75.3bn 2023", "$15.2B", "AED 28.4 billion"
@@ -708,7 +709,237 @@ export class TavilyResearchService {
     return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
   }
   
-  async research(query: string, limit: number = 10): Promise<TavilyResearchResult & { detectedRegion?: { countries: string[]; regionName: string | null } }> {
+  /**
+   * Parse markdown content from Tavily Research into structured company data.
+   * Handles markdown tables in the format:
+   * | # | Company | Revenue | Employees | Executives |
+   */
+  private parseMarkdownToCompanies(markdown: string): TavilyResearchCompany[] {
+    const companies: TavilyResearchCompany[] = [];
+    
+    console.log(`[TavilyResearch] Parsing markdown, length: ${markdown.length}`);
+    
+    // Find markdown tables - they start with | and have header separator |---|
+    const tableRegex = /\|[^\n]+\|\n\|[-:\s|]+\|\n((?:\|[^\n]+\|\n?)+)/g;
+    const tableMatches = markdown.match(tableRegex);
+    
+    if (!tableMatches || tableMatches.length === 0) {
+      console.log('[TavilyResearch] No markdown tables found, trying to parse sections');
+      // Try parsing from sections/headers instead
+      return this.parseMarkdownSections(markdown);
+    }
+    
+    console.log(`[TavilyResearch] Found ${tableMatches.length} tables`);
+    
+    for (const table of tableMatches) {
+      const lines = table.trim().split('\n');
+      if (lines.length < 3) continue; // Need header, separator, and at least one row
+      
+      // Parse header to understand column positions
+      const headerCells = lines[0].split('|').map(c => c.trim().toLowerCase()).filter(c => c);
+      const colMap: Record<string, number> = {};
+      headerCells.forEach((cell, idx) => {
+        if (cell.includes('#') || cell.includes('no') || cell === 'rank') colMap['rank'] = idx;
+        else if (cell.includes('company') || cell.includes('name')) colMap['company'] = idx;
+        else if (cell.includes('revenue')) colMap['revenue'] = idx;
+        else if (cell.includes('employee')) colMap['employees'] = idx;
+        else if (cell.includes('executive') || cell.includes('leadership') || cell.includes('ceo') || cell.includes('management')) colMap['executives'] = idx;
+        else if (cell.includes('country')) colMap['country'] = idx;
+      });
+      
+      console.log(`[TavilyResearch] Table columns: ${JSON.stringify(colMap)}`);
+      
+      // Parse data rows (skip header and separator)
+      for (let i = 2; i < lines.length; i++) {
+        const row = lines[i];
+        if (!row.trim() || row.trim() === '|') continue;
+        
+        const cells = row.split('|').map(c => c.trim()).filter(c => c);
+        if (cells.length < 2) continue;
+        
+        // Extract company name and country
+        let companyName = '';
+        let country = '';
+        const companyCell = cells[colMap['company'] ?? 1] || cells[1] || '';
+        
+        // Parse company name - might be "**Company Name** - Country" or just "Company Name"
+        const companyMatch = companyCell.match(/\*\*([^*]+)\*\*/);
+        if (companyMatch) {
+          companyName = companyMatch[1].trim();
+          // Extract country from format "Company - Country" or "(Country)"
+          const countryMatch = companyCell.match(/[-–]\s*([A-Za-z\s]+)$/) || 
+                               companyCell.match(/\(([A-Za-z\s]+)\)/);
+          if (countryMatch) {
+            country = countryMatch[1].trim();
+          }
+        } else {
+          companyName = companyCell.replace(/\*\*/g, '').trim();
+          const countryMatch = companyCell.match(/[-–]\s*([A-Za-z\s]+)$/) || 
+                               companyCell.match(/\(([A-Za-z\s]+)\)/);
+          if (countryMatch) {
+            country = countryMatch[1].trim();
+            companyName = companyName.replace(/[-–]\s*[A-Za-z\s]+$/, '').trim();
+          }
+        }
+        
+        if (!companyName || companyName.length < 2) continue;
+        
+        // Use explicit country column if available
+        if (colMap['country'] !== undefined && cells[colMap['country']]) {
+          country = cells[colMap['country']].replace(/\*\*/g, '').trim();
+        }
+        
+        // Extract revenue
+        let revenue: string | undefined;
+        let revenueValue: number | undefined;
+        let revenueCurrency: string | undefined;
+        let revenueFiscalYear: number | undefined;
+        
+        if (colMap['revenue'] !== undefined && cells[colMap['revenue']]) {
+          const revenueCell = cells[colMap['revenue']];
+          if (revenueCell && !revenueCell.includes('-') && revenueCell.toLowerCase() !== 'unknown') {
+            revenue = revenueCell.replace(/\*\*/g, '').replace(/【[^】]*】/g, '').trim();
+            
+            // Parse revenue value from strings like "US $139.95 M" or "SAR 217.9 M (2026)"
+            const parsed = parseRevenueString(revenue);
+            if (parsed.value) {
+              revenueValue = parsed.value;
+              revenueCurrency = parsed.currency || undefined;
+              revenueFiscalYear = parsed.fiscalYear || undefined;
+            }
+          }
+        }
+        
+        // Extract employees
+        let employees: number | undefined;
+        if (colMap['employees'] !== undefined && cells[colMap['employees']]) {
+          const empCell = cells[colMap['employees']].replace(/【[^】]*】/g, '').replace(/\*\*/g, '').trim();
+          const empMatch = empCell.match(/(\d[\d,]*)/);
+          if (empMatch) {
+            employees = parseInt(empMatch[1].replace(/,/g, ''), 10);
+          }
+        }
+        
+        // Extract executives - handle various formats
+        const executives: TavilyResearchExecutive[] = [];
+        if (colMap['executives'] !== undefined && cells[colMap['executives']]) {
+          const execCell = cells[colMap['executives']];
+          // Parse executives - formats: "Name - Title <br> Name2 - Title2", bullet points, or newline separated
+          const execParts = execCell.split(/<br\s*\/?>|•|[\n\r]+|(?:,\s*(?=[A-Z][a-z]))/).filter(p => p.trim());
+          
+          for (const part of execParts) {
+            // Clean up the part first
+            const cleanPart = part.replace(/\*\*/g, '').replace(/【[^】]*】/g, '').replace(/\[\d+\]/g, '').trim();
+            if (!cleanPart || cleanPart.length < 5) continue;
+            
+            // Match patterns:
+            // "John Smith - CEO" or "John Smith, CEO" or "John Smith – CFO"
+            // Also handle: "Sunny Leonkutty - Chief Executive Officer"
+            const execMatch = cleanPart.match(/^([A-Za-z\s.'''-]+?)\s*[-–,]\s*(.+)$/);
+            if (execMatch) {
+              const name = execMatch[1].trim();
+              const title = execMatch[2].replace(/\s*<br.*$/i, '').trim();
+              // Validate name looks like a person name (at least 2 words or has vowels)
+              if (name && name.length > 2 && title && title.length > 2 && 
+                  (/[aeiouAEIOU]/.test(name)) && 
+                  !title.toLowerCase().includes('unknown')) {
+                executives.push({ name, title, source: 'Tavily Research' });
+              }
+            }
+          }
+        }
+        
+        console.log(`[TavilyResearch] Executives parsed for ${companyName}: ${executives.map(e => `${e.name} (${e.title})`).join(', ') || 'none'}`);
+        
+        console.log(`[TavilyResearch] Parsed company: ${companyName}, country: ${country}, revenue: ${revenue}, employees: ${employees}, executives: ${executives.length}`);
+        
+        // Use parsed numeric revenue if available, otherwise keep raw string
+        // This ensures downstream normalization can handle the value
+        companies.push({
+          name: companyName,
+          country: country || 'Unknown',
+          sector: undefined,
+          businessType: undefined,
+          description: undefined,
+          website: undefined,
+          city: undefined,
+          streetAddress: undefined,
+          latitude: undefined,
+          longitude: undefined,
+          // Store numeric value if parsed, or raw string for downstream parsing
+          revenue: revenueValue ?? revenue,
+          revenueCurrency: revenueCurrency ?? undefined,
+          revenueFiscalYear: revenueFiscalYear ?? undefined,
+          revenueSource: revenue ? 'Tavily Research' : undefined,
+          employees,
+          employeesSource: employees ? 'Tavily Research' : undefined,
+          confidence: 7,
+          relevanceReason: 'Found via Tavily Research',
+          executives,
+        });
+      }
+    }
+    
+    return companies;
+  }
+  
+  /**
+   * Parse markdown content that uses section headers instead of tables
+   */
+  private parseMarkdownSections(markdown: string): TavilyResearchCompany[] {
+    const companies: TavilyResearchCompany[] = [];
+    
+    // Look for company mentions with bold formatting
+    const companyMentions = markdown.match(/\*\*([^*]+)\*\*[^|]*([\s\S]*?)(?=\*\*[^*]+\*\*|\n#|\n---|\Z)/g);
+    
+    if (!companyMentions) {
+      console.log('[TavilyResearch] No structured company data found');
+      return companies;
+    }
+    
+    for (const mention of companyMentions) {
+      // Extract company name
+      const nameMatch = mention.match(/\*\*([^*]+)\*\*/);
+      if (!nameMatch) continue;
+      
+      const companyName = nameMatch[1].trim();
+      if (companyName.length < 3 || companyName.toLowerCase().includes('note') || 
+          companyName.toLowerCase().includes('source')) continue;
+      
+      // Try to extract country
+      const countryMatch = mention.match(/[-–]\s*(UAE|Saudi Arabia|United Arab Emirates|Qatar|Kuwait|Bahrain|Oman)/i);
+      const country = countryMatch ? countryMatch[1] : 'Unknown';
+      
+      // Try to extract executives from surrounding text
+      const executives: TavilyResearchExecutive[] = [];
+      const execMatches = mention.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*[-–,]\s*(CEO|CFO|COO|CTO|Managing Director|Chairman|President|General Manager|Founder)[^,\n]*/gi);
+      
+      if (execMatches) {
+        for (const exec of execMatches) {
+          const parts = exec.match(/([A-Za-z\s.''-]+)\s*[-–,]\s*([A-Za-z\s.,'()-]+)/);
+          if (parts) {
+            executives.push({
+              name: parts[1].trim(),
+              title: parts[2].trim(),
+              source: 'Tavily Research'
+            });
+          }
+        }
+      }
+      
+      companies.push({
+        name: companyName,
+        country,
+        executives,
+        confidence: 6,
+        relevanceReason: 'Found via Tavily Research',
+      });
+    }
+    
+    return companies;
+  }
+  
+  async research(query: string, limit: number = 10): Promise<TavilyResearchResult & { detectedRegion?: { countries: string[]; regionName: string | null }; rawMarkdown?: string }> {
     const endpoint = 'https://api.tavily.com/research';
     
     // Detect region/country constraints from the query
@@ -771,9 +1002,9 @@ RANKING:
       },
       body: JSON.stringify({
         input: enhancedQuery,
-        model: 'mini', // Use mini for efficiency, can upgrade to 'pro' for complex queries
-        output_schema: COMPANY_RESEARCH_SCHEMA,
+        model: 'pro', // Use pro for comprehensive research with better executive coverage
         stream: false,
+        // NO output_schema - let Tavily return natural markdown tables which are richer
       }),
     });
     
@@ -842,30 +1073,18 @@ RANKING:
       
       if (data.status === 'completed') {
         // Extract companies from the research output
-        // Tavily Research API returns content in the 'content' field
+        // Tavily Research API returns content in the 'content' field as markdown
         const output = data.content || data.output || data.result || data.report || data.data || '';
         let companies: TavilyResearchCompany[] = [];
         
         console.log(`[TavilyResearch] Output type: ${typeof output}`);
-        console.log(`[TavilyResearch] Output preview: ${typeof output === 'string' ? output.substring(0, 500) : JSON.stringify(output).substring(0, 500)}`);
+        console.log(`[TavilyResearch] Output preview: ${typeof output === 'string' ? output.substring(0, 1000) : JSON.stringify(output).substring(0, 1000)}`);
         console.log(`[TavilyResearch] Full response keys: ${Object.keys(data).join(', ')}`);
         
-        // Try to parse structured output
+        // Parse markdown content - Tavily returns rich markdown tables
         if (typeof output === 'string' && output.length > 0) {
-          // If output is markdown, try to extract JSON
-          try {
-            const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/) || 
-                             output.match(/(\{[\s\S]*"companies"[\s\S]*\})/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[1]);
-              companies = parsed.companies || [];
-              console.log(`[TavilyResearch] Parsed ${companies.length} companies from JSON`);
-            } else {
-              console.log(`[TavilyResearch] No JSON match found in output`);
-            }
-          } catch (e: any) {
-            console.warn('[TavilyResearch] Failed to parse structured output:', e.message);
-          }
+          companies = this.parseMarkdownToCompanies(output);
+          console.log(`[TavilyResearch] Parsed ${companies.length} companies from markdown`);
         } else if (typeof output === 'object' && output.companies) {
           companies = output.companies;
           console.log(`[TavilyResearch] Got ${companies.length} companies from object output`);
@@ -875,6 +1094,7 @@ RANKING:
           companies,
           sources: data.sources || [],
           responseTime: data.response_time,
+          rawMarkdown: typeof output === 'string' ? output : undefined,
         };
       }
       

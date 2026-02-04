@@ -189,6 +189,8 @@ export interface TavilyResearchCompany {
   name: string;
   sector?: string | null;
   businessType?: string | null;
+  description?: string | null;
+  website?: string | null;
   country?: string | null;
   city?: string | null;
   streetAddress?: string | null;
@@ -232,6 +234,8 @@ const COMPANY_RESEARCH_SCHEMA = {
           name: { type: "string", description: "Exact company name" },
           sector: { type: "string", description: "Industry sector (e.g., Banking, Technology, Healthcare)" },
           businessType: { type: "string", description: "Type: bank, corporation, distributor, manufacturer, service_provider" },
+          description: { type: "string", description: "2-4 sentence description of what the company does, its main business activities and market position" },
+          website: { type: "string", description: "Company website URL (e.g., https://www.company.com)" },
           country: { type: "string", description: "Headquarters country" },
           city: { type: "string", description: "Headquarters city" },
           streetAddress: { type: "string", description: "Full street address if available" },
@@ -274,19 +278,123 @@ export class TavilyResearchService {
     this.apiKey = apiKey;
   }
   
+  /**
+   * Detect if the query is asking for specific executive roles
+   * Returns info about whether to filter executives and how
+   */
+  private detectExecutiveRole(query: string): { 
+    specificRole: string | null; 
+    roleDescription: string; 
+    allInFunction: boolean 
+  } {
+    const lowerQuery = query.toLowerCase();
+    
+    // Only apply role filtering if the query clearly indicates executive search intent
+    // This covers various patterns:
+    // - "CEOs of top 5 banks" (role before)
+    // - "top 5 banks CFOs" (role after)
+    // - "banks' CEOs" (possessive)
+    // - "top banks CEO list" (role as part of noun phrase)
+    const executiveIntentPatterns = [
+      // Role at start: "CEOs of top 5 banks", "CFO at top companies"
+      /^(ceo|cfo|coo|cto|cmo|cio|chro|clo|chairman|managing director|general counsel)s?\s+(of|at|from)/i,
+      // Role with "of": "the CEOs of major banks"
+      /\b(ceo|cfo|coo|cto|cmo|cio|chro|clo|chairman|managing director|general counsel)s?\s+of\s+/i,
+      // Role at end: "top 5 banks CFOs", "leading companies CEOs"
+      /\b(companies|banks|firms|hotels|corporations|organizations)\s+(ceo|cfo|coo|cto|cmo|cio|chro|clo|chairman|managing director)s?\b/i,
+      // Possessive: "banks' CFOs", "companies' CEOs"
+      /\b(companies|banks|firms)'?\s*(ceo|cfo|coo|cto|cmo|cio|chro|clo|chairman|managing director)s?\b/i,
+      // Generic patterns with role terms
+      /\b(find|list|show|get)\s+(the\s+)?(ceo|cfo|coo|cto|cmo|cio|chro)s?\b/i,
+      // Senior/chief patterns
+      /\b(senior|chief|head|lead)\s+(finance|hr|technology|marketing|operations|sales)\s+(leader|executive|officer)/i,
+      // Function leaders at/of
+      /\bfinance\s+(leader|team|executive)s?\s+(at|of|from)/i,
+      /\b(hr|human resource|people)\s+(leader|team|executive)s?\s+(at|of|from)/i,
+    ];
+    
+    const hasExecutiveIntent = executiveIntentPatterns.some(p => p.test(query));
+    
+    if (!hasExecutiveIntent) {
+      // No clear executive search intent - return all executives by default
+      return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
+    }
+    
+    // Single specific role patterns - return just this role
+    const singleRolePatterns: Array<{ pattern: RegExp; role: string; description: string }> = [
+      { pattern: /\bceos?\b|chief executive officer/i, role: 'CEO', description: 'Chief Executive Officer (CEO)' },
+      { pattern: /\bcfos?\b|chief financial officer/i, role: 'CFO', description: 'Chief Financial Officer (CFO)' },
+      { pattern: /\bcoos?\b|chief operating officer/i, role: 'COO', description: 'Chief Operating Officer (COO)' },
+      { pattern: /\bctos?\b|chief technology officer/i, role: 'CTO', description: 'Chief Technology Officer (CTO)' },
+      { pattern: /\bcmos?\b|chief marketing officer/i, role: 'CMO', description: 'Chief Marketing Officer (CMO)' },
+      { pattern: /\bchros?\b|chief (human resources|hr|people) officer/i, role: 'CHRO', description: 'Chief HR Officer (CHRO)' },
+      { pattern: /\bcios?\b|chief information officer/i, role: 'CIO', description: 'Chief Information Officer (CIO)' },
+      { pattern: /\bgeneral counsel|chief legal officer|clos?\b/i, role: 'CLO', description: 'General Counsel / Chief Legal Officer' },
+      { pattern: /\bmanaging directors?\b/i, role: 'MD', description: 'Managing Director' },
+      { pattern: /\bchairm(a|e)n\b|\bchair\b/i, role: 'Chairman', description: 'Chairman' },
+    ];
+    
+    // Function-wide patterns - return all people in this function
+    const functionPatterns: Array<{ pattern: RegExp; role: string; description: string }> = [
+      { pattern: /\b(senior\s+)?finance\s+(leader|team|executive)/i, role: 'finance', description: 'finance' },
+      { pattern: /\b(hr|human resource|people)\s+(leader|team|executive)/i, role: 'hr', description: 'HR/People' },
+      { pattern: /\b(technology|tech|it)\s+(leader|team|executive)/i, role: 'technology', description: 'technology/IT' },
+      { pattern: /\bmarketing\s+(leader|team|executive)/i, role: 'marketing', description: 'marketing' },
+      { pattern: /\boperations\s+(leader|team|executive)/i, role: 'operations', description: 'operations' },
+      { pattern: /\bsales\s+(leader|team|executive)/i, role: 'sales', description: 'sales' },
+    ];
+    
+    // Check for single role first
+    for (const { pattern, role, description } of singleRolePatterns) {
+      if (pattern.test(lowerQuery)) {
+        return { specificRole: role, roleDescription: description, allInFunction: false };
+      }
+    }
+    
+    // Check for function-wide patterns
+    for (const { pattern, role, description } of functionPatterns) {
+      if (pattern.test(lowerQuery)) {
+        return { specificRole: role, roleDescription: description, allInFunction: true };
+      }
+    }
+    
+    // Has executive intent but no specific role matched - return all executives
+    return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
+  }
+  
   async research(query: string, limit: number = 10): Promise<TavilyResearchResult> {
     const endpoint = 'https://api.tavily.com/research';
     
+    // Detect specific executive role requests from the query
+    const executiveRoleInfo = this.detectExecutiveRole(query);
+    
+    // Build executive-specific instructions based on query analysis
+    let executiveInstructions: string;
+    if (executiveRoleInfo.specificRole) {
+      if (executiveRoleInfo.allInFunction) {
+        // "Finance leaders" or "HR team" - all people in that function
+        executiveInstructions = `- All ${executiveRoleInfo.roleDescription} executives (find everyone in this function, not just the head)`;
+      } else {
+        // "CEO" or "CFO" - just the specific role
+        executiveInstructions = `- The ${executiveRoleInfo.roleDescription} with their title and LinkedIn profile`;
+      }
+    } else {
+      // No specific role - return all key executives
+      executiveInstructions = `- Key executives (CEO, CFO, COO, Managing Director, etc.) with their titles and LinkedIn profiles`;
+    }
+    
     const enhancedQuery = `Find the top ${limit} ${query}. For each company, find:
 - Official company name and headquarters location (country, city, street address)
+- Company website URL
+- A 2-4 sentence description of what the company does and its market position
 - Annual revenue (only if explicitly stated as "revenue" with currency and fiscal year)
 - Number of employees
-- Key executives (CEO, CFO, COO, Managing Director, etc.) with their titles
-- LinkedIn profiles of executives if available
+${executiveInstructions}
 
 IMPORTANT: Only include revenue if you find it explicitly stated as "revenue" from annual reports, regulatory filings, or reputable business news. Do not estimate or calculate revenue.`;
 
-    console.log(`[TavilyResearch] Starting research: ${query}`);
+    console.log(`[TavilyResearch] Starting research: ${query} (executive filter: ${executiveRoleInfo.specificRole || 'all'})`);
+    console.log(`[TavilyResearch] Executive instructions: ${executiveInstructions}`);
     
     const response = await fetch(endpoint, {
       method: 'POST',

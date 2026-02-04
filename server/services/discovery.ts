@@ -640,6 +640,10 @@ export function validateCompanyData(data: any): any {
   const rawExecutives = Array.isArray(data.executives) ? data.executives : [];
   const executives = rawExecutives.map(validateExecutiveData).filter((e: any) => e !== null);
   
+  // Extract summary/description and website
+  const summary = String(data.summary || data.description || '').trim() || null;
+  const website = String(data.website || data.url || '').trim() || null;
+  
   return {
     name,
     sector,
@@ -661,6 +665,8 @@ export function validateCompanyData(data: any): any {
     revenueFxPolicy,
     employees,
     employeesSource: String(data.employeesSource || data.employees_source || 'Unknown').trim(),
+    summary,
+    website,
     confidence,
     relevanceReason,
     executives

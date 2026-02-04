@@ -611,6 +611,8 @@ export async function* discoverWithTavilyResearch(
       name: company.name,
       sector: company.sector || undefined,
       businessType: company.businessType || undefined,
+      summary: company.description || undefined, // Map description to summary field
+      website: company.website || undefined,
       country: company.country || undefined,
       city: company.city || undefined,
       streetAddress: company.streetAddress || undefined,

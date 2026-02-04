@@ -38,6 +38,7 @@ export const companies = pgTable("companies", {
   operatingModel: text("operating_model"),
   revenueDrivers: text("revenue_drivers"),
   summary: text("summary"), // 2-4 sentence description
+  website: text("website"), // Company website URL
   lastVerifiedYear: integer("last_verified_year"),
   confidence: integer("confidence").default(5),
   relevanceReason: text("relevance_reason"), // LLM's explanation of why this company matches the query

@@ -1153,11 +1153,13 @@ function ExecutiveDetailView({
             <div className="flex items-center gap-4 mb-4">
               <div className="relative group">
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all overflow-hidden ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
-                  {(localExecutive?.imageUrl || executive.imageUrl) ? (
-                    <img src={(localExecutive?.imageUrl || executive.imageUrl) as string} alt={executive.name} className="w-full h-full object-cover" />
-                  ) : (
-                    executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-                  )}
+                  {(() => {
+                    const imgUrl = localExecutive?.imageUrl || executive.imageUrl;
+                    if (imgUrl && imgUrl.length > 0) {
+                      return <img src={imgUrl} alt={executive.name} className="w-full h-full object-cover" />;
+                    }
+                    return executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                  })()}
                 </div>
                 <label className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
                   <Camera className="h-5 w-5 text-white" />

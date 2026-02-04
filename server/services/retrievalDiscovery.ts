@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { storage } from "../storage";
 import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
 import { applyCoordinateFallback } from "./coordinateFallback";
-import { validateCompanyData } from "./discovery";
+import { validateCompanyData, normalizeCompanyDataSimple } from "./discovery";
 import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
 import type { SearchCriteria } from "./discovery";
 
@@ -645,29 +645,30 @@ export async function* discoverWithTavilyResearch(
     // Parse employee count flexibly (might include commas or text)
     const parsedEmployees = parseEmployeeCount(company.employees);
     
-    // Validate company data with parsed values
-    const validatedData = validateCompanyData({
+    // Use simplified normalization for Tavily Research data (no strict validation)
+    const normalizedData = normalizeCompanyDataSimple({
       name: company.name,
+      country: company.country || 'Unknown',
       sector: company.sector || undefined,
       businessType: company.businessType || undefined,
-      summary: company.description || undefined, // Map description to summary field
-      website: company.website || undefined,
-      country: company.country || undefined,
       city: company.city || undefined,
       streetAddress: company.streetAddress || undefined,
-      latitude: coordResult.latitude || undefined,
-      longitude: coordResult.longitude || undefined,
+      latitude: coordResult.latitude ?? undefined,
+      longitude: coordResult.longitude ?? undefined,
+      locationPrecision: coordResult.locationPrecision,
       revenue: validatedRevenue,
       revenueCurrency: validatedCurrency,
       revenueFiscalYear: validatedYear,
-      revenueSource: validatedSource,
-      employees: parsedEmployees || undefined,
+      revenueSource: validatedSource || undefined,
+      employees: parsedEmployees ?? undefined,
       employeesSource: company.employeesSource || undefined,
+      summary: company.description || undefined,
+      website: company.website || undefined,
       confidence: company.confidence || 5,
       relevanceReason: company.relevanceReason || 'Found via Tavily Research',
     });
     
-    if (!validatedData) {
+    if (!normalizedData) {
       console.log(`[TavilyResearch] Skipping invalid company: ${company.name}`);
       continue;
     }
@@ -675,7 +676,7 @@ export async function* discoverWithTavilyResearch(
     try {
       // Create company
       const createdCompany = await storage.createCompanyFromDiscovery({
-        ...validatedData,
+        ...normalizedData,
         searchQueryId,
       });
       

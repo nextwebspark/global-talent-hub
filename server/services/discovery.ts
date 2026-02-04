@@ -345,6 +345,194 @@ function normalizeBusinessType(rawType: string): string {
   return normalized || 'unknown';
 }
 
+// ============================================================================
+// SIMPLIFIED NORMALIZATION FOR TAVILY RESEARCH
+// ============================================================================
+// This function normalizes Tavily Research data WITHOUT strict validation.
+// Tavily returns structured data, so we trust it and just transform fields.
+// Minimal requirements: name + country. Everything else is optional.
+// ============================================================================
+
+// FX rates for currency conversion (kept simple)
+const FX_RATES_SIMPLE: Record<string, { rate: number; policy: string }> = {
+  'AED': { rate: 0.2723, policy: 'Fixed peg: 1 USD = 3.6725 AED' },
+  'SAR': { rate: 0.2667, policy: 'Fixed peg: 1 USD = 3.75 SAR' },
+  'QAR': { rate: 0.2747, policy: 'Fixed peg: 1 USD = 3.64 QAR' },
+  'BHD': { rate: 2.6526, policy: 'Fixed peg: 1 USD = 0.377 BHD' },
+  'OMR': { rate: 2.5974, policy: 'Fixed peg: 1 USD = 0.385 OMR' },
+  'KWD': { rate: 3.2573, policy: 'Fixed peg: 1 USD = 0.307 KWD' },
+  'EUR': { rate: 1.08, policy: 'Floating rate as of 2024-01' },
+  'GBP': { rate: 1.27, policy: 'Floating rate as of 2024-01' },
+  'INR': { rate: 0.012, policy: 'Floating rate as of 2024-01' },
+  'USD': { rate: 1.0, policy: 'Base currency' },
+};
+
+export interface NormalizedCompanyData {
+  name: string;
+  sector: string;
+  businessType: string;
+  entityType: string;
+  isOperatingCompany: boolean;
+  region: string;
+  country: string;
+  city: string | null;
+  streetAddress: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  locationPrecision: string;
+  revenue: string | null;
+  revenueSource: string | null;
+  revenueCurrency: string | null;
+  revenueFiscalYear: number | null;
+  revenueConvertedFromCurrency: string | null;
+  revenueFxRate: string | null;
+  revenueFxPolicy: string | null;
+  employees: number | null;
+  employeesSource: string | null;
+  summary: string | null;
+  website: string | null;
+  confidence: number;
+  relevanceReason: string;
+}
+
+export function normalizeCompanyDataSimple(data: {
+  name: string;
+  country: string;
+  sector?: string;
+  businessType?: string;
+  city?: string;
+  streetAddress?: string;
+  latitude?: number;
+  longitude?: number;
+  locationPrecision?: string;
+  revenue?: number | null;
+  revenueCurrency?: string | null;
+  revenueFiscalYear?: number | null;
+  revenueSource?: string | null;
+  employees?: number | null;
+  employeesSource?: string | null;
+  summary?: string;
+  website?: string;
+  confidence?: number;
+  relevanceReason?: string;
+}): NormalizedCompanyData | null {
+  // Minimal existence check: name + country required
+  const name = String(data.name || '').trim();
+  const country = String(data.country || '').trim();
+  
+  if (!name || name.toLowerCase() === 'unknown') {
+    console.log(`[Normalize] Rejected: missing or unknown name`);
+    return null;
+  }
+  
+  if (!country || country.toLowerCase() === 'unknown') {
+    console.log(`[Normalize] Rejected ${name}: missing country`);
+    return null;
+  }
+  
+  // Normalize basic fields
+  const sector = String(data.sector || 'Unknown').trim();
+  const businessType = normalizeBusinessType(data.businessType || '');
+  const city = data.city ? String(data.city).trim() : null;
+  const streetAddress = data.streetAddress ? String(data.streetAddress).trim() : null;
+  
+  // Coordinates - use provided or null, convert to strings for database storage
+  let latNum = data.latitude ?? null;
+  let lngNum = data.longitude ?? null;
+  const locationPrecision = data.locationPrecision || (latNum && lngNum ? 'exact' : 'unknown');
+  
+  // Apply unique coordinate offsets if we have coords
+  if (latNum !== null && lngNum !== null) {
+    const unique = getUniqueCoordinates(latNum, lngNum);
+    latNum = unique.lat;
+    lngNum = unique.lng;
+  }
+  
+  // Convert to strings for database storage
+  const latitude: string | null = latNum !== null ? String(latNum) : null;
+  const longitude: string | null = lngNum !== null ? String(lngNum) : null;
+  
+  // Revenue handling - convert to USD if currency provided
+  let revenueNum = data.revenue ?? null;
+  let revenueCurrency = data.revenueCurrency ? String(data.revenueCurrency).toUpperCase() : null;
+  let revenueFiscalYear = data.revenueFiscalYear ?? null;
+  let revenueSource = data.revenueSource ?? null;
+  let revenueConvertedFromCurrency: string | null = null;
+  let revenueFxRate: string | null = null;
+  let revenueFxPolicy: string | null = null;
+  
+  // Convert non-USD revenue to USD
+  if (revenueNum && revenueCurrency && revenueCurrency !== 'USD' && FX_RATES_SIMPLE[revenueCurrency]) {
+    const fx = FX_RATES_SIMPLE[revenueCurrency];
+    revenueConvertedFromCurrency = revenueCurrency;
+    revenueFxRate = String(fx.rate);
+    revenueFxPolicy = fx.policy;
+    revenueNum = Math.round(revenueNum * fx.rate);
+    revenueCurrency = 'USD';
+    console.log(`[Normalize] ${name}: Converted revenue from ${revenueConvertedFromCurrency} to USD (rate: ${fx.rate})`);
+  }
+  
+  // Convert revenue to string for database storage
+  const revenue: string | null = revenueNum !== null ? String(revenueNum) : null;
+  
+  // Employees - just pass through
+  const employees = data.employees ?? null;
+  const employeesSource = data.employeesSource ?? null;
+  
+  // Other fields
+  const summary = data.summary ? String(data.summary).trim() : null;
+  const website = data.website ? String(data.website).trim() : null;
+  const confidence = Math.min(10, Math.max(1, data.confidence ?? 5));
+  const relevanceReason = data.relevanceReason || 'Found via Tavily Research';
+  
+  // Detect entity type (simplified)
+  let entityType = 'operating_company';
+  let isOperatingCompany = true;
+  
+  const GOVT_PATTERNS = [/\bauthority\b/i, /\bministry\b/i, /\bregulator\b/i, /\bdepartment of\b/i];
+  const CORPORATISED = ['DEWA', 'ADNOC', 'TAQA', 'Masdar', 'Mubadala', 'TRANSCO', 'ADDC', 'ENOC'];
+  
+  const isGovt = GOVT_PATTERNS.some(p => p.test(name));
+  const isCorp = CORPORATISED.some(e => name.toLowerCase().includes(e.toLowerCase()));
+  
+  if (isGovt && !isCorp) {
+    entityType = 'government_authority';
+    isOperatingCompany = false;
+  } else if (isCorp) {
+    entityType = 'corporatised_entity';
+  }
+  
+  console.log(`[Normalize] ${name}: sector=${sector}, revenue=${revenueNum ? `${revenueCurrency} ${revenueNum}` : 'null'}, employees=${employees}`);
+  
+  return {
+    name,
+    sector,
+    businessType,
+    entityType,
+    isOperatingCompany,
+    region: 'Unknown',
+    country,
+    city,
+    streetAddress,
+    latitude,
+    longitude,
+    locationPrecision,
+    revenue,
+    revenueSource,
+    revenueCurrency,
+    revenueFiscalYear,
+    revenueConvertedFromCurrency,
+    revenueFxRate,
+    revenueFxPolicy,
+    employees,
+    employeesSource,
+    summary,
+    website,
+    confidence,
+    relevanceReason,
+  };
+}
+
 export function validateCompanyData(data: any): any {
   const rawName = String(data.name || data.companyName || '').trim();
   // Filter out Unknown companies

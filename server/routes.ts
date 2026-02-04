@@ -417,7 +417,7 @@ export async function registerRoutes(
         });
       }
 
-      const selectedModel = model || 'google/gemini-2.0-flash-exp:free';
+      const selectedModel = model || 'openrouter/free';
       console.log(`[AI Enrich] Researching company: ${companyName} (${country || 'Unknown'}) with model: ${selectedModel}`);
 
       const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {

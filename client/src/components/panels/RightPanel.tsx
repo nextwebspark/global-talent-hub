@@ -12,14 +12,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models first
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
+  // Free models first - openrouter/free auto-routes to available free models
+  { id: 'openrouter/free', name: 'Auto (Best Free)', free: true },
   { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', free: true },
-  { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek V3', free: true },
-  { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen 3 235B', free: true },
-  { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small', free: true },
+  { id: 'deepseek/deepseek-v3', name: 'DeepSeek V3', free: true },
+  { id: 'zhipu/glm-4.5-air', name: 'GLM 4.5 Air', free: true },
+  { id: 'stepfun/step-3.5-flash', name: 'Step 3.5 Flash', free: true },
   // Paid models
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
@@ -136,7 +134,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
-  const [enrichmentModel, setEnrichmentModel] = useState('google/gemini-2.0-flash-exp:free');
+  const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);

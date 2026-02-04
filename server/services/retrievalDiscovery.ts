@@ -87,6 +87,69 @@ function safeParseNumericField(value: unknown): string | null {
   }
 }
 
+/**
+ * NON-DROP FALLBACK: Extract company names from search results when LLM fails
+ * This ensures we still persist companies even with minimal data
+ */
+function extractCompanyNamesFromSearchResults(results: WebSearchResult[]): any[] {
+  const companyNames = new Set<string>();
+  const companies: any[] = [];
+  
+  for (const result of results) {
+    const text = `${result.title} ${result.snippet}`;
+    
+    // Pattern 1: Numbered lists (e.g., "1. Company Name")
+    const numberedPattern = /(?:^|\n)\d+\.\s*\*?\*?([A-Z][A-Za-z\s&\-']+?)(?:\*?\*?(?:\s*[-–—]\s*|\s*:\s*|\s*\(|\s+is|\s+has|\s+was|\.|,|$))/g;
+    let match;
+    while ((match = numberedPattern.exec(text)) !== null) {
+      const name = match[1].trim();
+      if (isValidCompanyName(name) && !companyNames.has(name.toLowerCase())) {
+        companyNames.add(name.toLowerCase());
+        companies.push({ 
+          name, 
+          confidence: 3,
+          relevanceReason: 'Extracted from search results (fallback)',
+          sourceUrls: [result.url]
+        });
+      }
+    }
+    
+    // Pattern 2: Company mentions with verbs
+    const mentionPattern = /\b([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,3})\s+(?:is|are|was|were|has|have|had|announced|reported)\s+/g;
+    while ((match = mentionPattern.exec(text)) !== null) {
+      const name = match[1].trim();
+      if (isValidCompanyName(name) && !companyNames.has(name.toLowerCase())) {
+        companyNames.add(name.toLowerCase());
+        companies.push({ 
+          name, 
+          confidence: 2,
+          relevanceReason: 'Extracted from search results (fallback)',
+          sourceUrls: [result.url]
+        });
+      }
+    }
+  }
+  
+  return companies.slice(0, 20);
+}
+
+function isValidCompanyName(name: string): boolean {
+  if (!name || name.length < 3 || name.length > 80) return false;
+  
+  const commonWords = [
+    'the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'been',
+    'their', 'which', 'when', 'what', 'there', 'about', 'into', 'more',
+    'company', 'companies', 'business', 'market', 'industry', 'sector',
+    'top', 'best', 'list', 'guide', 'news', 'report', 'analysis',
+  ];
+  
+  const lowerName = name.toLowerCase();
+  if (commonWords.includes(lowerName)) return false;
+  if (lowerName.split(' ').every(w => commonWords.includes(w))) return false;
+  
+  return true;
+}
+
 const EXTRACTION_PROMPT = `You are a data extraction expert. Extract company information from web search results.
 
 CRITICAL: Return ONLY a valid JSON object. Do NOT include any explanatory text, preamble, or markdown. Start your response with { and end with }.
@@ -948,18 +1011,28 @@ Extract up to ${limit} companies that match the query. Include ALL executives, r
     console.log(`[TavilySearch] LLM extraction complete, model: ${result.model}`);
   } catch (error: any) {
     console.error('[TavilySearch] LLM extraction failed:', error);
-    yield { 
-      type: 'error', 
-      data: { 
-        message: error.message || 'Failed to extract company data',
-        code: 'EXTRACTION_FAILED'
-      } 
-    };
-    return;
+    // NON-DROP: Try fallback extraction from search results
+    extractedData = { companies: extractCompanyNamesFromSearchResults(searchResults) };
+    if (extractedData.companies.length > 0) {
+      console.log(`[TavilySearch] Fallback: Extracted ${extractedData.companies.length} companies from search results`);
+      yield { type: 'status', data: { message: 'Using fallback extraction...', progress: 45 } };
+    } else {
+      yield { 
+        type: 'error', 
+        data: { 
+          message: error.message || 'Failed to extract company data',
+          code: 'EXTRACTION_FAILED'
+        } 
+      };
+      return;
+    }
   }
   
-  const companies = extractedData?.companies || [];
-  console.log(`[TavilySearch] Extracted ${companies.length} companies`);
+  let companies = extractedData?.companies || [];
+  
+  // NON-DROP: Filter companies that have at least a name
+  companies = companies.filter((c: any) => c && c.name && typeof c.name === 'string' && c.name.trim().length > 0);
+  console.log(`[TavilySearch] Extracted ${companies.length} companies with valid names`);
   
   if (companies.length === 0) {
     yield { type: 'status', data: { message: 'No companies found matching criteria', progress: 100 } };

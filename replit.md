@@ -39,6 +39,15 @@ Confidence scores follow strict semantic rules (DO NOT CONFLATE THESE CASES):
 ### Core Data Principles
 All search results, companies, and executives are persistently stored in a PostgreSQL database with unique IDs and proper relational links. Data modifications immediately update the database. Reloading a previous search restores the most recent data including manual edits. Users can add, edit, and delete companies and executives, with all changes persisting. Data sourcing prioritizes audited reports and official statements, particularly for revenue data, which is strictly defined and validated. Revenue figures must explicitly state "revenue" and include value, currency, financial year, source, and confidence level. Conflicts are resolved by source priority (higher tier wins) or recency.
 
+### Non-Drop Rule (Critical)
+The system must NEVER omit, reject, or drop an entire COMPANY RECORD because one or more fields (e.g., revenue, employee_count, executives) are missing, null, or low-confidence:
+- A company is persisted as soon as a canonical company_name exists
+- Missing or uncertain data applies ONLY at the FIELD LEVEL
+- Schema parsing failures for one field must NOT affect other fields
+- Persistence uses `upsertCompanyNonDestructive` with patch semantics (only update non-null fields)
+- Field-level parsing uses `safeParseField()` and `safeParseNumericField()` to prevent cascading failures
+- Fallback extraction from search results is used when LLM extraction fails
+
 ### Frontend Architecture
 The frontend is built with React 18 and TypeScript, using Wouter for routing and Zustand for global state management. Data fetching is handled by TanStack React Query. UI components are from shadcn/ui (based on Radix UI), styled with Tailwind CSS v4. Interactive maps are rendered using Leaflet with React-Leaflet. Vite is used as the build tool.
 

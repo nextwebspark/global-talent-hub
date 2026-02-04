@@ -4,9 +4,16 @@ export interface WebSearchResult {
   url: string;
   title: string;
   snippet: string;
+  rawContent?: string;
   domain: string;
   rank: number;
   provider: string;
+}
+
+export interface TavilySearchResponse {
+  results: WebSearchResult[];
+  answer?: string;
+  rawContents?: string[];
 }
 
 export interface SourceTierClassification {
@@ -136,6 +143,7 @@ function extractDomain(url: string): string {
 export interface SearchProvider {
   name: string;
   search(query: string, numResults?: number): Promise<WebSearchResult[]>;
+  searchWithAnswer(query: string, numResults?: number): Promise<TavilySearchResponse>;
 }
 
 export class TavilySearchProvider implements SearchProvider {
@@ -147,6 +155,15 @@ export class TavilySearchProvider implements SearchProvider {
   }
   
   async search(query: string, numResults = 10): Promise<WebSearchResult[]> {
+    const result = await this.searchWithAnswer(query, numResults);
+    return result.results;
+  }
+  
+  async searchWithAnswer(query: string, numResults = 15): Promise<{ 
+    results: WebSearchResult[]; 
+    answer?: string;
+    rawContents?: string[];
+  }> {
     const endpoint = 'https://api.tavily.com/search';
     
     const response = await fetch(endpoint, {
@@ -159,6 +176,8 @@ export class TavilySearchProvider implements SearchProvider {
         query: query,
         max_results: numResults,
         search_depth: 'advanced',
+        include_answer: 'advanced',
+        include_raw_content: 'markdown',
         include_domains: [],
         exclude_domains: [],
       }),
@@ -173,14 +192,21 @@ export class TavilySearchProvider implements SearchProvider {
     const data = await response.json();
     const results = data.results || [];
     
-    return results.map((item: any, index: number) => ({
-      url: item.url,
-      title: item.title,
-      snippet: item.content || '',
-      domain: extractDomain(item.url),
-      rank: index + 1,
-      provider: this.name,
-    }));
+    console.log(`[WebSearch] Tavily returned ${results.length} results, answer: ${data.answer ? 'yes' : 'no'}`);
+    
+    return {
+      results: results.map((item: any, index: number) => ({
+        url: item.url,
+        title: item.title,
+        snippet: item.content || '',
+        rawContent: item.raw_content || '',
+        domain: extractDomain(item.url),
+        rank: index + 1,
+        provider: this.name,
+      })),
+      answer: data.answer,
+      rawContents: results.map((item: any) => item.raw_content).filter(Boolean),
+    };
   }
 }
 
@@ -1128,17 +1154,21 @@ export class WebSearchService {
   }
   
   async searchForCompanies(query: string, numResults = 20): Promise<WebSearchResult[]> {
+    const response = await this.searchForCompaniesWithAnswer(query, numResults);
+    return response.results;
+  }
+  
+  async searchForCompaniesWithAnswer(query: string, numResults = 15): Promise<TavilySearchResponse> {
     if (!this.provider) {
       throw new Error('Web search not configured - missing TAVILY_API_KEY');
     }
     
-    const enhancedQuery = `${query} company revenue annual report`;
-    console.log(`[WebSearch] Searching: ${enhancedQuery}`);
+    console.log(`[WebSearch] Searching with advanced answer: ${query}`);
     
-    const results = await this.provider.search(enhancedQuery, numResults);
-    console.log(`[WebSearch] Found ${results.length} results`);
+    const response = await this.provider.searchWithAnswer(query, numResults);
+    console.log(`[WebSearch] Found ${response.results.length} results, has answer: ${!!response.answer}`);
     
-    return results;
+    return response;
   }
   
   async searchForCompanyVerification(companyName: string, year?: number): Promise<WebSearchResult[]> {

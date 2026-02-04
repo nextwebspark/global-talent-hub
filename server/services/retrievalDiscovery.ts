@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
-import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, filterCompaniesByRegion, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
+import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, filterCompaniesByRegion, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive, type TavilySearchResponse } from "./webSearch";
 import { applyCoordinateFallback } from "./coordinateFallback";
 import { validateCompanyData, normalizeCompanyDataSimple } from "./discovery";
 import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
@@ -817,14 +817,14 @@ export async function* discoverWithTavilySearch(
     return;
   }
   
-  // Step 1: Run Tavily search to get web results
+  // Step 1: Run Tavily search with advanced answer to get rich results
   yield { type: 'status', data: { message: 'Searching web sources...', progress: 10 } };
   
-  let searchResults: WebSearchResult[];
+  let searchResponse: TavilySearchResponse;
   try {
-    // Search for more results than needed to give LLM good context
-    searchResults = await webSearchService.searchForCompanies(query, Math.min(limit * 3, 20));
-    console.log(`[TavilySearch] Got ${searchResults.length} search results`);
+    // Use advanced search with answer for richer data extraction
+    searchResponse = await webSearchService.searchForCompaniesWithAnswer(query, 15);
+    console.log(`[TavilySearch] Got ${searchResponse.results.length} search results, has answer: ${!!searchResponse.answer}`);
   } catch (error: any) {
     console.error('[TavilySearch] Search failed:', error);
     yield { 
@@ -836,6 +836,8 @@ export async function* discoverWithTavilySearch(
     };
     return;
   }
+  
+  const searchResults = searchResponse.results;
   
   if (searchResults.length === 0) {
     yield { type: 'error', data: { message: 'No search results found', code: 'NO_RESULTS' } };
@@ -859,20 +861,33 @@ export async function* discoverWithTavilySearch(
     }
   };
   
-  // Step 2: Use LLM to extract company data from search results
+  // Step 2: Use LLM to extract company data from Tavily's advanced answer + raw content
   yield { type: 'status', data: { message: 'Extracting company information...', progress: 40 } };
   
-  // Format search results for LLM
-  const searchContext = searchResults.map((r, i) => 
-    `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
-  ).join('\n\n');
+  // Build rich context: Tavily's AI answer + snippets + raw content
+  let searchContext = '';
+  
+  // Include Tavily's advanced answer first (it's already synthesized)
+  if (searchResponse.answer) {
+    searchContext += `=== TAVILY AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
+  }
+  
+  // Add search results with raw markdown content if available
+  searchContext += '=== SOURCE DETAILS ===\n';
+  searchContext += searchResults.map((r, i) => {
+    let content = `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`;
+    if (r.rawContent && r.rawContent.length > 100) {
+      // Include first 2000 chars of raw content for more details
+      content += `\nFull Content:\n${r.rawContent.substring(0, 2000)}`;
+    }
+    return content;
+  }).join('\n\n');
   
   const userPrompt = `QUERY: ${query}
 
-SEARCH RESULTS:
 ${searchContext}
 
-Extract up to ${limit} companies that match the query. Return JSON only.`;
+Extract up to ${limit} companies that match the query. Include ALL executives, revenue figures, and employee counts you can find. Return JSON only.`;
 
   let extractedData: any;
   try {

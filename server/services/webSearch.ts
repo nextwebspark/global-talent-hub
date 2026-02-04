@@ -350,45 +350,117 @@ export function parseEmployeeCount(employees: number | string | null | undefined
 }
 
 // The output schema for Tavily Research API - must match JSON Schema format
-// Uses flexible types to accept various formats from Tavily's AI
+// Uses detailed 1-3 sentence descriptions per field as recommended by Tavily best practices
 const COMPANY_RESEARCH_SCHEMA = {
   properties: {
     companies: {
       type: "array",
-      description: "List of companies matching the query",
+      description: "List of companies matching the search query. Only include companies that are HEADQUARTERED in the specified region/country. Do not include companies that merely do business in the region but are headquartered elsewhere.",
       items: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Exact company name" },
-          sector: { type: "string", description: "Industry sector (e.g., Banking, Technology, Healthcare)" },
-          businessType: { type: "string", description: "Type: bank, corporation, distributor, manufacturer, service_provider" },
-          description: { type: "string", description: "2-4 sentence description of what the company does, its main business activities and market position" },
-          website: { type: "string", description: "Company website URL (e.g., https://www.company.com)" },
-          country: { type: "string", description: "Headquarters country" },
-          city: { type: "string", description: "Headquarters city" },
-          streetAddress: { type: "string", description: "Full street address if available" },
-          latitude: { type: "number", description: "GPS latitude of headquarters" },
-          longitude: { type: "number", description: "GPS longitude of headquarters" },
-          revenue: { type: "string", description: "Annual revenue as a formatted string with currency and year, e.g., 'SAR 75.3bn 2023', 'AED 28.4 billion FY2024', 'USD 15.2B 2023'. Include the exact figure from authoritative sources." },
-          revenueCurrency: { type: "string", description: "3-letter currency code (e.g., USD, SAR, AED, EUR, GBP, QAR, OMR). Use the company's local/domiciled currency." },
-          revenueFiscalYear: { type: "integer", description: "Fiscal year of the revenue figure (e.g., 2023, 2024)" },
-          revenueSource: { type: "string", description: "Source of revenue data (e.g., Annual Report 2023, KPMG Report, Company Website)" },
-          employees: { type: "integer", description: "Number of employees" },
-          employeesSource: { type: "string", description: "Source of employee count" },
-          confidence: { type: "integer", description: "Data quality confidence score 1-10 based on source reliability" },
-          relevanceReason: { type: "string", description: "Why this company matches the search query" },
+          name: { 
+            type: "string", 
+            description: "The exact legal or trading name of the company as it appears in official filings or their website. Do not abbreviate or modify the name." 
+          },
+          sector: { 
+            type: "string", 
+            description: "The primary industry sector this company operates in, such as Banking, Technology, Healthcare, Energy, Real Estate, or Manufacturing. Use standard industry classification terms." 
+          },
+          businessType: { 
+            type: "string", 
+            description: "The type of business entity. Must be one of: bank, corporation, distributor, manufacturer, service_provider, holding_company, or government_entity." 
+          },
+          description: { 
+            type: "string", 
+            description: "A 2-4 sentence description explaining what the company does, its main products or services, target markets, and competitive position. Include any notable achievements or market leadership." 
+          },
+          website: { 
+            type: "string", 
+            description: "The company's official website URL including https://. Find this from the company's official sources, not third-party directories." 
+          },
+          country: { 
+            type: "string", 
+            description: "The country where the company's headquarters is physically located. This is where the company is legally domiciled, not where they have operations. Use full country name (e.g., 'United Arab Emirates' not 'UAE')." 
+          },
+          city: { 
+            type: "string", 
+            description: "The city where the company's headquarters is located. Use the proper city name (e.g., 'Abu Dhabi', 'Riyadh', 'Dubai')." 
+          },
+          streetAddress: { 
+            type: "string", 
+            description: "The full street address of the headquarters if publicly available, including building name, street, and area. Leave empty if not found." 
+          },
+          latitude: { 
+            type: "number", 
+            description: "The GPS latitude coordinate of the headquarters location in decimal degrees (e.g., 24.4539 for Abu Dhabi). Find the actual coordinates for the headquarters building if possible." 
+          },
+          longitude: { 
+            type: "number", 
+            description: "The GPS longitude coordinate of the headquarters location in decimal degrees (e.g., 54.3773 for Abu Dhabi). Find the actual coordinates for the headquarters building if possible." 
+          },
+          revenue: { 
+            type: "string", 
+            description: "The company's annual revenue as a formatted string including currency symbol/code, amount, and fiscal year. Examples: 'SAR 75.3bn 2023', 'AED 28.4 billion FY2024', 'USD 15.2B 2023'. Only include revenue figures from authoritative sources like annual reports, SEC filings, or official company announcements. If revenue is not publicly available, leave empty." 
+          },
+          revenueCurrency: { 
+            type: "string", 
+            description: "The 3-letter ISO currency code for the revenue figure (e.g., USD, SAR, AED, EUR, GBP, QAR, OMR, KWD, BHD). Use the currency as reported in the source document, typically the company's local currency." 
+          },
+          revenueFiscalYear: { 
+            type: "integer", 
+            description: "The fiscal year the revenue figure corresponds to as a 4-digit year (e.g., 2023, 2024). Use the most recent available year." 
+          },
+          revenueSource: { 
+            type: "string", 
+            description: "The specific source document where the revenue figure was found. Examples: 'Annual Report 2023', 'Q4 2024 Earnings Release', 'Company Website Investor Relations', 'Bloomberg', 'Reuters'. Be specific about the source." 
+          },
+          employees: { 
+            type: "integer", 
+            description: "The total number of employees working at the company globally. Use the most recent figure available from official sources. Return as a whole number without commas." 
+          },
+          employeesSource: { 
+            type: "string", 
+            description: "The source where the employee count was found, such as 'LinkedIn', 'Annual Report 2023', 'Company Website', or 'Forbes'." 
+          },
+          confidence: { 
+            type: "integer", 
+            description: "A data quality confidence score from 1-10 indicating how reliable the information is. 9-10: Data from official annual reports or regulatory filings. 7-8: Data from reputable business news (Bloomberg, Reuters, Forbes). 5-6: Data from company website or LinkedIn. 1-4: Data from less reliable sources or estimates." 
+          },
+          relevanceReason: { 
+            type: "string", 
+            description: "A 1-2 sentence explanation of why this company matches the search query and why it was included in the results. Reference the specific search criteria." 
+          },
           executives: {
             type: "array",
-            description: "Key executives at this company",
+            description: "Key executives and leadership team members at this company. Include the CEO, CFO, COO, other C-suite executives, Managing Directors, and Board Chairman. For each executive, search for their information on the company website, LinkedIn, press releases, and news articles. Aim to find at least 3-5 executives per company.",
             items: {
               type: "object",
               properties: {
-                name: { type: "string", description: "Executive's full name" },
-                title: { type: "string", description: "Job title (e.g., CEO, CFO, Managing Director)" },
-                email: { type: "string", description: "Email address if publicly available" },
-                phone: { type: "string", description: "Phone number if publicly available" },
-                linkedin: { type: "string", description: "LinkedIn profile URL" },
-                source: { type: "string", description: "Source where this executive was found" }
+                name: { 
+                  type: "string", 
+                  description: "The executive's full name as it appears on official company sources or LinkedIn. Include first name and last name. Do not include titles or honorifics." 
+                },
+                title: { 
+                  type: "string", 
+                  description: "The executive's current job title exactly as listed on the company website or LinkedIn. Examples: 'Chief Executive Officer', 'Group CFO', 'Managing Director', 'Chairman of the Board', 'Chief Operating Officer'." 
+                },
+                email: { 
+                  type: "string", 
+                  description: "The executive's professional email address if publicly listed on the company website or official sources. Leave empty if not publicly available." 
+                },
+                phone: { 
+                  type: "string", 
+                  description: "The executive's professional phone number if publicly listed on the company website or official sources. Leave empty if not publicly available." 
+                },
+                linkedin: { 
+                  type: "string", 
+                  description: "The full LinkedIn profile URL for this executive (e.g., 'https://www.linkedin.com/in/johnsmith'). Search LinkedIn to find their profile. Leave empty if not found." 
+                },
+                source: { 
+                  type: "string", 
+                  description: "The source where this executive's information was found. Examples: 'Company Website Leadership Page', 'LinkedIn', 'Annual Report 2023', 'Press Release January 2024'." 
+                }
               }
             }
           }
@@ -398,6 +470,152 @@ const COMPANY_RESEARCH_SCHEMA = {
   },
   required: ["companies"]
 };
+
+// Region and country mappings for filtering
+const REGION_COUNTRIES: Record<string, string[]> = {
+  'middle east': [
+    'United Arab Emirates', 'UAE', 'Saudi Arabia', 'KSA', 'Qatar', 'Kuwait', 
+    'Bahrain', 'Oman', 'Jordan', 'Lebanon', 'Iraq', 'Iran', 'Yemen', 'Syria'
+  ],
+  'gcc': [
+    'United Arab Emirates', 'UAE', 'Saudi Arabia', 'KSA', 'Qatar', 'Kuwait', 'Bahrain', 'Oman'
+  ],
+  'gulf': [
+    'United Arab Emirates', 'UAE', 'Saudi Arabia', 'KSA', 'Qatar', 'Kuwait', 'Bahrain', 'Oman'
+  ],
+  'mena': [
+    'United Arab Emirates', 'UAE', 'Saudi Arabia', 'KSA', 'Qatar', 'Kuwait', 'Bahrain', 'Oman',
+    'Jordan', 'Lebanon', 'Iraq', 'Iran', 'Yemen', 'Syria', 'Egypt', 'Libya', 'Tunisia', 
+    'Algeria', 'Morocco', 'Sudan'
+  ],
+  'europe': [
+    'United Kingdom', 'UK', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 
+    'Switzerland', 'Belgium', 'Austria', 'Sweden', 'Norway', 'Denmark', 'Finland', 
+    'Ireland', 'Portugal', 'Poland', 'Czech Republic', 'Greece'
+  ],
+  'asia': [
+    'China', 'Japan', 'South Korea', 'India', 'Singapore', 'Hong Kong', 'Taiwan', 
+    'Indonesia', 'Malaysia', 'Thailand', 'Vietnam', 'Philippines'
+  ],
+  'north america': [
+    'United States', 'USA', 'US', 'Canada', 'Mexico'
+  ],
+  'africa': [
+    'South Africa', 'Nigeria', 'Kenya', 'Egypt', 'Morocco', 'Ghana', 'Ethiopia'
+  ],
+};
+
+// Single country aliases
+const COUNTRY_ALIASES: Record<string, string> = {
+  'uae': 'United Arab Emirates',
+  'ksa': 'Saudi Arabia', 
+  'uk': 'United Kingdom',
+  'usa': 'United States',
+  'us': 'United States',
+};
+
+/**
+ * Detect region or specific countries mentioned in query
+ * Returns list of valid country names for filtering
+ */
+function detectQueryRegion(query: string): { 
+  countries: string[]; 
+  regionName: string | null;
+  constraintText: string;
+} {
+  const lowerQuery = query.toLowerCase();
+  
+  // Check for region mentions first
+  for (const [region, countries] of Object.entries(REGION_COUNTRIES)) {
+    if (lowerQuery.includes(region)) {
+      // Normalize country names (remove aliases)
+      const normalizedCountries = countries.filter(c => !COUNTRY_ALIASES[c.toLowerCase()]);
+      return {
+        countries: normalizedCountries,
+        regionName: region.toUpperCase(),
+        constraintText: `IMPORTANT: Only include companies that are HEADQUARTERED in the ${region.toUpperCase()} region. Valid countries: ${normalizedCountries.join(', ')}. Do NOT include companies headquartered in China, USA, India, Europe, or other regions even if they do business in the ${region.toUpperCase()}.`
+      };
+    }
+  }
+  
+  // Check for specific country mentions
+  const countryPatterns = [
+    { pattern: /\b(united arab emirates|uae|dubai|abu dhabi)\b/i, country: 'United Arab Emirates' },
+    { pattern: /\b(saudi arabia|ksa|riyadh|jeddah)\b/i, country: 'Saudi Arabia' },
+    { pattern: /\b(qatar|doha)\b/i, country: 'Qatar' },
+    { pattern: /\b(kuwait)\b/i, country: 'Kuwait' },
+    { pattern: /\b(bahrain|manama)\b/i, country: 'Bahrain' },
+    { pattern: /\b(oman|muscat)\b/i, country: 'Oman' },
+    { pattern: /\b(jordan|amman)\b/i, country: 'Jordan' },
+    { pattern: /\b(egypt|cairo)\b/i, country: 'Egypt' },
+    { pattern: /\b(united kingdom|uk|london|britain)\b/i, country: 'United Kingdom' },
+    { pattern: /\b(united states|usa|us|america)\b/i, country: 'United States' },
+    { pattern: /\b(germany|berlin|frankfurt)\b/i, country: 'Germany' },
+    { pattern: /\b(france|paris)\b/i, country: 'France' },
+    { pattern: /\b(india|mumbai|delhi|bangalore)\b/i, country: 'India' },
+    { pattern: /\b(china|beijing|shanghai)\b/i, country: 'China' },
+    { pattern: /\b(japan|tokyo)\b/i, country: 'Japan' },
+    { pattern: /\b(singapore)\b/i, country: 'Singapore' },
+  ];
+  
+  const foundCountries: string[] = [];
+  for (const { pattern, country } of countryPatterns) {
+    if (pattern.test(query)) {
+      foundCountries.push(country);
+    }
+  }
+  
+  if (foundCountries.length > 0) {
+    return {
+      countries: foundCountries,
+      regionName: null,
+      constraintText: `IMPORTANT: Only include companies that are HEADQUARTERED in ${foundCountries.join(' or ')}. Do NOT include companies that merely do business there but are headquartered elsewhere.`
+    };
+  }
+  
+  // No region or country detected
+  return {
+    countries: [],
+    regionName: null,
+    constraintText: ''
+  };
+}
+
+/**
+ * Filter companies to only those headquartered in the target countries
+ */
+export function filterCompaniesByRegion(
+  companies: any[], 
+  targetCountries: string[]
+): { filtered: any[]; excluded: string[] } {
+  if (targetCountries.length === 0) {
+    return { filtered: companies, excluded: [] };
+  }
+  
+  const normalizedTargets = targetCountries.map(c => c.toLowerCase());
+  const excluded: string[] = [];
+  
+  const filtered = companies.filter(company => {
+    const companyCountry = (company.country || '').toLowerCase();
+    
+    // Check if company country matches any target country (including aliases)
+    const isMatch = normalizedTargets.some(target => {
+      if (companyCountry.includes(target) || target.includes(companyCountry)) return true;
+      // Check aliases
+      const alias = COUNTRY_ALIASES[companyCountry];
+      if (alias && normalizedTargets.includes(alias.toLowerCase())) return true;
+      return false;
+    });
+    
+    if (!isMatch) {
+      excluded.push(`${company.name} (${company.country})`);
+    }
+    
+    return isMatch;
+  });
+  
+  return { filtered, excluded };
+}
 
 export class TavilyResearchService {
   private apiKey: string;
@@ -490,8 +708,11 @@ export class TavilyResearchService {
     return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
   }
   
-  async research(query: string, limit: number = 10): Promise<TavilyResearchResult> {
+  async research(query: string, limit: number = 10): Promise<TavilyResearchResult & { detectedRegion?: { countries: string[]; regionName: string | null } }> {
     const endpoint = 'https://api.tavily.com/research';
+    
+    // Detect region/country constraints from the query
+    const regionInfo = detectQueryRegion(query);
     
     // Detect specific executive role requests from the query
     const executiveRoleInfo = this.detectExecutiveRole(query);
@@ -511,7 +732,10 @@ export class TavilyResearchService {
       executiveInstructions = `- Key executives (CEO, CFO, COO, Managing Director, etc.) with their titles and LinkedIn profiles`;
     }
     
-    const enhancedQuery = `Find the top ${limit} ${query}. For each company, provide:
+    // Build region constraint section
+    const regionConstraint = regionInfo.constraintText ? `\n\nGEOGRAPHIC CONSTRAINT:\n${regionInfo.constraintText}\n` : '';
+    
+    const enhancedQuery = `Find the top ${limit} ${query}. For each company, provide:${regionConstraint}
 
 COMPANY DETAILS:
 - Official company name
@@ -537,6 +761,7 @@ RANKING:
 
     console.log(`[TavilyResearch] Starting research: ${query} (executive filter: ${executiveRoleInfo.specificRole || 'all'})`);
     console.log(`[TavilyResearch] Executive instructions: ${executiveInstructions}`);
+    console.log(`[TavilyResearch] Region constraint: ${regionInfo.regionName || 'none'} (${regionInfo.countries.length} countries)`);
     
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -564,7 +789,15 @@ RANKING:
     
     // Poll for completion
     const result = await this.pollForResult(taskData.request_id);
-    return result;
+    
+    // Attach detected region info for post-filtering
+    return {
+      ...result,
+      detectedRegion: {
+        countries: regionInfo.countries,
+        regionName: regionInfo.regionName,
+      }
+    };
   }
   
   private async pollForResult(requestId: string, maxAttempts = 60, intervalMs = 2000): Promise<TavilyResearchResult> {

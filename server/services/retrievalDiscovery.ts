@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
-import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
+import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, filterCompaniesByRegion, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
 import { applyCoordinateFallback } from "./coordinateFallback";
 import { validateCompanyData, normalizeCompanyDataSimple } from "./discovery";
 import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
@@ -585,11 +585,31 @@ export async function* discoverWithTavilyResearch(
     }
   };
   
-  yield { type: 'status', data: { message: `Found ${researchResult.companies.length} companies, validating...`, progress: 50 } };
+  // Apply post-filter to remove companies from wrong countries/regions
+  let companiesToProcess = researchResult.companies;
+  const detectedRegion = (researchResult as any).detectedRegion;
+  
+  if (detectedRegion && detectedRegion.countries && detectedRegion.countries.length > 0) {
+    const filterResult = filterCompaniesByRegion(companiesToProcess, detectedRegion.countries);
+    companiesToProcess = filterResult.filtered;
+    
+    if (filterResult.excluded.length > 0) {
+      console.log(`[TavilyResearch] Region filter: Excluded ${filterResult.excluded.length} companies from wrong regions: ${filterResult.excluded.join(', ')}`);
+      yield { 
+        type: 'status', 
+        data: { 
+          message: `Filtered to ${companiesToProcess.length} companies in ${detectedRegion.regionName || 'target region'}...`, 
+          progress: 48 
+        } 
+      };
+    }
+  }
+  
+  yield { type: 'status', data: { message: `Found ${companiesToProcess.length} companies, validating...`, progress: 50 } };
   
   let processed = 0;
   let successfullyCreated = 0;
-  for (const company of researchResult.companies.slice(0, limit)) {
+  for (const company of companiesToProcess.slice(0, limit)) {
     processed++;
     const progress = 50 + Math.round((processed / limit) * 45);
     

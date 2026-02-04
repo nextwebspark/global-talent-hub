@@ -24,14 +24,20 @@ export const companies = pgTable("companies", {
   longitude: numeric("longitude", { precision: 10, scale: 7 }),
   locationPrecision: text("location_precision").default("unknown"), // exact, city, country, unknown
   revenue: numeric("revenue", { precision: 15, scale: 2 }),
-  revenueSource: text("revenue_source"),
+  revenueSource: text("revenue_source"), // Description of source (e.g., "Annual Report 2023")
+  revenueSourceUrl: text("revenue_source_url"), // URL where revenue was found
+  revenueConfidence: integer("revenue_confidence"), // 1-10 confidence score for revenue data
   revenueCurrency: text("revenue_currency"), // Original currency (USD, AED, SAR, QAR, etc.) - REQUIRED for revenue display
   revenueFiscalYear: integer("revenue_fiscal_year"), // Fiscal year - REQUIRED for revenue display
   revenueConvertedFromCurrency: text("revenue_converted_from_currency"), // If converted, original currency
   revenueFxRate: numeric("revenue_fx_rate", { precision: 10, scale: 6 }), // FX rate used for conversion
   revenueFxPolicy: text("revenue_fx_policy"), // Date or policy for FX rate (e.g., "2024-01-01" or "annual average 2023")
+  revenueLastUpdated: timestamp("revenue_last_updated"), // When revenue was last enriched
   employees: integer("employees"),
-  employeesSource: text("employees_source"),
+  employeesSource: text("employees_source"), // Description of source
+  employeesSourceUrl: text("employees_source_url"), // URL where employee count was found
+  employeesConfidence: integer("employees_confidence"), // 1-10 confidence score
+  employeesLastUpdated: timestamp("employees_last_updated"), // When employees was last enriched
   geographicFootprint: integer("geographic_footprint"), // number of countries/regions
   customerModel: text("customer_model"), // B2C, B2B, Mixed
   coreActivity: text("core_activity"),

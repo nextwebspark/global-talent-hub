@@ -19,6 +19,10 @@ import {
   researchCompanyDetails,
   exploreClockworkProjectEndpoints
 } from "./services/enrichment";
+import { 
+  runMultiPassEnrichment, 
+  enrichSearchResults 
+} from "./services/pipeline/enrichment";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1243,6 +1247,67 @@ Please provide a comprehensive business profile as JSON.`
     } catch (error) {
       console.error("Error importing Clockwork candidate:", error);
       res.status(500).json({ error: "Failed to import Clockwork candidate" });
+    }
+  });
+
+  // MULTI-PASS ENRICHMENT: Enrich a single company with revenue, employees, and executives
+  app.post("/api/companies/:id/enrich-multipass", async (req, res) => {
+    try {
+      const companyId = parseInt(req.params.id);
+      if (isNaN(companyId)) {
+        return res.status(400).json({ error: "Invalid company ID" });
+      }
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ error: "Company not found" });
+      }
+
+      const { revenue = true, employees = true, executives = true } = req.body;
+      
+      console.log(`[Routes] Starting multi-pass enrichment for ${company.name}`);
+      const result = await runMultiPassEnrichment(companyId, { revenue, employees, executives });
+
+      const updatedCompany = await storage.getCompanyWithExecutives(companyId);
+      
+      res.json({
+        success: true,
+        company: updatedCompany,
+        enrichment: result
+      });
+    } catch (error: any) {
+      console.error("Error in multi-pass enrichment:", error);
+      res.status(500).json({ error: error.message || "Failed to enrich company" });
+    }
+  });
+
+  // BATCH MULTI-PASS ENRICHMENT: Enrich all companies in a search result
+  app.post("/api/search/:id/enrich-all", async (req, res) => {
+    try {
+      const searchQueryId = parseInt(req.params.id);
+      if (isNaN(searchQueryId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+
+      const searchQuery = await storage.getSearchQuery(searchQueryId);
+      if (!searchQuery) {
+        return res.status(404).json({ error: "Search not found" });
+      }
+
+      console.log(`[Routes] Starting batch multi-pass enrichment for search ${searchQueryId}`);
+      const result = await enrichSearchResults(searchQueryId);
+
+      const fullResults = await storage.getFullSearchResults(searchQueryId);
+      
+      res.json({
+        success: true,
+        searchQuery,
+        enrichment: result,
+        companies: fullResults?.companies || []
+      });
+    } catch (error: any) {
+      console.error("Error in batch enrichment:", error);
+      res.status(500).json({ error: error.message || "Failed to enrich search results" });
     }
   });
 

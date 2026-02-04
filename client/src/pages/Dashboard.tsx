@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { useCompanies, useSearch, useModels, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult, streamingSearch, useTestModel } from '@/lib/api';
+import { useCompanies, useSearch, useSearchHistory, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult, streamingSearch } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import LeftPanel from '@/components/panels/LeftPanel';
 import RightPanel from '@/components/panels/RightPanel';
@@ -8,11 +8,10 @@ import MapComponent from '@/components/map/Map';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
-import { Loader2, Search, Globe, Bot, ChevronDown, ChevronUp, History, Trash2, RefreshCw, Zap, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Search, Globe, ChevronDown, ChevronUp, History, Trash2, RefreshCw, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
 export default function Dashboard() {
@@ -20,13 +19,9 @@ export default function Dashboard() {
   const { currentProject, loadFromAPI, setProject, reset, selectedCompanyId, selectedExecutiveId, setCompanies, setExecutives, resetVisibility } = useAppStore();
   const { isLoading } = useCompanies();
   const searchMutation = useSearch();
-  const { data: models } = useModels();
   const { data: searchHistory, refetch: refetchHistory } = useSearchHistory();
   const loadSearchResults = useLoadSearchResults();
-  const testModelMutation = useTestModel();
   const [searchInput, setSearchInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash-preview');
-  const [modelTestStatus, setModelTestStatus] = useState<'idle' | 'testing' | 'success' | 'failed'>('idle');
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -294,39 +289,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleTestModel = async () => {
-    if (!selectedModel) {
-      toast.error('Please select a model first');
-      return;
-    }
-    
-    setModelTestStatus('testing');
-    toast.loading('Testing model...', { id: 'model-test' });
-    
-    try {
-      const result = await testModelMutation.mutateAsync({ modelId: selectedModel });
-      toast.dismiss('model-test');
-      
-      if (result.success) {
-        setModelTestStatus('success');
-        toast.success(`Model ready! ${result.recommendation || 'Response time: ' + result.latencyMs + 'ms'}`);
-        setTimeout(() => setModelTestStatus('idle'), 3000);
-      } else {
-        setModelTestStatus('failed');
-        toast.error(result.error?.message || 'Model test failed', {
-          description: result.error?.suggestion,
-          duration: 6000
-        });
-        setTimeout(() => setModelTestStatus('idle'), 5000);
-      }
-    } catch (error: any) {
-      toast.dismiss('model-test');
-      setModelTestStatus('failed');
-      toast.error(error.message || 'Model test failed');
-      setTimeout(() => setModelTestStatus('idle'), 5000);
-    }
-  };
-
   const handleNewSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchInput.trim()) {
@@ -358,7 +320,8 @@ export default function Dashboard() {
     
     let companyCount = 0;
     
-    const cleanup = streamingSearch(searchInput, selectedModel, {
+    // Use Tavily Research API directly (no LLM layer needed)
+    const cleanup = streamingSearch(searchInput, undefined, {
       onStatus: (message, progress) => {
         if (searchSessionRef.current !== currentSession) return;
         setSearchStatus(message);
@@ -461,17 +424,21 @@ export default function Dashboard() {
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-5xl px-4">
           <form onSubmit={handleNewSearch} className="flex flex-col gap-3">
             <div className="relative" ref={historyRef}>
-              <div className={`bg-background/95 backdrop-blur-sm shadow-lg border border-border overflow-hidden transition-all duration-200 ${isPromptExpanded ? 'rounded-xl' : 'rounded-full'}`}>
-                <div className="flex items-center px-4 py-2 border-b border-border/50">
+              <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
+                <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
                   <div className="flex items-center gap-2 group relative" title={currentProject.name}>
-                    <Globe className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-xs font-medium text-muted-foreground hidden sm:inline max-w-[180px] truncate">
+                    <div className="p-1.5 rounded-lg bg-primary/10">
+                      <Globe className="h-4 w-4 text-primary shrink-0" />
+                    </div>
+                    <span className="text-xs font-medium text-foreground/80 hidden sm:inline max-w-[180px] truncate">
                       {currentProject.name}
                     </span>
                   </div>
-                  <div className="h-4 w-px bg-border mx-3 shrink-0" />
-                  <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground ml-2">Search Prompt</span>
+                  <div className="h-5 w-px bg-border/60 mx-4 shrink-0" />
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
+                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span className="text-xs font-medium text-primary">AI Research</span>
+                  </div>
                   <div className="flex-1" />
                   {isSearching ? (
                     <div className="flex items-center gap-2">
@@ -506,7 +473,7 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <div className="px-4 py-2">
+                <div className="px-5 py-4">
                   <Textarea 
                     ref={inputRef}
                     value={searchInput}
@@ -518,10 +485,10 @@ export default function Dashboard() {
                     }}
                     placeholder={isPromptExpanded 
                       ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies in renewable energy...\n\nInclusion criteria:\n- Entity must be a company, not a project\n- Must have operational presence in target region\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
-                      : "Enter search prompt or click Expand for detailed prompts..."
+                      : "Describe what you're looking for... (e.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia')"
                     }
-                    className={`border-0 shadow-none focus-visible:ring-0 text-sm bg-transparent resize-none transition-all duration-200 ${
-                      isPromptExpanded ? 'min-h-[200px] max-h-[400px]' : 'min-h-[40px] max-h-[80px]'
+                    className={`border-0 shadow-none focus-visible:ring-0 text-base leading-relaxed bg-transparent resize-none transition-all duration-300 placeholder:text-muted-foreground/50 ${
+                      isPromptExpanded ? 'min-h-[240px] max-h-[450px]' : 'min-h-[72px] max-h-[120px]'
                     }`}
                     disabled={isSearching}
                     data-testid="input-new-search"
@@ -602,56 +569,19 @@ export default function Dashboard() {
             </div>
             
             <div className="flex items-center justify-center gap-3">
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-[240px] h-10 text-xs bg-background/95 backdrop-blur-sm border-border rounded-full shadow-lg cursor-pointer px-3" data-testid="select-model-dashboard">
-                  <div className="flex items-center gap-2 w-full overflow-hidden">
-                    <Bot className="h-3 w-3 text-primary shrink-0" />
-                    <span className="truncate flex-1 text-left text-xs">
-                      {models?.find(m => m.id === selectedModel)?.name || "Select model..."}
-                    </span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent className="max-h-80 max-w-[320px]">
-                  {models?.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-xs truncate">{model.name}</span>
-                        <span className="text-[9px] text-muted-foreground">{model.provider}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Button 
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleTestModel}
-                disabled={testModelMutation.isPending || !selectedModel}
-                className={`h-10 rounded-full px-3 text-sm shadow-lg transition-colors ${
-                  modelTestStatus === 'success' ? 'border-green-500/50 text-green-600' :
-                  modelTestStatus === 'failed' ? 'border-red-500/50 text-red-600' :
-                  'border-amber-500/50 text-amber-600 hover:bg-amber-500 hover:text-white'
-                }`}
-                data-testid="button-test-model"
-              >
-                {modelTestStatus === 'testing' ? <Loader2 className="h-4 w-4 animate-spin" /> :
-                 modelTestStatus === 'success' ? <CheckCircle className="h-4 w-4" /> :
-                 modelTestStatus === 'failed' ? <XCircle className="h-4 w-4" /> :
-                 <Zap className="h-4 w-4" />}
-                <span className="ml-1 hidden sm:inline">Test</span>
-              </Button>
-              
               <Button 
                 type="submit" 
-                size="sm" 
+                size="lg" 
                 disabled={searchMutation.isPending || isSearching}
-                className="h-10 rounded-full px-6 text-sm font-semibold shadow-lg"
+                className="h-12 rounded-full px-8 text-sm font-semibold shadow-xl shadow-primary/20 bg-gradient-to-r from-primary to-primary/90 hover:shadow-primary/30 hover:scale-[1.02] transition-all duration-200"
                 data-testid="button-new-search"
               >
-                {(searchMutation.isPending || isSearching) ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
-                {(searchMutation.isPending || isSearching) ? 'Searching...' : 'Run Search'}
+                {(searchMutation.isPending || isSearching) ? (
+                  <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                ) : (
+                  <Sparkles className="h-5 w-5 mr-2" />
+                )}
+                {(searchMutation.isPending || isSearching) ? 'Researching...' : 'Start Research'}
               </Button>
               
               <Button 

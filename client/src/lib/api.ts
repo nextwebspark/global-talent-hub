@@ -254,10 +254,17 @@ export interface StreamingSearchCallbacks {
 
 export function streamingSearch(
   query: string,
-  model: string,
+  model: string | undefined,
   callbacks: StreamingSearchCallbacks
 ): () => void {
-  const url = `/api/search/stream?query=${encodeURIComponent(query)}&model=${encodeURIComponent(model)}`;
+  // Use Tavily Research API directly (no LLM layer) when no model is specified
+  const params = new URLSearchParams({ query });
+  if (model) {
+    params.set('model', model);
+  } else {
+    params.set('research', 'true');  // Use Tavily Research API
+  }
+  const url = `/api/search/stream?${params.toString()}`;
   const eventSource = new EventSource(url);
   
   eventSource.addEventListener('status', (e) => {

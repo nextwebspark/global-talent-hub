@@ -15,7 +15,8 @@ import {
 } from "./services/discovery";
 import { 
   discoverCompaniesWithRetrieval,
-  discoverCompaniesWithRetrievalSync 
+  discoverCompaniesWithRetrievalSync,
+  discoverWithTavilyResearch
 } from "./services/retrievalDiscovery";
 import { webSearchService } from "./services/webSearch";
 import { 
@@ -621,6 +622,7 @@ Please provide a comprehensive business profile as JSON.`
   app.get("/api/search/stream", async (req, res) => {
     const query = req.query.query as string;
     const model = (req.query.model as string) || "anthropic/claude-sonnet-4";
+    const useTavilyResearch = req.query.research === 'true'; // New: Use Tavily Research API (no LLM layer)
     
     if (!query) {
       res.status(400).json({ error: "Search query is required" });
@@ -670,10 +672,15 @@ Please provide a comprehensive business profile as JSON.`
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
 
       // Step 5: Stream companies as they're discovered
-      // Use retrieval-first if web search is configured, otherwise fall back to LLM-only
+      // Options: 1) Tavily Research (no LLM), 2) Retrieval + LLM, 3) LLM-only
       let companyCount = 0;
       const useRetrieval = webSearchService.isConfigured();
-      console.log(`[Routes SSE] Using ${useRetrieval ? 'retrieval-first' : 'LLM-only'} discovery`);
+      
+      if (useTavilyResearch) {
+        console.log(`[Routes SSE] Using Tavily Research API (no LLM layer)`);
+      } else {
+        console.log(`[Routes SSE] Using ${useRetrieval ? 'retrieval-first' : 'LLM-only'} discovery`);
+      }
       
       let webSearchFailed = false;
       
@@ -685,6 +692,9 @@ Please provide a comprehensive business profile as JSON.`
           if (event.type === 'company') {
             companyCount++;
             sendEvent('company', event.data);
+          } else if (event.type === 'executive') {
+            // New: Forward executive events from Tavily Research
+            sendEvent('executive', event.data);
           } else if (event.type === 'source') {
             sendEvent('source', event.data);
           } else if (event.type === 'verification') {
@@ -722,8 +732,14 @@ Please provide a comprehensive business profile as JSON.`
         return { fallbackNeeded: false, completeSent };
       };
       
-      // Run retrieval-first discovery
-      if (useRetrieval) {
+      // NEW: Use Tavily Research API (no LLM layer) if requested
+      if (useTavilyResearch && webSearchService.isResearchConfigured()) {
+        console.log(`[Routes SSE] Using Tavily Research for: "${query}"`);
+        const researchStream = discoverWithTavilyResearch(criteria, searchQuery.id, query);
+        await processDiscoveryStream(researchStream, false);
+      }
+      // Run retrieval-first discovery (Search + LLM)
+      else if (useRetrieval) {
         const retrievalStream = discoverCompaniesWithRetrieval(criteria, searchQuery.id, model, query);
         const result = await processDiscoveryStream(retrievalStream, false);
         webSearchFailed = result.fallbackNeeded;

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
-import { webSearchService, classifySourceTier, type WebSearchResult, type SourceTierClassification } from "./webSearch";
+import { webSearchService, classifySourceTier, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
 import { validateCompanyData } from "./discovery";
 import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
 import type { SearchCriteria } from "./discovery";
@@ -524,4 +524,164 @@ export async function discoverCompaniesWithRetrievalSync(
   }
   
   return results;
+}
+
+// ============================================================================
+// NEW: Tavily Research-based discovery (NO LLM layer - Tavily does everything)
+// ============================================================================
+
+export async function* discoverWithTavilyResearch(
+  criteria: SearchCriteria,
+  searchQueryId: number,
+  originalQuery: string
+): AsyncGenerator<any> {
+  const query = originalQuery.trim();
+  const limit = criteria.limit || 10;
+  
+  yield { type: 'status', data: { message: 'Starting Tavily Research...', progress: 5 } };
+  
+  if (!webSearchService.isResearchConfigured()) {
+    yield { type: 'error', data: { message: 'Tavily Research not configured' } };
+    return;
+  }
+  
+  yield { type: 'status', data: { message: 'Researching companies with AI...', progress: 10 } };
+  
+  let researchResult;
+  try {
+    researchResult = await webSearchService.researchCompanies(query, limit);
+    console.log(`[TavilyResearch] Got ${researchResult.companies.length} companies`);
+  } catch (error: any) {
+    console.error('[TavilyResearch] Research failed:', error);
+    yield { type: 'error', data: { message: `Research failed: ${error.message}` } };
+    return;
+  }
+  
+  // Classify sources using existing tier classification
+  const sourceTiers = { tier1: 0, tier2: 0, tier3: 0 };
+  for (const source of researchResult.sources) {
+    const classification = classifySourceTier(source.url, source.title);
+    if (classification.tier === 1) sourceTiers.tier1++;
+    else if (classification.tier === 2) sourceTiers.tier2++;
+    else sourceTiers.tier3++;
+  }
+  
+  yield { 
+    type: 'source', 
+    data: { 
+      count: researchResult.sources.length,
+      ...sourceTiers,
+    }
+  };
+  
+  yield { type: 'status', data: { message: `Found ${researchResult.companies.length} companies, validating...`, progress: 50 } };
+  
+  let processed = 0;
+  let successfullyCreated = 0;
+  for (const company of researchResult.companies.slice(0, limit)) {
+    processed++;
+    const progress = 50 + Math.round((processed / limit) * 45);
+    
+    yield { type: 'status', data: { message: `Processing ${company.name}...`, progress } };
+    
+    // Validate revenue data - requires currency + year + source
+    let validatedRevenue: number | null = null;
+    let validatedCurrency: string | null = null;
+    let validatedYear: number | null = null;
+    let validatedSource: string | null = null;
+    
+    const hasCurrency = company.revenueCurrency && company.revenueCurrency.length >= 2;
+    const hasYear = company.revenueFiscalYear && company.revenueFiscalYear >= 2015 && company.revenueFiscalYear <= 2030;
+    const hasSource = company.revenueSource && company.revenueSource.length > 3;
+    const hasRevenue = company.revenue && company.revenue > 0;
+    
+    if (hasRevenue && hasCurrency && hasYear && hasSource) {
+      validatedRevenue = company.revenue!;
+      validatedCurrency = company.revenueCurrency!;
+      validatedYear = company.revenueFiscalYear!;
+      validatedSource = company.revenueSource!;
+      console.log(`[TavilyResearch] ${company.name}: Revenue validated (${validatedCurrency} ${validatedRevenue} FY${validatedYear})`);
+    } else if (hasRevenue) {
+      console.log(`[TavilyResearch] ${company.name}: Revenue REJECTED - missing metadata`);
+      validatedSource = 'Revenue rejected: missing required metadata';
+    }
+    
+    // Validate company data
+    const validatedData = validateCompanyData({
+      name: company.name,
+      sector: company.sector || undefined,
+      businessType: company.businessType || undefined,
+      country: company.country || undefined,
+      city: company.city || undefined,
+      streetAddress: company.streetAddress || undefined,
+      latitude: company.latitude || undefined,
+      longitude: company.longitude || undefined,
+      revenue: validatedRevenue,
+      revenueCurrency: validatedCurrency,
+      revenueFiscalYear: validatedYear,
+      revenueSource: validatedSource,
+      employees: company.employees || undefined,
+      employeesSource: company.employeesSource || undefined,
+      confidence: company.confidence || 5,
+      relevanceReason: company.relevanceReason || 'Found via Tavily Research',
+    });
+    
+    if (!validatedData) {
+      console.log(`[TavilyResearch] Skipping invalid company: ${company.name}`);
+      continue;
+    }
+    
+    try {
+      // Create company
+      const createdCompany = await storage.createCompanyFromDiscovery({
+        ...validatedData,
+        searchQueryId,
+      });
+      
+      yield { type: 'company', data: { company: createdCompany } };
+      successfullyCreated++;
+      
+      // Create executives if present
+      if (company.executives && company.executives.length > 0) {
+        for (const exec of company.executives) {
+          try {
+            // Derive executive confidence from source quality or company confidence
+            const execConfidence = exec.source 
+              ? (classifySourceTier(exec.source, '').tier === 1 ? 8 
+                : classifySourceTier(exec.source, '').tier === 2 ? 6 
+                : 4)
+              : Math.max(4, (company.confidence || 5) - 2);
+            
+            const createdExec = await storage.createExecutive({
+              companyId: createdCompany.id,
+              name: exec.name,
+              title: exec.title,
+              email: exec.email || null,
+              phone: exec.phone || null,
+              linkedin: exec.linkedin || null,
+              source: exec.source || 'Tavily Research',
+              confidence: execConfidence,
+            });
+            
+            yield { type: 'executive', data: { executive: createdExec, companyId: createdCompany.id } };
+          } catch (execError: any) {
+            console.error(`[TavilyResearch] Failed to create executive ${exec.name}:`, execError);
+          }
+        }
+      }
+      
+    } catch (error: any) {
+      console.error(`[TavilyResearch] Failed to create company ${company.name}:`, error);
+    }
+  }
+  
+  yield { type: 'status', data: { message: 'Research complete', progress: 100 } };
+  yield { 
+    type: 'complete', 
+    data: { 
+      total: successfullyCreated,
+      discoveryStatus: 'complete' as const,
+      usedTavilyResearch: true,
+    } 
+  };
 }

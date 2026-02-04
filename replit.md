@@ -55,7 +55,7 @@ The frontend is built with React 18 and TypeScript, using Wouter for routing and
 The backend uses Node.js with Express.js, written in TypeScript. It provides a RESTful JSON API. AI research is powered by Tavily Research API (no LLM layer required). Session management utilizes Express sessions with a PostgreSQL session store.
 
 ### Data Storage
-PostgreSQL is the primary database, with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`. `companies` store details like geo-coordinates, revenue, and `relevanceReason` (LLM's justification). `executives` are linked to companies.
+PostgreSQL is the primary database, with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`. `companies` store details like geo-coordinates, revenue, and `relevanceReason` (LLM's justification). `executives` are linked to companies and include simple text fields for career summary, notes, remuneration notes, and availability - all editable via text boxes in the UI.
 
 ### Project Structure
 The project is divided into `client/` (React frontend), `server/` (Express backend), `shared/` (common code like schema definitions), and `migrations/` (Drizzle migrations).

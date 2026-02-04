@@ -150,13 +150,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
   const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
   
-  // LinkedIn import dialog state
-  const [showLinkedInDialog, setShowLinkedInDialog] = useState(false);
-  const [linkedInUrl, setLinkedInUrl] = useState('');
-  const [linkedInContent, setLinkedInContent] = useState('');
-  const [isParsingLinkedIn, setIsParsingLinkedIn] = useState(false);
-  const [linkedInModel, setLinkedInModel] = useState('openrouter/free');
-
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
 
@@ -318,133 +311,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
       const { executives } = useAppStore.getState();
       useAppStore.getState().setExecutives(executives.filter(e => e.id !== tempId));
       toast.error('Failed to add executive');
-    }
-  };
-
-  const handleLinkedInImport = async () => {
-    if (!company || !linkedInContent.trim()) return;
-    
-    setIsParsingLinkedIn(true);
-    const modelName = LLM_MODELS.find(m => m.id === linkedInModel)?.name || linkedInModel;
-    toast.info(`Extracting profile with ${modelName}...`);
-    
-    try {
-      // Parse LinkedIn content with AI
-      const parseResponse = await fetch('/api/parse-linkedin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          linkedinUrl: linkedInUrl,
-          profileContent: linkedInContent,
-          model: linkedInModel
-        })
-      });
-      
-      if (!parseResponse.ok) {
-        const error = await parseResponse.json();
-        throw new Error(error.message || error.error || 'Failed to parse LinkedIn profile');
-      }
-      
-      const profile = await parseResponse.json();
-      
-      // Create the executive
-      const createdExecutive = await createExecutiveMutation.mutateAsync({
-        companyId: parseInt(company.id),
-        name: profile.name || 'New Executive',
-        title: profile.title || 'Position TBD'
-      });
-      
-      const execId = createdExecutive.id;
-      
-      // Update with additional fields if available
-      const updates: Record<string, any> = {};
-      if (profile.linkedin) updates.linkedin = profile.linkedin;
-      if (profile.email) updates.email = profile.email;
-      if (profile.phone) updates.phone = profile.phone;
-      if (linkedInUrl) updates.linkedin = linkedInUrl;
-      
-      if (Object.keys(updates).length > 0) {
-        await updateExecutiveMutation.mutateAsync({ id: execId, data: updates });
-      }
-      
-      // Add career history entries
-      if (profile.careerHistory && Array.isArray(profile.careerHistory)) {
-        for (let i = 0; i < profile.careerHistory.length; i++) {
-          const ch = profile.careerHistory[i];
-          try {
-            await fetch('/api/career-history', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                executiveId: execId,
-                company: ch.company || '',
-                title: ch.title || '',
-                startDate: ch.startDate || null,
-                endDate: ch.endDate || null,
-                description: ch.description || '',
-                sortOrder: i
-              })
-            });
-          } catch (e) {
-            console.error('Failed to add career history entry:', e);
-          }
-        }
-      }
-      
-      // Add education entries
-      if (profile.education && Array.isArray(profile.education)) {
-        for (let i = 0; i < profile.education.length; i++) {
-          const ed = profile.education[i];
-          try {
-            await fetch('/api/education', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                executiveId: execId,
-                institution: ed.institution || '',
-                degree: ed.degree || '',
-                fieldOfStudy: ed.fieldOfStudy || '',
-                startDate: ed.startDate || null,
-                endDate: ed.endDate || null,
-                sortOrder: i
-              })
-            });
-          } catch (e) {
-            console.error('Failed to add education entry:', e);
-          }
-        }
-      }
-      
-      // Update local store
-      const newExec = {
-        id: String(execId),
-        company_id: company.id,
-        name: profile.name || 'New Executive',
-        title: profile.title || 'Position TBD',
-        source: 'LinkedIn Import',
-        confidence: 7,
-        isEnriched: true,
-        enrichmentSource: 'LinkedIn',
-        linkedin: linkedInUrl || profile.linkedin
-      };
-      
-      const { executives: currentExecs, setExecutives } = useAppStore.getState();
-      setExecutives([...currentExecs, newExec]);
-      
-      // Select the new executive
-      selectExecutive(String(execId));
-      
-      // Reset dialog
-      setShowLinkedInDialog(false);
-      setLinkedInUrl('');
-      setLinkedInContent('');
-      
-      toast.success(`Imported ${profile.name || 'executive'} from LinkedIn`);
-    } catch (error) {
-      console.error('LinkedIn import error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to import from LinkedIn');
-    } finally {
-      setIsParsingLinkedIn(false);
     }
   };
 
@@ -857,27 +723,15 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
                   <Users className="h-4 w-4" /> Key Executives
                 </h3>
-                <div className="flex gap-1">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 text-xs text-primary hover:bg-primary/10"
-                    onClick={handleAddExecutive}
-                    data-testid="button-add-executive"
-                  >
-                    <Plus className="h-3 w-3 mr-1" /> Add
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-6 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                    onClick={() => setShowLinkedInDialog(true)}
-                    data-testid="button-import-linkedin"
-                    title="Import from LinkedIn"
-                  >
-                    <Linkedin className="h-3 w-3 mr-1" /> Import
-                  </Button>
-                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 text-xs text-primary hover:bg-primary/10"
+                  onClick={handleAddExecutive}
+                  data-testid="button-add-executive"
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Add
+                </Button>
               </div>
 
               <div className="space-y-2">
@@ -948,97 +802,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
         </div>
       </div>
       </div>
-
-      {/* LinkedIn Import Dialog */}
-      <Dialog open={showLinkedInDialog} onOpenChange={setShowLinkedInDialog}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Linkedin className="h-5 w-5 text-blue-600" />
-              Import Executive from LinkedIn
-            </DialogTitle>
-            <DialogDescription>
-              Paste the LinkedIn profile content below and AI will extract the executive's details automatically.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">LinkedIn URL (optional)</label>
-              <Input
-                placeholder="https://linkedin.com/in/username"
-                value={linkedInUrl}
-                onChange={(e) => setLinkedInUrl(e.target.value)}
-                data-testid="input-linkedin-url"
-              />
-            </div>
-            
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">
-                Profile Content <span className="text-red-500">*</span>
-              </label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Go to the LinkedIn profile, select all text (Ctrl+A), copy (Ctrl+C), and paste below.
-                Include the About section, Experience, and Education.
-              </p>
-              <Textarea
-                placeholder="Paste the LinkedIn profile content here...&#10;&#10;Example:&#10;John Smith&#10;CEO at Example Corp&#10;New York, NY&#10;&#10;About&#10;Experienced executive with 20+ years...&#10;&#10;Experience&#10;CEO&#10;Example Corp&#10;Jan 2020 - Present&#10;..."
-                value={linkedInContent}
-                onChange={(e) => setLinkedInContent(e.target.value)}
-                className="min-h-[200px] font-mono text-sm"
-                data-testid="textarea-linkedin-content"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {linkedInContent.length} characters {linkedInContent.length < 50 && linkedInContent.length > 0 && '(minimum 50 required)'}
-              </p>
-            </div>
-            
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">AI Model</label>
-              <Select value={linkedInModel} onValueChange={setLinkedInModel}>
-                <SelectTrigger className="w-full" data-testid="select-linkedin-model">
-                  <SelectValue placeholder="Select model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {LLM_MODELS.filter(m => m.free).map(model => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name} {model.free && <span className="text-green-600 ml-1">(Free)</span>}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setShowLinkedInDialog(false)}
-              disabled={isParsingLinkedIn}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleLinkedInImport}
-              disabled={isParsingLinkedIn || linkedInContent.trim().length < 50}
-              className="bg-blue-600 hover:bg-blue-700"
-              data-testid="button-extract-linkedin"
-            >
-              {isParsingLinkedIn ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Extracting...
-                </>
-              ) : (
-                <>
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Extract & Import
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -1060,41 +823,30 @@ function ExecutiveDetailView({
   isOpen?: boolean;
   onToggle?: () => void;
 }) {
-  const [notesContent, setNotesContent] = useState('');
-  const [isEditingNotes, setIsEditingNotes] = useState(false);
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
-  
-  // Local state for executive details to avoid panel refresh
   const [localExecutive, setLocalExecutive] = useState(executiveDetails?.executive);
-  const [localCareerHistory, setLocalCareerHistory] = useState(executiveDetails?.careerHistory || []);
-  const [localEducation, setLocalEducation] = useState(executiveDetails?.education || []);
-  const [localRemuneration, setLocalRemuneration] = useState(executiveDetails?.remuneration || []);
+  
+  const [careerSummary, setCareerSummary] = useState('');
+  const [notes, setNotes] = useState('');
+  const [remunerationNotes, setRemunerationNotes] = useState('');
+  const [availability, setAvailability] = useState('');
+  
+  const [editingField, setEditingField] = useState<string | null>(null);
 
-  // Sync local state with props when executiveDetails changes
   useEffect(() => {
     if (executiveDetails) {
       setLocalExecutive(executiveDetails.executive);
-      setLocalCareerHistory(executiveDetails.careerHistory || []);
-      setLocalEducation(executiveDetails.education || []);
-      setLocalRemuneration(executiveDetails.remuneration || []);
+      setCareerSummary(executiveDetails.executive.careerSummary || '');
+      setNotes(executiveDetails.executive.notes || '');
+      setRemunerationNotes(executiveDetails.executive.remunerationNotes || '');
+      setAvailability(executiveDetails.executive.availability || '');
     }
   }, [executiveDetails]);
 
-  useEffect(() => {
-    if (executiveDetails?.notes?.content) {
-      setNotesContent(executiveDetails.notes.content);
-    } else {
-      setNotesContent('');
-    }
-  }, [executiveDetails?.notes?.content]);
-  
   const handleUpdateExecutiveField = async (field: string, value: string) => {
     if (!localExecutive) return;
     
-    // Update local state immediately
     setLocalExecutive(prev => prev ? { ...prev, [field]: value } : prev);
     
-    // Also update the executives list in the store so it syncs with company view
     const { executives, setExecutives } = useAppStore.getState();
     const updatedExecutives = executives.map(e => 
       e.id === String(localExecutive.id) ? { ...e, [field]: value } : e
@@ -1108,185 +860,31 @@ function ExecutiveDetailView({
         body: JSON.stringify({ [field]: value })
       });
     } catch (error) {
-      toast.error('Failed to update executive');
+      toast.error('Failed to update');
     }
   };
 
-  const handleSaveNotes = async () => {
-    if (!executiveDetails) return;
-    setIsSavingNotes(true);
-    try {
-      await fetch(`/api/executives/${executiveDetails.executive.id}/notes`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: notesContent })
-      });
-      toast.success('Notes saved');
-      setIsEditingNotes(false);
-    } catch (error) {
-      toast.error('Failed to save notes');
-    } finally {
-      setIsSavingNotes(false);
-    }
+  const handleSaveTextField = async (field: string, value: string) => {
+    setEditingField(null);
+    await handleUpdateExecutiveField(field, value);
+    toast.success('Saved');
   };
 
-  const handleAddCareerEntry = async () => {
-    if (!localExecutive) return;
-    try {
-      const response = await fetch(`/api/executives/${localExecutive.id}/career-history`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: 'New Company', title: 'New Role' })
-      });
-      const newEntry = await response.json();
-      setLocalCareerHistory(prev => [...prev, newEntry]);
-      toast.success('Career entry added');
-    } catch (error) {
-      toast.error('Failed to add career entry');
-    }
-  };
-
-  const handleUpdateCareerEntry = async (id: number, field: string, value: string) => {
-    // Update local state immediately
-    setLocalCareerHistory(prev => prev.map(entry => 
-      entry.id === id ? { ...entry, [field]: value } : entry
-    ));
-    
-    try {
-      await fetch(`/api/career-history/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
-    } catch (error) {
-      toast.error('Failed to update career entry');
-    }
-  };
-
-  const handleDeleteCareerEntry = async (id: number) => {
-    // Update local state immediately
-    setLocalCareerHistory(prev => prev.filter(entry => entry.id !== id));
-    
-    try {
-      await fetch(`/api/career-history/${id}`, { method: 'DELETE' });
-      toast.success('Career entry deleted');
-    } catch (error) {
-      toast.error('Failed to delete career entry');
-    }
-  };
-
-  const handleAddEducation = async () => {
-    if (!localExecutive) return;
-    try {
-      const response = await fetch(`/api/executives/${localExecutive.id}/education`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ institution: 'New Institution' })
-      });
-      const newEntry = await response.json();
-      setLocalEducation(prev => [...prev, newEntry]);
-      toast.success('Education entry added');
-    } catch (error) {
-      toast.error('Failed to add education entry');
-    }
-  };
-
-  const handleUpdateEducation = async (id: number, field: string, value: string) => {
-    // Update local state immediately
-    setLocalEducation(prev => prev.map(entry => 
-      entry.id === id ? { ...entry, [field]: value } : entry
-    ));
-    
-    try {
-      await fetch(`/api/education/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
-    } catch (error) {
-      toast.error('Failed to update education');
-    }
-  };
-
-  const handleDeleteEducation = async (id: number) => {
-    // Update local state immediately
-    setLocalEducation(prev => prev.filter(entry => entry.id !== id));
-    
-    try {
-      await fetch(`/api/education/${id}`, { method: 'DELETE' });
-      toast.success('Education entry deleted');
-    } catch (error) {
-      toast.error('Failed to delete education entry');
-    }
-  };
-
-  const handleAddRemuneration = async () => {
-    if (!localExecutive) return;
-    try {
-      const response = await fetch(`/api/executives/${localExecutive.id}/remuneration`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year: new Date().getFullYear().toString(), currency: 'USD' })
-      });
-      const newEntry = await response.json();
-      setLocalRemuneration(prev => [...prev, newEntry]);
-      toast.success('Remuneration entry added');
-    } catch (error) {
-      toast.error('Failed to add remuneration entry');
-    }
-  };
-
-  const handleUpdateRemuneration = async (id: number, field: string, value: string) => {
-    // Update local state immediately
-    setLocalRemuneration(prev => prev.map(entry => 
-      entry.id === id ? { ...entry, [field]: value } : entry
-    ));
-    
-    try {
-      await fetch(`/api/remuneration/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value })
-      });
-    } catch (error) {
-      toast.error('Failed to update remuneration');
-    }
-  };
-
-  const handleDeleteRemuneration = async (id: number) => {
-    // Update local state immediately
-    setLocalRemuneration(prev => prev.filter(entry => entry.id !== id));
-    
-    try {
-      await fetch(`/api/remuneration/${id}`, { method: 'DELETE' });
-      toast.success('Remuneration entry deleted');
-    } catch (error) {
-      toast.error('Failed to delete remuneration entry');
-    }
-  };
-
-  // §4 Render Contract: Show Loading state
   if (isLoading) {
     return (
       <div className="h-full flex shrink-0 relative z-20">
         {onToggle && (
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-          >
+          <Button variant="secondary" size="icon" onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background">
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        <div 
-          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`} 
-          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-        >
+        <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`} 
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
           {isOpen && (
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Loading executive details...</p>
+              <p className="text-sm text-muted-foreground">Loading...</p>
             </div>
           )}
         </div>
@@ -1294,30 +892,23 @@ function ExecutiveDetailView({
     );
   }
 
-  // §4 Render Contract: Show No Data state
   if (!executiveDetails) {
     return (
       <div className="h-full flex shrink-0 relative z-20">
         {onToggle && (
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-          >
+          <Button variant="secondary" size="icon" onClick={onToggle}
+            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background">
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        <div 
-          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
-          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-        >
+        <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
           {isOpen && (
             <>
               <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
-              <p className="text-sm text-muted-foreground">No executive data available</p>
+              <p className="text-sm text-muted-foreground">No executive data</p>
               <Button variant="ghost" onClick={onBack} className="mt-4">
-                <ArrowLeft className="h-4 w-4 mr-2" /> Back to Company
+                <ArrowLeft className="h-4 w-4 mr-2" /> Back
               </Button>
             </>
           )}
@@ -1327,70 +918,33 @@ function ExecutiveDetailView({
   }
 
   const { company } = executiveDetails;
-  
-  // Use local state for dynamic updates without refresh
   const executive = localExecutive || executiveDetails.executive;
-  const careerHistory = localCareerHistory;
-  const education = localEducation;
-  const remuneration = localRemuneration;
 
   return (
     <div className="h-full flex shrink-0 relative z-20 animate-in slide-in-from-right-10 duration-300">
       {onToggle && (
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={onToggle}
+        <Button variant="secondary" size="icon" onClick={onToggle}
           className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-          aria-label={isOpen ? "Collapse panel" : "Expand panel"}
-          data-testid="button-toggle-right-panel-exec"
-        >
+          data-testid="button-toggle-right-panel-exec">
           {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       )}
-      <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
-        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-      >
+      <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
+        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
       
       <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-      <div className="p-4 border-b border-border flex items-center gap-2 bg-muted/10">
-        <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-sm text-muted-foreground">Executive Profile</span>
-      </div>
+        <div className="p-4 border-b border-border flex items-center gap-2 bg-muted/10">
+          <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-muted-foreground">Executive Profile</span>
+        </div>
 
-      <ScrollArea className="flex-1">
-        <div key={executive.id} className="animate-in fade-in-0 duration-300">
-        {company && (
-          <div className="p-4 bg-muted/20 border-b border-border">
-            <div className="flex items-center gap-2 mb-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              <span className="font-semibold text-sm">{company.name}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <div>
-                <span className="text-muted-foreground">Country: </span>
-                <span>{company.country || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Revenue: </span>
-                <span>{company.revenue ? `$${(parseFloat(company.revenue) / 1000000000).toFixed(1)}B` : 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Employees: </span>
-                <span>{company.employees?.toLocaleString() || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="p-6 space-y-6">
-          <div>
-            <div className="flex items-center gap-4 mb-4">
+        <ScrollArea className="flex-1">
+          <div className="p-6 space-y-6">
+            <div className="flex items-start gap-4">
               <div className="relative group">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center font-bold text-xl transition-all overflow-hidden ${executive.isEnriched ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' : 'bg-primary/10 text-primary'}`}>
+                <div className="w-20 h-20 rounded-full flex items-center justify-center font-bold text-2xl bg-primary/10 text-primary overflow-hidden">
                   {(() => {
                     const imgUrl = localExecutive?.imageUrl || executive.imageUrl;
                     if (imgUrl && imgUrl.length > 0) {
@@ -1401,10 +955,7 @@ function ExecutiveDetailView({
                 </div>
                 <label className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
                   <Camera className="h-5 w-5 text-white" />
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
+                  <input type="file" accept="image/*" className="hidden" 
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file || !localExecutive) return;
@@ -1422,320 +973,187 @@ function ExecutiveDetailView({
                           setExecutives(executives.map(e => 
                             e.id === String(localExecutive.id) ? { ...e, imageUrl } : e
                           ));
-                          toast.success('Profile picture updated');
-                        } else {
-                          toast.error('Failed to upload image');
+                          toast.success('Photo updated');
                         }
                       } catch (error) {
-                        toast.error('Failed to upload image');
+                        toast.error('Failed to upload');
                       }
                     }}
                   />
                 </label>
-                {executive.isEnriched && (
-                  <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center ring-2 ring-background">
-                    <CheckCircle2 className="h-3 w-3 text-white" />
-                  </div>
-                )}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <EditableField
-                    value={executive.name}
-                    onSave={(val) => handleUpdateExecutiveField('name', String(val))}
-                    className="text-xl font-serif font-bold"
-                    inputClassName="text-xl font-serif font-bold"
-                    placeholder="Enter name"
-                  />
-                  {executive.isEnriched && (
-                    <span title={`Enriched via ${executive.enrichmentSource || 'external source'}`}>
-                      <Sparkles className="h-4 w-4 text-emerald-500" />
-                    </span>
-                  )}
-                </div>
+                <EditableField
+                  value={executive.name}
+                  onSave={(val) => handleUpdateExecutiveField('name', String(val))}
+                  className="text-xl font-serif font-bold"
+                  inputClassName="text-xl font-serif font-bold"
+                  placeholder="Name"
+                />
                 <EditableField
                   value={executive.title}
                   onSave={(val) => handleUpdateExecutiveField('title', String(val))}
                   className="text-sm text-muted-foreground"
-                  placeholder="Enter position/title"
+                  placeholder="Title"
                 />
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs text-muted-foreground">Confidence:</span>
-                    <EditableField
-                      type="number"
-                      value={executive.confidence || 5}
-                      onSave={(val) => handleUpdateExecutiveField('confidence', String(Math.min(10, Math.max(1, Number(val)))))}
-                      className={`text-xs font-medium px-1.5 py-0.5 rounded ${(executive.confidence || 5) >= 7 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : (executive.confidence || 5) >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}
-                      displayFormatter={(val) => `${val}/10`}
-                    />
-                  </div>
-                  {executive.isEnriched && (
-                    <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700">
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Enriched
-                    </Badge>
-                  )}
-                </div>
+                {company && (
+                  <p className="text-xs text-muted-foreground mt-1">{company.name}</p>
+                )}
               </div>
             </div>
 
-            {(executive.email || executive.phone || executive.linkedin) && (
-              <div className="flex flex-wrap gap-2 mt-3 p-3 bg-muted/30 rounded-lg">
-                {executive.email && (
-                  <a href={`mailto:${executive.email}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
-                    <Mail className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">{executive.email}</span>
-                  </a>
-                )}
-                {executive.phone && (
-                  <a href={`tel:${executive.phone}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
-                    <Phone className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-muted-foreground">{executive.phone}</span>
-                  </a>
-                )}
-                {executive.linkedin && (
-                  <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-2.5 py-1 bg-background rounded-md text-xs hover:bg-muted transition-colors">
-                    <Linkedin className="h-3 w-3 text-blue-600" />
-                    <span className="text-blue-600">LinkedIn</span>
-                  </a>
-                )}
+            {executive.linkedin && (
+              <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" 
+                className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                <Linkedin className="h-4 w-4 text-blue-600" />
+                <span className="text-blue-600 truncate">{executive.linkedin}</span>
+              </a>
+            )}
+
+            {!executive.linkedin && (
+              <div className="p-3 border border-dashed rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Linkedin className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">LinkedIn URL</span>
+                </div>
+                <Input
+                  placeholder="https://linkedin.com/in/username"
+                  onBlur={(e) => handleUpdateExecutiveField('linkedin', e.target.value)}
+                  className="text-sm"
+                  data-testid="input-linkedin"
+                />
               </div>
             )}
-          </div>
 
-          <Separator />
+            <Separator />
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
                 <Briefcase className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold">Career History</h3>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleAddCareerEntry} className="h-6 text-xs">
-                <Plus className="h-3 w-3 mr-1" /> Add
-              </Button>
-            </div>
-            
-            <div className="space-y-3">
-              {careerHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No career history yet. Click Add to create an entry.</p>
+              {editingField === 'careerSummary' ? (
+                <div className="space-y-2">
+                  <Textarea
+                    autoFocus
+                    value={careerSummary}
+                    onChange={(e) => setCareerSummary(e.target.value)}
+                    onBlur={() => handleSaveTextField('careerSummary', careerSummary)}
+                    placeholder="AI-generated career summary or paste from other sources..."
+                    className="min-h-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">Click outside to save</p>
+                </div>
               ) : (
-                careerHistory.map((entry) => (
-                  <div key={entry.id} className="p-3 border rounded-lg bg-card group relative">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteCareerEntry(entry.id); }}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                    <div className="pr-8">
-                      <EditableField
-                        value={entry.company}
-                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'company', String(val))}
-                        className="font-medium text-sm"
-                        placeholder="Company name"
-                      />
-                      <EditableField
-                        value={entry.title}
-                        onSave={(val) => handleUpdateCareerEntry(entry.id, 'title', String(val))}
-                        className="text-xs text-muted-foreground"
-                        placeholder="Job title"
-                      />
-                      <div className="flex gap-2 mt-1">
-                        <EditableField
-                          value={entry.startDate || ''}
-                          onSave={(val) => handleUpdateCareerEntry(entry.id, 'startDate', String(val))}
-                          className="text-xs text-muted-foreground"
-                          placeholder="Start date"
-                        />
-                        <span className="text-xs text-muted-foreground">-</span>
-                        <EditableField
-                          value={entry.endDate || ''}
-                          onSave={(val) => handleUpdateCareerEntry(entry.id, 'endDate', String(val))}
-                          className="text-xs text-muted-foreground"
-                          placeholder="End date"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <div 
+                  className="p-3 border rounded-lg bg-card min-h-[80px] cursor-text hover:bg-muted/30 transition-colors"
+                  onClick={() => setEditingField('careerSummary')}>
+                  {careerSummary ? (
+                    <p className="text-sm whitespace-pre-wrap">{careerSummary}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">Click to add career history summary...</p>
+                  )}
+                </div>
               )}
             </div>
-          </div>
 
-          <Separator />
+            <Separator />
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Education</h3>
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <FileText className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Notes</h3>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleAddEducation} className="h-6 text-xs">
-                <Plus className="h-3 w-3 mr-1" /> Add
-              </Button>
-            </div>
-            
-            <div className="space-y-3">
-              {education.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No education history yet. Click Add to create an entry.</p>
+              {editingField === 'notes' ? (
+                <div className="space-y-2">
+                  <Textarea
+                    autoFocus
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    onBlur={() => handleSaveTextField('notes', notes)}
+                    placeholder="Internal notes and assessments..."
+                    className="min-h-[100px]"
+                  />
+                  <p className="text-xs text-muted-foreground">Click outside to save</p>
+                </div>
               ) : (
-                education.map((entry) => (
-                  <div key={entry.id} className="p-3 border rounded-lg bg-card group relative">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteEducation(entry.id); }}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                    <div className="pr-8">
-                      <EditableField
-                        value={entry.institution}
-                        onSave={(val) => handleUpdateEducation(entry.id, 'institution', String(val))}
-                        className="font-medium text-sm"
-                        placeholder="Institution"
-                      />
-                      <div className="flex gap-2">
-                        <EditableField
-                          value={entry.degree || ''}
-                          onSave={(val) => handleUpdateEducation(entry.id, 'degree', String(val))}
-                          className="text-xs text-muted-foreground"
-                          placeholder="Degree"
-                        />
-                        <EditableField
-                          value={entry.fieldOfStudy || ''}
-                          onSave={(val) => handleUpdateEducation(entry.id, 'fieldOfStudy', String(val))}
-                          className="text-xs text-muted-foreground"
-                          placeholder="Field of study"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <div 
+                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                  onClick={() => setEditingField('notes')}>
+                  {notes ? (
+                    <p className="text-sm whitespace-pre-wrap">{notes}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">Click to add notes...</p>
+                  )}
+                </div>
               )}
             </div>
-          </div>
 
-          <Separator />
+            <Separator />
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
                 <Banknote className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold">Remuneration</h3>
               </div>
-              <Button variant="ghost" size="sm" onClick={handleAddRemuneration} className="h-6 text-xs">
-                <Plus className="h-3 w-3 mr-1" /> Add
-              </Button>
-            </div>
-            
-            <div className="space-y-3">
-              {remuneration.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">No remuneration data yet. Click Add to create an entry.</p>
+              {editingField === 'remunerationNotes' ? (
+                <div className="space-y-2">
+                  <Textarea
+                    autoFocus
+                    value={remunerationNotes}
+                    onChange={(e) => setRemunerationNotes(e.target.value)}
+                    onBlur={() => handleSaveTextField('remunerationNotes', remunerationNotes)}
+                    placeholder="Compensation details, salary expectations..."
+                    className="min-h-[100px]"
+                  />
+                  <p className="text-xs text-muted-foreground">Click outside to save</p>
+                </div>
               ) : (
-                remuneration.map((entry) => (
-                  <div key={entry.id} className="p-3 border rounded-lg bg-card group relative">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="absolute top-2 right-2 h-6 w-6 opacity-100 hover:bg-destructive/10 hover:text-destructive z-10"
-                      onClick={(e) => { e.stopPropagation(); handleDeleteRemuneration(entry.id); }}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                    <div className="pr-8">
-                      <div className="flex items-center gap-2 mb-2">
-                        <EditableField
-                          value={entry.year || ''}
-                          onSave={(val) => handleUpdateRemuneration(entry.id, 'year', String(val))}
-                          className="font-medium text-sm"
-                          placeholder="Year"
-                        />
-                        <EditableField
-                          value={entry.currency || 'USD'}
-                          onSave={(val) => handleUpdateRemuneration(entry.id, 'currency', String(val))}
-                          className="text-xs text-muted-foreground"
-                          placeholder="Currency"
-                        />
-                      </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div>
-                        <span className="text-muted-foreground">Base: </span>
-                        <EditableField
-                          value={entry.baseSalary || ''}
-                          onSave={(val) => handleUpdateRemuneration(entry.id, 'baseSalary', String(val))}
-                          className="inline"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Bonus: </span>
-                        <EditableField
-                          value={entry.bonus || ''}
-                          onSave={(val) => handleUpdateRemuneration(entry.id, 'bonus', String(val))}
-                          className="inline"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">LTI: </span>
-                        <EditableField
-                          value={entry.longTermIncentives || ''}
-                          onSave={(val) => handleUpdateRemuneration(entry.id, 'longTermIncentives', String(val))}
-                          className="inline"
-                          placeholder="0"
-                        />
-                      </div>
-                    </div>
-                    </div>
-                  </div>
-                ))
+                <div 
+                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                  onClick={() => setEditingField('remunerationNotes')}>
+                  {remunerationNotes ? (
+                    <p className="text-sm whitespace-pre-wrap">{remunerationNotes}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">Click to add remuneration details...</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Availability</h3>
+              </div>
+              {editingField === 'availability' ? (
+                <div className="space-y-2">
+                  <Textarea
+                    autoFocus
+                    value={availability}
+                    onChange={(e) => setAvailability(e.target.value)}
+                    onBlur={() => handleSaveTextField('availability', availability)}
+                    placeholder="Notice period, availability, relocation preferences..."
+                    className="min-h-[100px]"
+                  />
+                  <p className="text-xs text-muted-foreground">Click outside to save</p>
+                </div>
+              ) : (
+                <div 
+                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                  onClick={() => setEditingField('availability')}>
+                  {availability ? (
+                    <p className="text-sm whitespace-pre-wrap">{availability}</p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">Click to add availability info...</p>
+                  )}
+                </div>
               )}
             </div>
           </div>
-
-          <Separator />
-
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <FileText className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold">Notes</h3>
-            </div>
-            
-            {isEditingNotes ? (
-              <div className="space-y-2">
-                <Textarea
-                  autoFocus
-                  value={notesContent}
-                  onChange={(e) => setNotesContent(e.target.value)}
-                  onBlur={handleSaveNotes}
-                  placeholder="Add internal notes and assessments..."
-                  className="min-h-[100px]"
-                />
-                <p className="text-xs text-muted-foreground">Click outside to save</p>
-              </div>
-            ) : (
-              <div 
-                className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
-                onClick={() => setIsEditingNotes(true)}
-                title="Click to edit"
-              >
-                {notesContent ? (
-                  <p className="text-sm whitespace-pre-wrap">{notesContent}</p>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">Click to add notes...</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-        </div>
-      </ScrollArea>
+        </ScrollArea>
       </div>
       </div>
     </div>

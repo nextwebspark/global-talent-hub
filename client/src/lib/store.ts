@@ -125,6 +125,10 @@ export interface ExecutiveDetails {
     imageUrl: string | null;
     email: string | null;
     phone: string | null;
+    careerSummary: string | null;
+    notes: string | null;
+    remunerationNotes: string | null;
+    availability: string | null;
     enrichmentSource: string | null;
     enrichmentConfidence: number | null;
     enrichmentTimestamp: string | null;

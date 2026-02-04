@@ -51,14 +51,16 @@ const EditableField = ({
     if (!isEditing) setTempValue(value);
   }, [value, isEditing]);
 
-  const handleDoubleClick = (e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsEditing(true);
   };
 
   const handleBlur = () => {
     setIsEditing(false);
-    onSave(tempValue);
+    if (tempValue !== value) {
+      onSave(tempValue);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -87,9 +89,9 @@ const EditableField = ({
 
   return (
     <div 
-      onDoubleClick={handleDoubleClick} 
+      onClick={handleClick} 
       className={`cursor-text hover:bg-muted/30 rounded px-1 -mx-1 transition-colors relative group ${className}`}
-      title="Double click to edit"
+      title="Click to edit"
     >
       {displayFormatter ? displayFormatter(value) : (value || <span className="text-muted-foreground italic">{placeholder || 'Click to edit'}</span>)}
       <Edit2 className="w-3 h-3 absolute -right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-20 pointer-events-none" />
@@ -829,6 +831,22 @@ function ExecutiveDetailView({
   const [notesContent, setNotesContent] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  
+  // Local state for executive details to avoid panel refresh
+  const [localExecutive, setLocalExecutive] = useState(executiveDetails?.executive);
+  const [localCareerHistory, setLocalCareerHistory] = useState(executiveDetails?.careerHistory || []);
+  const [localEducation, setLocalEducation] = useState(executiveDetails?.education || []);
+  const [localRemuneration, setLocalRemuneration] = useState(executiveDetails?.remuneration || []);
+
+  // Sync local state with props when executiveDetails changes
+  useEffect(() => {
+    if (executiveDetails) {
+      setLocalExecutive(executiveDetails.executive);
+      setLocalCareerHistory(executiveDetails.careerHistory || []);
+      setLocalEducation(executiveDetails.education || []);
+      setLocalRemuneration(executiveDetails.remuneration || []);
+    }
+  }, [executiveDetails]);
 
   useEffect(() => {
     if (executiveDetails?.notes?.content) {
@@ -837,6 +855,23 @@ function ExecutiveDetailView({
       setNotesContent('');
     }
   }, [executiveDetails?.notes?.content]);
+  
+  const handleUpdateExecutiveField = async (field: string, value: string) => {
+    if (!localExecutive) return;
+    
+    // Update local state immediately
+    setLocalExecutive(prev => prev ? { ...prev, [field]: value } : prev);
+    
+    try {
+      await fetch(`/api/executives/${localExecutive.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+      });
+    } catch (error) {
+      toast.error('Failed to update executive');
+    }
+  };
 
   const handleSaveNotes = async () => {
     if (!executiveDetails) return;
@@ -857,117 +892,135 @@ function ExecutiveDetailView({
   };
 
   const handleAddCareerEntry = async () => {
-    if (!executiveDetails) return;
+    if (!localExecutive) return;
     try {
-      await fetch(`/api/executives/${executiveDetails.executive.id}/career-history`, {
+      const response = await fetch(`/api/executives/${localExecutive.id}/career-history`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ company: 'New Company', title: 'New Role' })
       });
+      const newEntry = await response.json();
+      setLocalCareerHistory(prev => [...prev, newEntry]);
       toast.success('Career entry added');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to add career entry');
     }
   };
 
   const handleUpdateCareerEntry = async (id: number, field: string, value: string) => {
+    // Update local state immediately
+    setLocalCareerHistory(prev => prev.map(entry => 
+      entry.id === id ? { ...entry, [field]: value } : entry
+    ));
+    
     try {
       await fetch(`/api/career-history/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: value })
       });
-      toast.success('Career entry updated');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to update career entry');
     }
   };
 
   const handleDeleteCareerEntry = async (id: number) => {
+    // Update local state immediately
+    setLocalCareerHistory(prev => prev.filter(entry => entry.id !== id));
+    
     try {
       await fetch(`/api/career-history/${id}`, { method: 'DELETE' });
       toast.success('Career entry deleted');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to delete career entry');
     }
   };
 
   const handleAddEducation = async () => {
-    if (!executiveDetails) return;
+    if (!localExecutive) return;
     try {
-      await fetch(`/api/executives/${executiveDetails.executive.id}/education`, {
+      const response = await fetch(`/api/executives/${localExecutive.id}/education`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ institution: 'New Institution' })
       });
+      const newEntry = await response.json();
+      setLocalEducation(prev => [...prev, newEntry]);
       toast.success('Education entry added');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to add education entry');
     }
   };
 
   const handleUpdateEducation = async (id: number, field: string, value: string) => {
+    // Update local state immediately
+    setLocalEducation(prev => prev.map(entry => 
+      entry.id === id ? { ...entry, [field]: value } : entry
+    ));
+    
     try {
       await fetch(`/api/education/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: value })
       });
-      toast.success('Education updated');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to update education');
     }
   };
 
   const handleDeleteEducation = async (id: number) => {
+    // Update local state immediately
+    setLocalEducation(prev => prev.filter(entry => entry.id !== id));
+    
     try {
       await fetch(`/api/education/${id}`, { method: 'DELETE' });
       toast.success('Education entry deleted');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to delete education entry');
     }
   };
 
   const handleAddRemuneration = async () => {
-    if (!executiveDetails) return;
+    if (!localExecutive) return;
     try {
-      await fetch(`/api/executives/${executiveDetails.executive.id}/remuneration`, {
+      const response = await fetch(`/api/executives/${localExecutive.id}/remuneration`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ year: new Date().getFullYear().toString(), currency: 'USD' })
       });
+      const newEntry = await response.json();
+      setLocalRemuneration(prev => [...prev, newEntry]);
       toast.success('Remuneration entry added');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to add remuneration entry');
     }
   };
 
   const handleUpdateRemuneration = async (id: number, field: string, value: string) => {
+    // Update local state immediately
+    setLocalRemuneration(prev => prev.map(entry => 
+      entry.id === id ? { ...entry, [field]: value } : entry
+    ));
+    
     try {
       await fetch(`/api/remuneration/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: value })
       });
-      toast.success('Remuneration updated');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to update remuneration');
     }
   };
 
   const handleDeleteRemuneration = async (id: number) => {
+    // Update local state immediately
+    setLocalRemuneration(prev => prev.filter(entry => entry.id !== id));
+    
     try {
       await fetch(`/api/remuneration/${id}`, { method: 'DELETE' });
       toast.success('Remuneration entry deleted');
-      onRefresh();
     } catch (error) {
       toast.error('Failed to delete remuneration entry');
     }
@@ -1034,7 +1087,13 @@ function ExecutiveDetailView({
     );
   }
 
-  const { executive, company, careerHistory, education, remuneration, notes } = executiveDetails;
+  const { company } = executiveDetails;
+  
+  // Use local state for dynamic updates without refresh
+  const executive = localExecutive || executiveDetails.executive;
+  const careerHistory = localCareerHistory;
+  const education = localEducation;
+  const remuneration = localRemuneration;
 
   return (
     <div className="h-full flex shrink-0 relative z-20 animate-in slide-in-from-right-10 duration-300">
@@ -1101,14 +1160,25 @@ function ExecutiveDetailView({
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-serif font-bold">{executive.name}</h2>
+                  <EditableField
+                    value={executive.name}
+                    onSave={(val) => handleUpdateExecutiveField('name', String(val))}
+                    className="text-xl font-serif font-bold"
+                    inputClassName="text-xl font-serif font-bold"
+                    placeholder="Enter name"
+                  />
                   {executive.isEnriched && (
                     <span title={`Enriched via ${executive.enrichmentSource || 'external source'}`}>
                       <Sparkles className="h-4 w-4 text-emerald-500" />
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground">{executive.title}</p>
+                <EditableField
+                  value={executive.title}
+                  onSave={(val) => handleUpdateExecutiveField('title', String(val))}
+                  className="text-sm text-muted-foreground"
+                  placeholder="Enter position/title"
+                />
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {executive.confidence && (
                     <Badge variant="secondary" className={`text-xs ${executive.confidence >= 7 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : executive.confidence >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>

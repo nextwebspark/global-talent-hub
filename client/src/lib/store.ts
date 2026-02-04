@@ -129,6 +129,7 @@ export interface ExecutiveDetails {
     notes: string | null;
     remunerationNotes: string | null;
     availability: string | null;
+    sourceText: string | null;
     enrichmentSource: string | null;
     enrichmentConfidence: number | null;
     enrichmentTimestamp: string | null;

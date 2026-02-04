@@ -831,6 +831,12 @@ function ExecutiveDetailView({
   const [availability, setAvailability] = useState('');
   
   const [editingField, setEditingField] = useState<string | null>(null);
+  
+  const [viewMode, setViewMode] = useState<'profile' | 'source'>('profile');
+  const [sourceText, setSourceText] = useState('');
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [editingLinkedIn, setEditingLinkedIn] = useState(false);
+  const [linkedInInput, setLinkedInInput] = useState('');
 
   useEffect(() => {
     if (executiveDetails) {
@@ -839,6 +845,8 @@ function ExecutiveDetailView({
       setNotes(executiveDetails.executive.notes || '');
       setRemunerationNotes(executiveDetails.executive.remunerationNotes || '');
       setAvailability(executiveDetails.executive.availability || '');
+      setSourceText(executiveDetails.executive.sourceText || '');
+      setLinkedInInput(executiveDetails.executive.linkedin || '');
     }
   }, [executiveDetails]);
 
@@ -868,6 +876,58 @@ function ExecutiveDetailView({
     setEditingField(null);
     await handleUpdateExecutiveField(field, value);
     toast.success('Saved');
+  };
+
+  const handleExtractProfile = async () => {
+    if (!localExecutive || !sourceText.trim()) {
+      toast.error('Please paste some text first');
+      return;
+    }
+
+    setIsExtracting(true);
+    try {
+      const response = await fetch(`/api/executives/${localExecutive.id}/extract-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceText })
+      });
+
+      if (!response.ok) {
+        throw new Error('Extraction failed');
+      }
+
+      const data = await response.json();
+      
+      setLocalExecutive(data.executive);
+      if (data.executive.careerSummary) setCareerSummary(data.executive.careerSummary);
+      if (data.executive.remunerationNotes) setRemunerationNotes(data.executive.remunerationNotes);
+      if (data.executive.linkedin) setLinkedInInput(data.executive.linkedin);
+      
+      const { executives, setExecutives } = useAppStore.getState();
+      const updatedExecutives = executives.map(e => 
+        e.id === String(localExecutive.id) ? { 
+          ...e, 
+          name: data.executive.name || e.name,
+          title: data.executive.title || e.title
+        } : e
+      );
+      setExecutives(updatedExecutives);
+      
+      setViewMode('profile');
+      toast.success('Profile extracted successfully');
+      onRefresh();
+    } catch (error) {
+      console.error('Extraction error:', error);
+      toast.error('Failed to extract profile');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handleSaveLinkedIn = async () => {
+    setEditingLinkedIn(false);
+    await handleUpdateExecutiveField('linkedin', linkedInInput);
+    toast.success('LinkedIn URL saved');
   };
 
   if (isLoading) {
@@ -933,13 +993,74 @@ function ExecutiveDetailView({
         style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
       
       <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="p-4 border-b border-border flex items-center gap-2 bg-muted/10">
-          <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm text-muted-foreground">Executive Profile</span>
+        <div className="p-4 border-b border-border flex items-center justify-between bg-muted/10">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {viewMode === 'source' ? 'Source Text' : 'Executive Profile'}
+            </span>
+          </div>
+          {viewMode === 'profile' && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setViewMode('source')}
+              className="text-xs"
+              data-testid="button-edit-source"
+            >
+              <FileDown className="h-3 w-3 mr-1" /> Edit Source
+            </Button>
+          )}
         </div>
 
+        {viewMode === 'source' ? (
+          <div className="flex-1 flex flex-col p-6">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold mb-2">Paste Raw Text</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Paste text from LinkedIn, resumes, or other sources. AI will extract name, title, career history, and compensation data.
+              </p>
+            </div>
+            <Textarea
+              value={sourceText}
+              onChange={(e) => setSourceText(e.target.value)}
+              placeholder="Paste executive profile text here...&#10;&#10;Example:&#10;John Smith - Chief Executive Officer at Acme Corp&#10;LinkedIn: linkedin.com/in/johnsmith&#10;Previous: VP at TechCo (2018-2022)..."
+              className="flex-1 min-h-[300px] resize-none"
+              data-testid="textarea-source-text"
+            />
+            <div className="flex gap-2 mt-4">
+              <Button 
+                onClick={handleExtractProfile}
+                disabled={isExtracting || !sourceText.trim()}
+                className="flex-1"
+                data-testid="button-extract-profile"
+              >
+                {isExtracting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Extracting...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Extract Profile
+                  </>
+                )}
+              </Button>
+              {(careerSummary || remunerationNotes || executive.linkedin) && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setViewMode('profile')}
+                  data-testid="button-view-profile"
+                >
+                  View Profile
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-6">
             <div className="flex items-start gap-4">
@@ -1002,26 +1123,35 @@ function ExecutiveDetailView({
               </div>
             </div>
 
-            {executive.linkedin && (
-              <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" 
-                className="flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
-                <Linkedin className="h-4 w-4 text-blue-600" />
-                <span className="text-blue-600 truncate">{executive.linkedin}</span>
-              </a>
-            )}
-
-            {!executive.linkedin && (
+            {executive.linkedin && !editingLinkedIn ? (
+              <div className="flex items-center gap-2">
+                <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" 
+                  className="flex-1 flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                  <Linkedin className="h-4 w-4 text-blue-600" />
+                  <span className="text-blue-600 truncate">LinkedIn Profile</span>
+                </a>
+                <Button variant="ghost" size="icon" onClick={() => setEditingLinkedIn(true)} className="h-8 w-8">
+                  <Edit2 className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
               <div className="p-3 border border-dashed rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <Linkedin className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">LinkedIn URL</span>
                 </div>
-                <Input
-                  placeholder="https://linkedin.com/in/username"
-                  onBlur={(e) => handleUpdateExecutiveField('linkedin', e.target.value)}
-                  className="text-sm"
-                  data-testid="input-linkedin"
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={linkedInInput}
+                    onChange={(e) => setLinkedInInput(e.target.value)}
+                    placeholder="https://linkedin.com/in/username"
+                    className="text-sm flex-1"
+                    data-testid="input-linkedin"
+                  />
+                  <Button size="sm" onClick={handleSaveLinkedIn}>
+                    <CheckCircle2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -1154,6 +1284,7 @@ function ExecutiveDetailView({
             </div>
           </div>
         </ScrollArea>
+        )}
       </div>
       </div>
     </div>

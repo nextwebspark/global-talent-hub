@@ -1,0 +1,223 @@
+You are a senior backend architect and data-extraction engineer.
+
+Your task is to refactor the entire search → extraction → enrichment → normalisation → persistence
+architecture of this talent-mapping application.
+
+The design MUST be modular, search-provider agnostic, non-destructive, and tolerant of missing data.
+
+==============================
+ABSOLUTE NON-DROP RULE (CRITICAL)
+==============================
+
+- The system must NEVER omit, reject, or drop an entire COMPANY RECORD because one or more fields
+  (e.g., revenue, employee_count, executives) are missing, null, or low-confidence.
+- A company MUST be persisted as soon as a canonical company_name exists (and ideally a source_url).
+- Missing or uncertain data applies ONLY at the FIELD LEVEL.
+- Schema parsing failures for one field must NOT affect other fields.
+- Persistence must use partial updates (patch / upsert), never replace semantics.
+
+If this rule is violated, the architecture is incorrect.
+
+==============================
+CORE DESIGN PRINCIPLES
+==============================
+
+1. Strict separation of concerns:
+   Discovery ≠ Enrichment ≠ Normalisation ≠ Persistence
+2. Search providers must be swappable without changing downstream logic.
+3. LLMs must never invent or infer factual data.
+4. Missing data is expected and valid.
+5. Schemas must be permissive at ingestion and strict only at presentation.
+6. Every extracted value must carry confidence and source metadata.
+
+==============================
+HIGH-LEVEL PIPELINE
+==============================
+
+USER QUERY
+→ Intent & Scope Parsing (LLM – no retrieval)
+→ Company Discovery (Search layer – recall-focused)
+→ Canonicalisation & Deduplication
+→ Attribute Enrichment (multi-pass, attribute-specific)
+→ Executive Extraction (role-based)
+→ LLM Normalisation & Confidence Scoring
+→ Non-destructive Schema Assembly
+→ Database Persistence (raw + structured)
+
+==============================
+1. INTENT & SCOPE PARSING
+==============================
+
+Use an LLM to parse the user query into a structured intent object.
+
+Example:
+{
+  "sector": "FMCG",
+  "region": "Middle East",
+  "ranking_criteria": ["scale", "revenue", "market_presence"],
+  "entity_type": "company",
+  "limit": 10
+}
+
+This stage must NOT retrieve data.
+
+==============================
+2. COMPANY DISCOVERY (SEARCH LAYER)
+==============================
+
+Discovery responsibilities:
+- Identify candidate companies ONLY
+- Optimise for recall, not precision
+- Do NOT extract attributes
+
+The search layer MUST be abstracted behind an interface, e.g.:
+
+searchProvider.discoverCompanies(intent)
+
+This allows swapping Tavily, Exa, Brave, Bing, etc.
+
+Output format:
+[
+  {
+    "company_name_raw": "IFFCO Group",
+    "source_url": "...",
+    "search_provider": "tavily"
+  }
+]
+
+==============================
+3. CANONICALISATION & DEDUPLICATION
+==============================
+
+Use deterministic logic plus LLM assistance to:
+- Resolve name variants
+- Deduplicate entities
+- Produce a canonical company_name
+- Track aliases
+
+Example:
+{
+  "company_name": "IFFCO Group",
+  "aliases": ["IFFCO", "IFFCO UAE"],
+  "confidence": 0.95
+}
+
+Persistence is allowed immediately after this step.
+
+==============================
+4. ATTRIBUTE ENRICHMENT (FIELD-LEVEL, MULTI-PASS)
+==============================
+
+Each attribute must be enriched independently.
+
+Attributes include (non-exhaustive):
+- revenue
+- employee_count
+- headquarters
+- ownership_type
+- year_founded
+
+Rules:
+- Never enrich all attributes in one prompt
+- Never infer missing values
+- Always return value + source + confidence
+- If unknown, return value = null (do NOT omit field)
+
+Example:
+{
+  "revenue": {
+    "value": 12000000000,
+    "currency": "USD",
+    "year": 2023,
+    "source_url": "...",
+    "confidence": 0.8
+  }
+}
+
+If unavailable:
+{
+  "revenue": {
+    "value": null,
+    "source_url": null,
+    "confidence": 0.0
+  }
+}
+
+==============================
+5. EXECUTIVE EXTRACTION (ROLE-BASED)
+==============================
+
+Executives must be extracted by predefined roles only.
+
+Roles:
+- CEO
+- CFO
+- CHRO
+- CIO / CTO
+
+Rules:
+- Run targeted queries per role
+- Extract name, title, source_url, confidence
+- Do NOT infer tenure or remuneration unless explicitly stated
+
+If no executive found for a role, persist the role with null values.
+
+==============================
+6. LLM NORMALISATION & CONFIDENCE
+==============================
+
+The LLM is responsible ONLY for:
+- Structuring messy text
+- Normalising names and titles
+- Assigning confidence scores
+- Flagging ambiguity
+
+The LLM must NEVER:
+- Rank companies
+- Guess missing data
+- Fill empty fields creatively
+
+==============================
+7. NON-DESTRUCTIVE SCHEMA ASSEMBLY
+==============================
+
+CRITICAL RULE:
+Schema assembly must NEVER drop data.
+
+- All company records must be persisted once canonical_name exists
+- Missing fields must be stored as null
+- Field-level failures must not invalidate the company object
+
+Each field must support:
+- value
+- source_url
+- confidence
+- last_updated
+
+==============================
+8. DATABASE PERSISTENCE
+==============================
+
+Persistence requirements:
+- Store raw retrieved text separately from structured fields
+- Use upsert / patch semantics
+- Never enforce required constraints on enrichment fields
+- Only enforce minimal required fields:
+  - canonical_company_name
+  - sector
+  - region (if available)
+
+Validation must occur at UI/presentation time, not ingestion time.
+
+==============================
+FINAL REQUIREMENTS
+==============================
+
+- Modular, extensible architecture
+- Search-layer agnostic
+- Non-destructive ingestion
+- Field-level nulls, never record-level drops
+- Explicit confidence and sources everywhere
+- Designed for iterative re-enrichment over time
+
+Refactor the current application accordingly.

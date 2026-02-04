@@ -752,36 +752,47 @@ export async function* discoverWithTavilyResearch(
 // NEW: Regular Tavily Search + LLM Extraction (faster, more reliable)
 // ============================================================================
 
-const SEARCH_EXTRACTION_PROMPT = `You are an expert at extracting company information from search results.
+const SEARCH_EXTRACTION_PROMPT = `You are an expert researcher extracting company information from web search results.
 
-Given search results about companies, extract structured company data.
+Your task: Find companies matching the query and extract ALL available data about them.
+
+EXTRACTION PRIORITIES (in order):
+1. COMPANY NAME - exact legal name as mentioned
+2. COUNTRY & CITY - headquarters location
+3. REVENUE - Look for: "revenue", "sales", "turnover", financial figures with $ or currency symbols
+   - Convert to numeric: "$2.5 billion" → 2500000000
+   - Include currency code (USD, AED, EUR, SAR, etc.)
+   - Include fiscal year if mentioned (2023, 2024, FY2024)
+4. EMPLOYEES - Look for: "employees", "staff", "workforce", headcount numbers
+5. EXECUTIVES - Look for names with titles like CEO, CFO, MD, Managing Director, Chairman, President, Founder
+   - Extract ALL executives mentioned, not just the top one
+6. BUSINESS TYPE - distributor, manufacturer, retailer, service provider, etc.
 
 CRITICAL RULES:
-1. Extract ONLY companies explicitly mentioned in the search results
-2. Do NOT invent or hallucinate company names or data
-3. For revenue: ONLY include if the word "revenue" is explicitly used (not profit, AUM, valuation)
-4. Include fiscal year and currency for any revenue figures
-5. For employees: extract if mentioned
-6. For executives: extract names and titles if mentioned
+- Extract ONLY from the provided search results - NO hallucination
+- Be AGGRESSIVE about finding data - if a number looks like revenue or employees, extract it
+- For executives: include EVERY name-title pair you can find
+- If data is ambiguous, include it with lower confidence score
 
-OUTPUT FORMAT (JSON):
+OUTPUT FORMAT (strict JSON):
 {
   "companies": [
     {
       "name": "Company Name",
-      "country": "Country (e.g., UAE, Saudi Arabia)",
-      "city": "City if mentioned",
+      "country": "Country",
+      "city": "City or null",
       "sector": "Industry sector",
-      "businessType": "Type (distributor, manufacturer, etc.)",
-      "revenue": 15200000000,
+      "businessType": "distributor/manufacturer/retailer/etc",
+      "revenue": 2500000000,
       "revenueCurrency": "USD",
       "revenueFiscalYear": 2024,
-      "revenueSource": "Annual Report 2024",
+      "revenueSource": "Source where found",
       "employees": 5000,
-      "employeesSource": "Company website",
+      "employeesSource": "Source",
       "executives": [
         {"name": "John Smith", "title": "CEO"},
-        {"name": "Jane Doe", "title": "CFO"}
+        {"name": "Jane Doe", "title": "CFO"},
+        {"name": "Bob Wilson", "title": "Managing Director"}
       ],
       "confidence": 8,
       "relevanceReason": "Why this company matches the query"
@@ -789,7 +800,7 @@ OUTPUT FORMAT (JSON):
   ]
 }
 
-Return ONLY valid JSON, no explanatory text.`;
+IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no preamble.`;
 
 export async function* discoverWithTavilySearch(
   criteria: SearchCriteria,

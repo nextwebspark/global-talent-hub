@@ -1,19 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
-import { useSearch, useModels, useSearchHistory } from '@/lib/api';
-import { Input } from '@/components/ui/input';
+import { useSearch, useSearchHistory } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, Bot, ChevronDown, ChevronUp, History, Maximize2, Minimize2 } from 'lucide-react';
+import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles } from 'lucide-react';
 import logoImage from '@/assets/images/logo.png';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 export default function Landing() {
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash-preview');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [, setLocation] = useLocation();
@@ -22,7 +19,6 @@ export default function Landing() {
   
   const { setProject, loadFromAPI } = useAppStore();
   const searchMutation = useSearch();
-  const { data: models } = useModels();
   const { data: searchHistory } = useSearchHistory();
 
   const handleLoadHistory = async (item: any) => {
@@ -95,7 +91,7 @@ export default function Landing() {
     
     try {
       toast.loading('Searching for companies and executives...', { id: 'search' });
-      const result = await searchMutation.mutateAsync({ query: input, model: selectedModel });
+      const result = await searchMutation.mutateAsync({ query: input });
       toast.dismiss('search');
       
       if (!result.results || result.results.length === 0) {
@@ -149,145 +145,77 @@ export default function Landing() {
         <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto">
           <div className="flex flex-col gap-4">
             <div className="relative" ref={historyRef}>
-              <div className="relative group">
-                <div className={`absolute inset-0 bg-primary/5 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-full'}`} />
-                <div className={`relative bg-card shadow-lg border border-border/50 overflow-hidden hover:shadow-xl transition-all duration-300 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-2xl'}`}>
-                  <div className="flex items-center px-4 py-3 border-b border-border/30">
-                    <Search className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <span className="text-sm text-muted-foreground ml-2">Search Prompt</span>
-                    <div className="flex-1" />
-                    <div className="flex items-center gap-1">
-                      <button 
-                        type="button"
-                        onClick={() => setIsPromptExpanded(!isPromptExpanded)}
-                        className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
-                        title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
-                        data-testid="button-toggle-prompt-expand"
-                      >
-                        {isPromptExpanded ? (
-                          <Minimize2 className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <Maximize2 className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setShowHistory(!showHistory)}
-                        className="p-1.5 hover:bg-muted rounded-md transition-colors"
-                        title="Search history"
-                        data-testid="button-toggle-history"
-                      >
-                        <History className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    </div>
+              <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
+                <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
+                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span className="text-xs font-medium text-primary">AI Research</span>
                   </div>
-                  <div className="px-4 py-3">
-                    <Textarea 
-                      ref={inputRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onFocus={() => {
-                        if (!isPromptExpanded && input.length < 50) {
-                          setShowHistory(true);
-                        }
-                      }}
-                      placeholder={isPromptExpanded 
-                        ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies involved in renewable power transmission...\n\nInclusion criteria:\n- Entity must be a company, not a project or SPV\n- Must have operational involvement in target sector\n\nExclusion criteria:\n- Exclude pure contractors with no operating assets\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
-                        : "e.g. 'Top 20 CFOs in luxury watch brands globally' — Click Expand for detailed prompts"
+                  <div className="flex-1" />
+                  <div className="flex items-center gap-1">
+                    <button 
+                      type="button"
+                      onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+                      className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
+                      title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
+                      data-testid="button-toggle-prompt-expand"
+                    >
+                      {isPromptExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setShowHistory(!showHistory)}
+                      className="p-1.5 hover:bg-muted rounded-md transition-colors"
+                      title="Search history"
+                      data-testid="button-toggle-history"
+                    >
+                      <History className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+                <div className="px-5 py-4">
+                  <Textarea 
+                    ref={inputRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => {
+                      if (!isPromptExpanded && input.length < 50) {
+                        setShowHistory(true);
                       }
-                      className={`border-0 shadow-none focus-visible:ring-0 text-base bg-transparent resize-none transition-all duration-200 ${
-                        isPromptExpanded ? 'min-h-[280px] max-h-[500px]' : 'min-h-[50px] max-h-[100px]'
-                      }`}
-                      disabled={searchMutation.isPending}
-                      data-testid="input-search-query"
-                    />
-                  </div>
+                    }}
+                    placeholder={isPromptExpanded 
+                      ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies involved in renewable power transmission...\n\nInclusion criteria:\n- Entity must be a company, not a project or SPV\n- Must have operational involvement in target sector\n\nExclusion criteria:\n- Exclude pure contractors with no operating assets\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
+                      : "Describe what you're looking for... (e.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia')"
+                    }
+                    className={`border-0 shadow-none focus-visible:ring-0 text-base leading-relaxed bg-transparent resize-none transition-all duration-300 placeholder:text-muted-foreground/50 ${
+                      isPromptExpanded ? 'min-h-[280px] max-h-[500px]' : 'min-h-[72px] max-h-[120px]'
+                    }`}
+                    disabled={searchMutation.isPending}
+                    data-testid="input-search-query"
+                  />
                 </div>
               </div>
-              
-              {showHistory && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">
-                  <div className="p-3 border-b border-border bg-muted/30">
-                    <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <History className="h-4 w-4" /> {input ? 'Matching Searches' : 'Recent Searches'}
-                    </span>
-                  </div>
-                  {filteredHistory.length > 0 ? (
-                    <div className="overflow-y-auto max-h-56">
-                      {filteredHistory.slice(0, 10).map((item: any, index: number) => (
-                        <div
-                          key={`${item.id}-${index}`}
-                          className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group cursor-pointer"
-                          data-testid={`button-history-item-${index}`}
-                          onClick={() => selectHistoryItem(item.query)}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Search className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                                <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                                {(item.companyCount || item.resultCount) > 0 && (
-                                  <span className="text-primary/70">{item.companyCount || item.resultCount} companies</span>
-                                )}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleLoadHistory(item);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-transparent hover:bg-primary/10 hover:text-primary px-3 py-1.5 rounded-md text-sm font-medium"
-                            >
-                              Load
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-6 text-center text-muted-foreground">
-                      <p className="text-sm">{input ? 'No matching searches' : 'No previous searches yet'}</p>
-                      <p className="text-xs mt-1">{input ? 'Try a different search term' : 'Your search history will appear here'}</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
             
             <div className="flex items-center justify-center gap-3">
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger className="w-[280px] h-12 text-sm bg-card border-border/50 rounded-full shadow-lg cursor-pointer px-4" data-testid="select-model">
-                  <div className="flex items-center gap-2 w-full overflow-hidden">
-                    <Bot className="h-4 w-4 text-primary shrink-0" />
-                    <span className="truncate flex-1 text-left">
-                      {models?.find(m => m.id === selectedModel)?.name || "Select model..."}
-                    </span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent className="max-h-80 max-w-[350px]">
-                  {models?.map((model) => (
-                    <SelectItem key={model.id} value={model.id} data-testid={`model-${model.id}`}>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-sm truncate">{model.name}</span>
-                        <span className="text-[10px] text-muted-foreground">{model.provider}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
               <Button 
                 type="submit" 
                 size="lg" 
                 disabled={searchMutation.isPending}
-                className="h-12 rounded-full px-8 font-semibold shadow-lg"
+                className="h-12 rounded-full px-8 text-sm font-semibold shadow-xl shadow-primary/20 bg-gradient-to-r from-primary to-primary/90 hover:shadow-primary/30 hover:scale-[1.02] transition-all duration-200"
                 data-testid="button-submit-search"
               >
-                {searchMutation.isPending ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : null}
-                {searchMutation.isPending ? 'Searching...' : 'Run Search'}
+                {searchMutation.isPending ? (
+                  <Loader2 className="animate-spin h-5 w-5 mr-2" />
+                ) : (
+                  <Sparkles className="h-5 w-5 mr-2" />
+                )}
+                {searchMutation.isPending ? 'Researching...' : 'Start Research'}
               </Button>
             </div>
           </div>

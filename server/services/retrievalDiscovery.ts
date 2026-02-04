@@ -913,7 +913,8 @@ IMPORTANT: Return ONLY the JSON object. No markdown, no explanation, no preamble
 export async function* discoverWithTavilySearch(
   criteria: SearchCriteria,
   searchQueryId: number,
-  originalQuery: string
+  originalQuery: string,
+  selectedModel: string = DEFAULT_MODEL
 ): AsyncGenerator<any> {
   const query = originalQuery.trim();
   const limit = criteria.limit || 10;
@@ -999,13 +1000,14 @@ Extract up to ${limit} companies that match the query. Include ALL executives, r
 
   let extractedData: any;
   try {
+    console.log(`[TavilySearch] Using model: ${selectedModel}`);
     const result = await callLlmWithRetry(
       [
         { role: "system", content: SEARCH_EXTRACTION_PROMPT },
         { role: "user", content: userPrompt }
       ],
       null,
-      DEFAULT_MODEL
+      selectedModel
     );
     extractedData = result.data;
     console.log(`[TavilySearch] LLM extraction complete, model: ${result.model}`);

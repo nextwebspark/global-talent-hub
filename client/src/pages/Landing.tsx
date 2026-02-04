@@ -4,15 +4,27 @@ import { useAppStore } from '@/lib/store';
 import { useSearch, useSearchHistory } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles, Bot } from 'lucide-react';
 import logoImage from '@/assets/images/logo.png';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+
+const LLM_MODELS = [
+  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic' },
+  { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', provider: 'Anthropic' },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI' },
+  { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', provider: 'Google' },
+  { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google' },
+  { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', provider: 'Meta' },
+];
 
 export default function Landing() {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('anthropic/claude-sonnet-4');
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -90,8 +102,9 @@ export default function Landing() {
     loadFromAPI([]);
     
     try {
-      toast.loading('Searching for companies and executives...', { id: 'search' });
-      const result = await searchMutation.mutateAsync({ query: input });
+      const modelName = LLM_MODELS.find(m => m.id === selectedModel)?.name || selectedModel;
+      toast.loading(`Searching with ${modelName}...`, { id: 'search' });
+      const result = await searchMutation.mutateAsync({ query: input, model: selectedModel });
       toast.dismiss('search');
       
       if (!result.results || result.results.length === 0) {
@@ -147,9 +160,25 @@ export default function Landing() {
             <div className="relative" ref={historyRef}>
               <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
                 <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
-                    <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-                    <span className="text-xs font-medium text-primary">AI Research</span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
+                      <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="text-xs font-medium text-primary">AI Research</span>
+                    </div>
+                    <Select value={selectedModel} onValueChange={setSelectedModel}>
+                      <SelectTrigger className="w-[180px] h-8 text-xs bg-background" data-testid="select-model">
+                        <Bot className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LLM_MODELS.map((model) => (
+                          <SelectItem key={model.id} value={model.id} className="text-xs">
+                            <span className="font-medium">{model.name}</span>
+                            <span className="text-muted-foreground ml-1">({model.provider})</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex-1" />
                   <div className="flex items-center gap-1">

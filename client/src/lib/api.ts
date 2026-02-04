@@ -154,11 +154,11 @@ export function useDeleteExecutive() {
 export function useSearch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ query }: { query: string }) => {
+    mutationFn: async ({ query, model }: { query: string; model?: string }) => {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, model }),
       });
       if (!response.ok) {
         const error = await response.json();

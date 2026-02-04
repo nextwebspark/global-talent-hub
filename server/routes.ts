@@ -505,13 +505,14 @@ Please provide a comprehensive business profile as JSON.`
   // Discovery Layer: Search endpoint using Tavily Research API (no LLM layer)
   app.post("/api/search", async (req, res) => {
     try {
-      const { query } = req.body;
+      const { query, model } = req.body;
       
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      console.log(`[Routes] Processing search with Tavily Research: "${query}"`);
+      const selectedModel = model || 'anthropic/claude-sonnet-4';
+      console.log(`[Routes] Processing search with Tavily Research: "${query}" (model: ${selectedModel})`);
 
       // Step 1: Parse query to get limit and criteria (simple heuristic, no LLM)
       const { criteria, interpretation } = await parseSearchQuery(query);
@@ -543,7 +544,7 @@ Please provide a comprehensive business profile as JSON.`
       
       let discoveryErrorCode: string | null = null;
       
-      for await (const event of discoverWithTavilySearch(criteria, searchQuery.id, query)) {
+      for await (const event of discoverWithTavilySearch(criteria, searchQuery.id, query, selectedModel)) {
         if (event.type === 'company' && event.data?.company) {
           companies.push(event.data.company);
         } else if (event.type === 'error' && event.data?.message) {

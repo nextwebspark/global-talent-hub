@@ -12,14 +12,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
+  // Auto router - selects best free model automatically
+  { id: 'openrouter/free', name: 'Auto (Best Free)', free: true },
   // Free models - verified from OpenRouter Feb 2026
+  { id: 'arcee-ai/trinity-large-preview:free', name: 'Arcee Trinity Large 400B', free: true },
+  { id: 'tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1T2 Chimera 671B', free: true },
+  { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air', free: true },
+  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', free: true },
+  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash 196B', free: true },
+  { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nemotron 3 Nano 30B', free: true },
   { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', free: true },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  { id: 'tngtech/tng-r1t-chimera:free', name: 'TNG R1T Chimera', free: true },
   { id: 'openai/gpt-oss-120b:free', name: 'GPT OSS 120B', free: true },
   { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B', free: true },
-  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash', free: true },
-  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', free: true },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
+  { id: 'upstage/solar-pro-3:free', name: 'Solar Pro 3 102B', free: true },
+  { id: 'arcee-ai/trinity-mini:free', name: 'Arcee Trinity Mini 26B', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen3 Next 80B', free: true },
+  { id: 'openai/gpt-oss-20b:free', name: 'GPT OSS 20B', free: true },
   // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
@@ -136,7 +147,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
-  const [enrichmentModel, setEnrichmentModel] = useState('deepseek/deepseek-r1-0528:free');
+  const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);

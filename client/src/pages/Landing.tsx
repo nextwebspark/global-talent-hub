@@ -11,14 +11,25 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
+  // Auto router - selects best free model automatically
+  { id: 'openrouter/free', name: 'Auto (Best Free)', provider: 'OpenRouter', free: true },
   // Free models - verified from OpenRouter Feb 2026
+  { id: 'arcee-ai/trinity-large-preview:free', name: 'Arcee Trinity Large 400B', provider: 'Arcee', free: true },
+  { id: 'tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1T2 Chimera 671B', provider: 'TNG', free: true },
+  { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air', provider: 'Z.AI', free: true },
+  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', provider: 'TNG', free: true },
+  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash 196B', provider: 'StepFun', free: true },
+  { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nemotron 3 Nano 30B', provider: 'NVIDIA', free: true },
   { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', provider: 'DeepSeek', free: true },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', provider: 'Meta', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
+  { id: 'tngtech/tng-r1t-chimera:free', name: 'TNG R1T Chimera', provider: 'TNG', free: true },
   { id: 'openai/gpt-oss-120b:free', name: 'GPT OSS 120B', provider: 'OpenAI', free: true },
   { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B', provider: 'Qwen', free: true },
-  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash', provider: 'StepFun', free: true },
-  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', provider: 'TNG', free: true },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', provider: 'Meta', free: true },
+  { id: 'upstage/solar-pro-3:free', name: 'Solar Pro 3 102B', provider: 'Upstage', free: true },
+  { id: 'arcee-ai/trinity-mini:free', name: 'Arcee Trinity Mini 26B', provider: 'Arcee', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
+  { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen3 Next 80B', provider: 'Qwen', free: true },
+  { id: 'openai/gpt-oss-20b:free', name: 'GPT OSS 20B', provider: 'OpenAI', free: true },
   // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', free: false },
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', free: false },
@@ -31,7 +42,7 @@ export default function Landing() {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('deepseek/deepseek-r1-0528:free');
+  const [selectedModel, setSelectedModel] = useState('openrouter/free');
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);

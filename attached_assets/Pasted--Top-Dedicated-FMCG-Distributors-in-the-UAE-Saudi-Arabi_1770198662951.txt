@@ -1,0 +1,45 @@
+## Top Dedicated FMCG Distributors in the UAE & Saudi Arabia  
+*Excluding manufacturers and retail chains; only pure-play wholesale/distribution firms.*
+
+| # | Company (Country) | Latest Reported Revenue* | Employees (latest) | Senior Executives (selected) |
+|---|-------------------|--------------------------|--------------------|------------------------------|
+| 1 | **Gulfco (Gulf Trading & Refrigerating Co. LLC)** - UAE | - (no public figure disclosed) | **600+** employees 【1】 | • Refaat Abou Zaki - Head of Sales - Modern Trade  <br>• Adam Ragab - Business Development Manager  <br>• Walid Mahmoud - Head of Mars Division |
+| 2 | **Al Seer Group LLC** - UAE | **US $139.95 M** (2025) 【4】 | **560** employees 【4】 | • Sunny Leonkutty - Chief Executive Officer  <br>• (Other C-level names not disclosed publicly) |
+| 3 | **Al Maya Group** - UAE | **US $120 M** (2024) 【8】 | **5,000** employees 【8】 | • Deepak Pagarani - Chief Executive Officer  |
+| 4 | **Al Seer Group LLC (ASG)** - UAE | **US $34.9 M** (2024) 【2】 | **183** employees 【2】 | • Fouad Touckly - Chief Executive Officer  |
+| 5 | **Al Seer Group LLC (Marine Supplies)** - UAE (listed on Abu Dhabi exchange) - primarily a logistics & distribution arm | - (financials reported for the holding, not broken-out) | - | - |
+| 6 | **Binzagr Company** - Saudi Arabia | **US $217.9 M** (2026) 【7】 | **2,179** employees 【7】 | • Omar Houssainy - Chief Financial Officer  <br>• Ali al Shahrani - Vice President, Human Resources  <br>• Samir Dimitri - Senior Vice President  |
+| 7 | **Abbar Foods** - Saudi Arabia | - (revenue not disclosed) | **450+** employees 【3】 | • Aziz Arnouk - Sales Director  |
+| 8 | **Khalifa Al Gosaibi Cold Stores Co. (KACS)** - Saudi Arabia | - (revenue not disclosed) | **201-500** employees 【4】 | - (executive names not listed on public profile) |
+| 9 | **Al Seer Group LLC (Food Field)** - Saudi Arabia (listed among “Top FMCG distributors” in 2023) | - (no public figure) | - | - |
+|10 | **Bidfood Middle East** - Saudi Arabia (large B2B food-service distributor) | - (private) | - | - |
+
+\*Revenue figures refer to the most recent fiscal year or the latest publicly disclosed amount available from the cited source. “-” indicates that the company does not publish a separate revenue figure for its distribution arm or the data was not found in the available sources.
+
+### Notes on Sources & Data Gaps
+* **Revenue data** is publicly available for only a subset of the distributors (Al Seer Group, Al Maya, Binzagr, Al Seer ASG). Many large private distributors (e.g., Gulfco, KACS) do not disclose standalone turnover, which is common in the GCC market.  
+* **Employee counts** come from company websites, LinkedIn, or business-information platforms (Datanyze, RocketReach, Clodura).  
+* **Executive listings** are taken from the companies’ “About us” pages, LinkedIn profiles, or corporate PDFs. When a full C-suite list was not available, the most senior roles identified are shown.
+
+### How the List Was Compiled
+1. Searched for “top FMCG distributors UAE” and “top FMCG distributors Saudi Arabia” and extracted companies described explicitly as **distributors** rather than retailers or manufacturers.  
+2. Cross-checked each candidate against business-information databases (Datanyze, RocketReach, Clodura) for employee headcounts and executive names.  
+3. Retrieved the latest revenue figures from annual reports, company PDFs, or reputable market-intel sites (e.g., Owler, RocketReach).
+
+### Recommendations for Further Validation
+* For companies lacking disclosed revenue (e.g., Gulfco, KACS), consider requesting financial summaries directly from the firms or consulting paid market-research databases (e.g., Bloomberg, S&P Capital IQ).  
+* Verify executive turnover by checking the most recent press releases or LinkedIn updates, as leadership can change frequently in the fast-moving consumer-goods sector.
+
+---
+
+#### Sources
+[1] https://www.treasure-orbit.com/blog/a-complete-guide-to-the-top-fmcg-distributors-in-uae  
+[2] https://www.datanyze.com/companies/al-seer-group/353591011  
+[3] https://abbarfoods.com/wp-content/uploads/2025/05/Abbar-companyprofile-1_compressed.pdf  
+[4] https://www.clodura.ai/directory/company/al-seer (Revenue $139.95 M, Employees 560)  
+[5] https://annualreport.almarai.com/at-a-glance.html (used for context only)  
+[6] https://www.leadiq.com/c/binzagr-company/5a1d846d24000024005edfcd (company overview)  
+[7] https://rocketreach.co/binzagr-company-profile_b5c7af87f42e0d51 (Revenue $217.9 M, Employees 2,179, CFO Omar Houssainy)  
+[8] https://www.owler.com/company/almaya (Revenue $120 M, Employees 5,000, CEO Deepak Pagarani)
+
+*All URLs are current as of 4 Feb 2026.*

@@ -257,8 +257,9 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
 
   const handleAddExecutive = async () => {
     if (!company) return;
+    const tempId = `temp-${Date.now()}`;
     const newExec = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       company_id: company.id,
       name: 'New Executive',
       title: 'Position TBD',
@@ -270,13 +271,31 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     addExecutiveLocal(newExec);
     
     try {
-      await createExecutiveMutation.mutateAsync({
+      const createdExecutive = await createExecutiveMutation.mutateAsync({
         companyId: parseInt(company.id),
         name: 'New Executive',
         title: 'Position TBD'
       });
-      toast.success('Executive added');
+      
+      // Update the local executive with the real ID from the server
+      // Remove the temp executive and add the real one
+      const { executives } = useAppStore.getState();
+      const updatedExecutives = executives.filter(e => e.id !== tempId);
+      updatedExecutives.push({
+        ...newExec,
+        id: String(createdExecutive.id),
+        company_id: company.id
+      });
+      useAppStore.getState().setExecutives(updatedExecutives);
+      
+      // Auto-select the new executive so user can edit their details
+      selectExecutive(String(createdExecutive.id));
+      
+      toast.success('Executive added - you can now edit their details');
     } catch (error) {
+      // Remove the temp executive on failure
+      const { executives } = useAppStore.getState();
+      useAppStore.getState().setExecutives(executives.filter(e => e.id !== tempId));
       toast.error('Failed to add executive');
     }
   };

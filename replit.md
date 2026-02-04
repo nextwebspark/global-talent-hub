@@ -108,6 +108,14 @@ Discovery results include status tracking for transparency:
 
 Degradation reasons are tracked and propagated to the client. The LeftPanel displays a dismissible banner when status is not 'complete', showing the first degradation reason. This provides transparency without blocking functionality.
 
+### Multi-Pass Enrichment Pipeline
+After initial discovery, a multi-pass enrichment pipeline (`server/services/pipeline/enrichment.ts`) can fill in missing data:
+- **Revenue enrichment**: Targeted search for each company's annual revenue with currency and fiscal year
+- **Employee enrichment**: Targeted search for headcount/workforce data
+- **Executive enrichment**: Role-based searches for CEO, CFO, CHRO, CTO, CIO with individual extraction
+- API endpoints: `POST /api/companies/:id/enrich-multipass` (single company), `POST /api/search/:id/enrich-all` (batch)
+- Field-level source tracking: `revenueSourceUrl`, `revenueConfidence`, `employeesSourceUrl`, `employeesConfidence`
+
 ### Audio/Voice Integration
 Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
 

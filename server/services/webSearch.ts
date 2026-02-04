@@ -138,8 +138,8 @@ export interface SearchProvider {
   search(query: string, numResults?: number): Promise<WebSearchResult[]>;
 }
 
-export class BingSearchProvider implements SearchProvider {
-  name = 'bing';
+export class TavilySearchProvider implements SearchProvider {
+  name = 'tavily';
   private apiKey: string;
   
   constructor(apiKey: string) {
@@ -147,92 +147,40 @@ export class BingSearchProvider implements SearchProvider {
   }
   
   async search(query: string, numResults = 10): Promise<WebSearchResult[]> {
-    const endpoint = 'https://api.bing.microsoft.com/v7.0/search';
+    const endpoint = 'https://api.tavily.com/search';
     
-    const params = new URLSearchParams({
-      q: query,
-      count: String(numResults),
-      mkt: 'en-US',
-      safeSearch: 'Moderate',
-    });
-    
-    const response = await fetch(`${endpoint}?${params}`, {
+    const response = await fetch(endpoint, {
+      method: 'POST',
       headers: {
-        'Ocp-Apim-Subscription-Key': this.apiKey,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        api_key: this.apiKey,
+        query: query,
+        max_results: numResults,
+        search_depth: 'advanced',
+        include_domains: [],
+        exclude_domains: [],
+      }),
     });
     
     if (!response.ok) {
       const error = await response.text();
-      console.error('[WebSearch] Bing API error:', error);
-      throw new Error(`Bing API error: ${response.status}`);
+      console.error('[WebSearch] Tavily API error:', error);
+      throw new Error(`Tavily API error: ${response.status}`);
     }
     
     const data = await response.json();
-    const webPages = data.webPages?.value || [];
+    const results = data.results || [];
     
-    return webPages.map((page: any, index: number) => ({
-      url: page.url,
-      title: page.name,
-      snippet: page.snippet,
-      domain: extractDomain(page.url),
+    return results.map((item: any, index: number) => ({
+      url: item.url,
+      title: item.title,
+      snippet: item.content || '',
+      domain: extractDomain(item.url),
       rank: index + 1,
       provider: this.name,
     }));
-  }
-}
-
-export class GoogleSearchProvider implements SearchProvider {
-  name = 'google';
-  private apiKey: string;
-  private searchEngineId: string;
-  
-  constructor(apiKey: string, searchEngineId: string) {
-    this.apiKey = apiKey;
-    this.searchEngineId = searchEngineId;
-  }
-  
-  async search(query: string, numResults = 10): Promise<WebSearchResult[]> {
-    const endpoint = 'https://www.googleapis.com/customsearch/v1';
-    const results: WebSearchResult[] = [];
-    
-    const batchSize = 10;
-    const batches = Math.ceil(numResults / batchSize);
-    
-    for (let i = 0; i < batches && results.length < numResults; i++) {
-      const startIndex = i * batchSize + 1;
-      const params = new URLSearchParams({
-        key: this.apiKey,
-        cx: this.searchEngineId,
-        q: query,
-        num: String(Math.min(batchSize, numResults - results.length)),
-        start: String(startIndex),
-      });
-      
-      const response = await fetch(`${endpoint}?${params}`);
-      
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('[WebSearch] Google API error:', error);
-        throw new Error(`Google API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const items = data.items || [];
-      
-      for (const item of items) {
-        results.push({
-          url: item.link,
-          title: item.title,
-          snippet: item.snippet || '',
-          domain: extractDomain(item.link),
-          rank: results.length + 1,
-          provider: this.name,
-        });
-      }
-    }
-    
-    return results.slice(0, numResults);
   }
 }
 
@@ -240,18 +188,13 @@ export class WebSearchService {
   private provider: SearchProvider | null = null;
   
   constructor() {
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-    const googleSearchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-    const bingKey = process.env.BING_API_KEY;
+    const tavilyApiKey = process.env.TAVILY_API_KEY;
     
-    if (googleApiKey && googleSearchEngineId) {
-      this.provider = new GoogleSearchProvider(googleApiKey, googleSearchEngineId);
-      console.log('[WebSearch] Initialized with Google provider');
-    } else if (bingKey) {
-      this.provider = new BingSearchProvider(bingKey);
-      console.log('[WebSearch] Initialized with Bing provider');
+    if (tavilyApiKey) {
+      this.provider = new TavilySearchProvider(tavilyApiKey);
+      console.log('[WebSearch] Initialized with Tavily provider');
     } else {
-      console.warn('[WebSearch] No API key configured - web search disabled');
+      console.warn('[WebSearch] No TAVILY_API_KEY configured - web search disabled');
     }
   }
   
@@ -261,7 +204,7 @@ export class WebSearchService {
   
   async searchForCompanies(query: string, numResults = 20): Promise<WebSearchResult[]> {
     if (!this.provider) {
-      throw new Error('Web search not configured - missing API key');
+      throw new Error('Web search not configured - missing TAVILY_API_KEY');
     }
     
     const enhancedQuery = `${query} company revenue annual report`;
@@ -275,7 +218,7 @@ export class WebSearchService {
   
   async searchForCompanyVerification(companyName: string, year?: number): Promise<WebSearchResult[]> {
     if (!this.provider) {
-      throw new Error('Web search not configured - missing API key');
+      throw new Error('Web search not configured - missing TAVILY_API_KEY');
     }
     
     const yearStr = year || new Date().getFullYear() - 1;

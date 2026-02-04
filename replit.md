@@ -53,7 +53,7 @@ The project is divided into `client/` (React frontend), `server/` (Express backe
 
 ### Layered Architecture
 The backend employs a strict layered architecture:
-- **Web Search Layer** (`server/services/webSearch.ts`): Retrieval-first architecture using Google Custom Search API. All searches start with web retrieval to find actual sources. Classifies sources into tiers: Tier 1 (regulatory filings, annual reports), Tier 2 (reputable business news), Tier 3 (general web - name discovery only). Stores all search results in `searchResults` table for audit trail.
+- **Web Search Layer** (`server/services/webSearch.ts`): Retrieval-first architecture using Tavily API for web search. All searches start with web retrieval to find actual sources. Classifies sources into tiers: Tier 1 (regulatory filings, annual reports), Tier 2 (reputable business news including KPMG, PwC, Deloitte, EY reports), Tier 3 (general web - name discovery only). Stores all search results in `searchResults` table for audit trail.
 - **Retrieval Discovery Layer** (`server/services/retrievalDiscovery.ts`): Hybrid architecture that retrieves sources first, then uses LLM only for extraction from retrieved content. LLM cannot invent company lists, revenues, or metrics from model memory. Includes per-company verification retrieval step and LLM retry/fallback logic without relaxing validation rules.
 - **Discovery Layer** (`server/services/discovery.ts`): Legacy LLM-only fallback when web search is not configured. Processes natural language queries via OpenRouter and creates new company/executive records with self-verification (e.g., `relevanceReason`).
 - **Enrichment Layer** (`server/services/enrichment.ts`): Integrates with Clockwork API for fuzzy matching and data enrichment. It runs on user trigger, is read-only, and only enriches empty fields without overwriting existing data. It orchestrates deterministic matching, handles Clockwork API specifics (pagination, rate limiting, position fetching), and can use AI to research company details for newly imported candidates.
@@ -63,7 +63,7 @@ The backend employs a strict layered architecture:
 
 ### Source Tier Classification
 - **Tier 1**: SEC filings, investor relations pages, annual reports, stock exchange filings (DFM, ADX, Tadawul, etc.) - Full metric extraction allowed
-- **Tier 2**: Reuters, Bloomberg, Forbes, WSJ, regional business sources (Zawya, Gulf Business) - Full metric extraction with confidence reduction
+- **Tier 2**: Reuters, Bloomberg, Forbes, WSJ, KPMG, PwC, Deloitte, EY, S&P, Moody's, Fitch, regional business sources (Zawya, Argaam, Gulf Business), industry estimates - Full metric extraction with confidence reduction
 - **Tier 3**: General web pages - Name discovery only, all metrics must be null/Unknown
 
 ### Entity Existence Requirements

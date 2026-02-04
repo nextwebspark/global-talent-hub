@@ -403,7 +403,7 @@ export async function registerRoutes(
   app.post("/api/companies/:id/enrich-deepseek", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const { companyName, country } = req.body;
+      const { companyName, country, model } = req.body;
       
       if (!companyName) {
         return res.status(400).json({ error: "Company name is required" });
@@ -417,7 +417,8 @@ export async function registerRoutes(
         });
       }
 
-      console.log(`[DeepSeek Enrich] Researching company: ${companyName} (${country || 'Unknown'})`);
+      const selectedModel = model || 'google/gemini-2.0-flash-exp:free';
+      console.log(`[AI Enrich] Researching company: ${companyName} (${country || 'Unknown'}) with model: ${selectedModel}`);
 
       const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -428,7 +429,7 @@ export async function registerRoutes(
           'X-Title': 'Global Talent Map'
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-chat',
+          model: selectedModel,
           messages: [
             {
               role: 'system',

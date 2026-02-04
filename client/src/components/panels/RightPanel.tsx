@@ -6,9 +6,28 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck, Search } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, Globe, Target, TrendingUp, AlertCircle, ShieldCheck, Search, Bot } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+
+const LLM_MODELS = [
+  // Free models first
+  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
+  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', free: true },
+  { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek V3', free: true },
+  { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen 3 235B', free: true },
+  { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small', free: true },
+  // Paid models
+  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', free: false },
+  { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
+  { id: 'openai/gpt-4o', name: 'GPT-4o', free: false },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', free: false },
+  { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', free: false },
+  { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
+];
 
 const EditableField = ({ 
   value, 
@@ -117,6 +136,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
+  const [enrichmentModel, setEnrichmentModel] = useState('google/gemini-2.0-flash-exp:free');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
@@ -263,14 +283,16 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
     }
   };
 
-  const handleEnrichWithDeepSeek = async (companyData: typeof company) => {
+  const handleEnrichWithAI = async (companyData: typeof company) => {
     if (!companyData) return;
     setIsEnrichingWithBing(true);
+    const modelName = LLM_MODELS.find(m => m.id === enrichmentModel)?.name || enrichmentModel;
+    toast.info(`Enriching with ${modelName}...`);
     try {
       const response = await fetch(`/api/companies/${companyData.id}/enrich-deepseek`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName: companyData.name, country: companyData.hq_country })
+        body: JSON.stringify({ companyName: companyData.name, country: companyData.hq_country, model: enrichmentModel })
       });
       
       if (!response.ok) {
@@ -293,7 +315,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
         updateCompanyLocal(companyData.id, { revenueDrivers: enrichedData.revenueDrivers });
       }
       
-      toast.success('Company enriched with DeepSeek AI');
+      toast.success(`Company enriched with ${modelName}`);
     } catch (error: any) {
       console.error('Error enriching with DeepSeek:', error);
       toast.error(error.message || 'Failed to enrich with DeepSeek');
@@ -536,19 +558,39 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                   Company Summary
                 </h3>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => handleEnrichWithDeepSeek(company)}
-                  disabled={isEnrichingWithBing}
-                  className="h-6 text-xs"
-                >
-                  {isEnrichingWithBing ? (
-                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</>
-                  ) : (
-                    <><Sparkles className="h-3 w-3 mr-1" /> Enrich with AI</>
-                  )}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Select value={enrichmentModel} onValueChange={setEnrichmentModel}>
+                    <SelectTrigger className="w-[140px] h-6 text-[10px] bg-background" data-testid="select-enrichment-model">
+                      <Bot className="h-3 w-3 mr-1 text-muted-foreground" />
+                      <SelectValue placeholder="Model" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[250px]">
+                      {LLM_MODELS.map((model) => (
+                        <SelectItem key={model.id} value={model.id} className="text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span>{model.name}</span>
+                            {model.free && (
+                              <span className="px-1 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[8px] font-semibold rounded">FREE</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => handleEnrichWithAI(company)}
+                    disabled={isEnrichingWithBing}
+                    className="h-6 text-xs"
+                  >
+                    {isEnrichingWithBing ? (
+                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</>
+                    ) : (
+                      <><Sparkles className="h-3 w-3 mr-1" /> Enrich</>
+                    )}
+                  </Button>
+                </div>
               </div>
               <EditableField
                 value={company.summary || ''}

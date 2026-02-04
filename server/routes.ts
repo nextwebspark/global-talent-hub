@@ -178,11 +178,11 @@ export async function registerRoutes(
     }
   });
 
-  // Extract profile from raw text using AI
+  // Extract profile from raw text using AI (OpenRouter)
   app.post("/api/executives/:id/extract-profile", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const { sourceText } = req.body;
+      const { sourceText, model = 'meta-llama/llama-3.3-70b-instruct:free' } = req.body;
       
       if (!sourceText || typeof sourceText !== 'string' || sourceText.trim().length === 0) {
         return res.status(400).json({ error: "Source text is required" });
@@ -194,42 +194,49 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Executive not found" });
       }
 
-      // Use OpenAI to extract structured data from the raw text
+      // Use OpenRouter to extract structured data from the raw text
       const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      const openrouter = new OpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY,
+        baseURL: 'https://openrouter.ai/api/v1',
       });
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at extracting executive profile information from raw text. Extract the following fields if present:
+      const systemPrompt = `You are an expert at extracting executive profile information from raw text. Extract the following fields if present:
 - name: Full name of the executive
 - title: Current job title/position
 - linkedin: LinkedIn profile URL (look for linkedin.com URLs)
 - careerSummary: A summary of their career history, previous roles, companies worked at
 - remunerationNotes: Any compensation, salary, bonus, equity, or remuneration information
 
-Return a JSON object with these fields. Use null for any field that cannot be determined from the text. For careerSummary and remunerationNotes, synthesize the information into readable paragraphs.`
-          },
-          {
-            role: "user",
-            content: `Extract profile information from this text:\n\n${sourceText}`
-          }
+Return ONLY a valid JSON object with these fields. Use null for any field that cannot be determined from the text. For careerSummary and remunerationNotes, synthesize the information into readable paragraphs.`;
+
+      const response = await openrouter.chat.completions.create({
+        model: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Extract profile information from this text:\n\n${sourceText}` }
         ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 2000,
+        max_tokens: 2000,
       });
 
-      const content = response.choices[0]?.message?.content;
+      let content = response.choices[0]?.message?.content;
       if (!content) {
         throw new Error("No response from AI");
       }
 
-      const extracted = JSON.parse(content);
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        content = jsonMatch[1].trim();
+      }
+
+      let extracted;
+      try {
+        extracted = JSON.parse(content);
+      } catch (parseError) {
+        console.error("Failed to parse AI response:", content);
+        throw new Error("AI returned invalid JSON");
+      }
 
       // Update the executive with extracted data and source text
       const updateData: Record<string, any> = {

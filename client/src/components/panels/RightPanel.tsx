@@ -835,6 +835,16 @@ function ExecutiveDetailView({
   const [viewMode, setViewMode] = useState<'profile' | 'source'>('profile');
   const [sourceText, setSourceText] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.3-70b-instruct:free');
+
+  const EXTRACTION_MODELS = [
+    { value: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (Free)' },
+    { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { value: 'openai/gpt-4o', label: 'GPT-4o' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
+  ];
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
   const [linkedInInput, setLinkedInInput] = useState('');
 
@@ -889,7 +899,7 @@ function ExecutiveDetailView({
       const response = await fetch(`/api/executives/${localExecutive.id}/extract-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceText })
+        body: JSON.stringify({ sourceText, model: selectedModel })
       });
 
       if (!response.ok) {
@@ -1022,6 +1032,19 @@ function ExecutiveDetailView({
               <p className="text-xs text-muted-foreground mb-3">
                 Paste text from LinkedIn, resumes, or other sources. AI will extract name, title, career history, and compensation data.
               </p>
+              <div className="flex items-center gap-2 mt-2">
+                <label className="text-xs text-muted-foreground">Model:</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="flex-1 text-xs px-2 py-1 border rounded bg-background"
+                  data-testid="select-extraction-model"
+                >
+                  {EXTRACTION_MODELS.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <Textarea
               value={sourceText}

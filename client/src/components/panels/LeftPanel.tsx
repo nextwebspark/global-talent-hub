@@ -663,30 +663,37 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                   {company.revenue_usd ? `$${(company.revenue_usd / 1000000000).toFixed(1)}B` : 'Unknown'} • {company.employees ? `${company.employees.toLocaleString()} emp` : 'Unknown'} • {company.executives.length} exec{company.executives.length !== 1 ? 's' : ''}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1 shrink-0">
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <TooltipProvider delayDuration={0}>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          toggleCompanyVisibility(company.id);
-                                        }}
-                                        className={`p-1 rounded transition-all ${
-                                          isCompanyHidden 
-                                            ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50' 
-                                            : 'text-primary/70 hover:text-primary hover:bg-primary/10'
-                                        }`}
-                                        data-testid={`button-visibility-company-${company.id}`}
-                                      >
-                                        {isCompanyHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                                      </button>
+                                      <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap cursor-help ${
+                                        company.confidence >= 7 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 
+                                        company.confidence >= 4 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 
+                                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                      }`}>
+                                        {company.confidence}/10
+                                      </div>
                                     </TooltipTrigger>
-                                    <TooltipContent side="left" className="text-xs">
-                                      {isCompanyHidden ? 'Show on map' : 'Hide from map'}
+                                    <TooltipContent side="left" className="text-xs max-w-[200px]">
+                                      Research confidence based on source quality
                                     </TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleCompanyVisibility(company.id);
+                                  }}
+                                  className={`p-1 rounded transition-all ${
+                                    isCompanyHidden 
+                                      ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50' 
+                                      : 'text-primary/70 hover:text-primary hover:bg-primary/10'
+                                  }`}
+                                  data-testid={`button-visibility-company-${company.id}`}
+                                >
+                                  {isCompanyHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                </button>
                                 <button
                                   onClick={(e) => handleDeleteCompany(e, company.id, company.name)}
                                   className="opacity-0 group-hover/company:opacity-100 p-1 rounded hover:bg-destructive/10 hover:text-destructive transition-all"

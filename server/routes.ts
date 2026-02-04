@@ -178,6 +178,83 @@ export async function registerRoutes(
     }
   });
 
+  // Extract profile from raw text using AI
+  app.post("/api/executives/:id/extract-profile", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const { sourceText } = req.body;
+      
+      if (!sourceText || typeof sourceText !== 'string' || sourceText.trim().length === 0) {
+        return res.status(400).json({ error: "Source text is required" });
+      }
+
+      // Check executive exists
+      const existingExec = await storage.getExecutive(id);
+      if (!existingExec) {
+        return res.status(404).json({ error: "Executive not found" });
+      }
+
+      // Use OpenAI to extract structured data from the raw text
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert at extracting executive profile information from raw text. Extract the following fields if present:
+- name: Full name of the executive
+- title: Current job title/position
+- linkedin: LinkedIn profile URL (look for linkedin.com URLs)
+- careerSummary: A summary of their career history, previous roles, companies worked at
+- remunerationNotes: Any compensation, salary, bonus, equity, or remuneration information
+
+Return a JSON object with these fields. Use null for any field that cannot be determined from the text. For careerSummary and remunerationNotes, synthesize the information into readable paragraphs.`
+          },
+          {
+            role: "user",
+            content: `Extract profile information from this text:\n\n${sourceText}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 2000,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("No response from AI");
+      }
+
+      const extracted = JSON.parse(content);
+
+      // Update the executive with extracted data and source text
+      const updateData: Record<string, any> = {
+        sourceText: sourceText.trim(),
+      };
+
+      // Only update fields that were extracted (not null)
+      if (extracted.name) updateData.name = extracted.name;
+      if (extracted.title) updateData.title = extracted.title;
+      if (extracted.linkedin) updateData.linkedin = extracted.linkedin;
+      if (extracted.careerSummary) updateData.careerSummary = extracted.careerSummary;
+      if (extracted.remunerationNotes) updateData.remunerationNotes = extracted.remunerationNotes;
+
+      const updatedExecutive = await storage.updateExecutiveManual(id, updateData);
+
+      res.json({
+        executive: updatedExecutive,
+        extracted: extracted
+      });
+    } catch (error) {
+      console.error("Error extracting executive profile:", error);
+      res.status(500).json({ error: "Failed to extract profile from text" });
+    }
+  });
+
   app.delete("/api/executives/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
@@ -215,6 +292,7 @@ export async function registerRoutes(
           notes: details.executive.notes,
           remunerationNotes: details.executive.remunerationNotes,
           availability: details.executive.availability,
+          sourceText: details.executive.sourceText,
           enrichmentSource: details.executive.enrichmentSource,
           enrichmentConfidence: details.executive.enrichmentConfidence,
           enrichmentTimestamp: details.executive.enrichmentTimestamp,

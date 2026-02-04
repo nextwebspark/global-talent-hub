@@ -17,6 +17,13 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+const openrouter = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
+
+const DEFAULT_ENRICHMENT_MODEL = "anthropic/claude-3.5-haiku";
+
 /**
  * Enrichment run context for observability
  */
@@ -1975,12 +1982,12 @@ function validateAndNormalizeCoordinates(lat: any, lng: any, country?: string, r
   return { lat: fallback.lat + offset(), lng: fallback.lng + offset() };
 }
 
-export async function researchCompanyDetails(companyName: string): Promise<ResearchedCompany> {
-  console.log(`[Enrichment:Research] Researching company details for: ${companyName}`);
+export async function researchCompanyDetails(companyName: string, model: string = DEFAULT_ENRICHMENT_MODEL): Promise<ResearchedCompany> {
+  console.log(`[Enrichment:Research] Researching company details for: ${companyName} (model: ${model})`);
   
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.1",
+    const response = await openrouter.chat.completions.create({
+      model: model,
       messages: [
         {
           role: "system",
@@ -2016,10 +2023,9 @@ CRITICAL REQUIREMENTS:
           content: `Research this company and provide details: "${companyName}"`
         }
       ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 1000,
+      max_tokens: 1000,
       temperature: 0.3
-    });
+    } as any);
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {

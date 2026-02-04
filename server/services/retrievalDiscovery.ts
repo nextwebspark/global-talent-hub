@@ -747,3 +747,252 @@ export async function* discoverWithTavilyResearch(
     } 
   };
 }
+
+// ============================================================================
+// NEW: Regular Tavily Search + LLM Extraction (faster, more reliable)
+// ============================================================================
+
+const SEARCH_EXTRACTION_PROMPT = `You are an expert at extracting company information from search results.
+
+Given search results about companies, extract structured company data.
+
+CRITICAL RULES:
+1. Extract ONLY companies explicitly mentioned in the search results
+2. Do NOT invent or hallucinate company names or data
+3. For revenue: ONLY include if the word "revenue" is explicitly used (not profit, AUM, valuation)
+4. Include fiscal year and currency for any revenue figures
+5. For employees: extract if mentioned
+6. For executives: extract names and titles if mentioned
+
+OUTPUT FORMAT (JSON):
+{
+  "companies": [
+    {
+      "name": "Company Name",
+      "country": "Country (e.g., UAE, Saudi Arabia)",
+      "city": "City if mentioned",
+      "sector": "Industry sector",
+      "businessType": "Type (distributor, manufacturer, etc.)",
+      "revenue": 15200000000,
+      "revenueCurrency": "USD",
+      "revenueFiscalYear": 2024,
+      "revenueSource": "Annual Report 2024",
+      "employees": 5000,
+      "employeesSource": "Company website",
+      "executives": [
+        {"name": "John Smith", "title": "CEO"},
+        {"name": "Jane Doe", "title": "CFO"}
+      ],
+      "confidence": 8,
+      "relevanceReason": "Why this company matches the query"
+    }
+  ]
+}
+
+Return ONLY valid JSON, no explanatory text.`;
+
+export async function* discoverWithTavilySearch(
+  criteria: SearchCriteria,
+  searchQueryId: number,
+  originalQuery: string
+): AsyncGenerator<any> {
+  const query = originalQuery.trim();
+  const limit = criteria.limit || 10;
+  
+  yield { type: 'status', data: { message: 'Starting company search...', progress: 5 } };
+  
+  if (!webSearchService.isConfigured()) {
+    yield { type: 'error', data: { message: 'Tavily Search not configured', code: 'NOT_CONFIGURED' } };
+    return;
+  }
+  
+  // Step 1: Run Tavily search to get web results
+  yield { type: 'status', data: { message: 'Searching web sources...', progress: 10 } };
+  
+  let searchResults: WebSearchResult[];
+  try {
+    // Search for more results than needed to give LLM good context
+    searchResults = await webSearchService.searchForCompanies(query, Math.min(limit * 3, 20));
+    console.log(`[TavilySearch] Got ${searchResults.length} search results`);
+  } catch (error: any) {
+    console.error('[TavilySearch] Search failed:', error);
+    yield { 
+      type: 'error', 
+      data: { 
+        message: error.message || 'Search failed',
+        code: 'SEARCH_FAILED'
+      } 
+    };
+    return;
+  }
+  
+  if (searchResults.length === 0) {
+    yield { type: 'error', data: { message: 'No search results found', code: 'NO_RESULTS' } };
+    return;
+  }
+  
+  // Classify sources
+  const sourceTiers = { tier1: 0, tier2: 0, tier3: 0 };
+  for (const result of searchResults) {
+    const classification = classifySourceTier(result.url, result.title, result.snippet);
+    if (classification.tier === 1) sourceTiers.tier1++;
+    else if (classification.tier === 2) sourceTiers.tier2++;
+    else sourceTiers.tier3++;
+  }
+  
+  yield { 
+    type: 'source', 
+    data: { 
+      count: searchResults.length,
+      ...sourceTiers,
+    }
+  };
+  
+  // Step 2: Use LLM to extract company data from search results
+  yield { type: 'status', data: { message: 'Extracting company information...', progress: 40 } };
+  
+  // Format search results for LLM
+  const searchContext = searchResults.map((r, i) => 
+    `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`
+  ).join('\n\n');
+  
+  const userPrompt = `QUERY: ${query}
+
+SEARCH RESULTS:
+${searchContext}
+
+Extract up to ${limit} companies that match the query. Return JSON only.`;
+
+  let extractedData: any;
+  try {
+    const result = await callLlmWithRetry(
+      [
+        { role: "system", content: SEARCH_EXTRACTION_PROMPT },
+        { role: "user", content: userPrompt }
+      ],
+      null,
+      DEFAULT_MODEL
+    );
+    extractedData = result.data;
+    console.log(`[TavilySearch] LLM extraction complete, model: ${result.model}`);
+  } catch (error: any) {
+    console.error('[TavilySearch] LLM extraction failed:', error);
+    yield { 
+      type: 'error', 
+      data: { 
+        message: error.message || 'Failed to extract company data',
+        code: 'EXTRACTION_FAILED'
+      } 
+    };
+    return;
+  }
+  
+  const companies = extractedData?.companies || [];
+  console.log(`[TavilySearch] Extracted ${companies.length} companies`);
+  
+  if (companies.length === 0) {
+    yield { type: 'status', data: { message: 'No companies found matching criteria', progress: 100 } };
+    yield { type: 'complete', data: { total: 0 } };
+    return;
+  }
+  
+  // Step 3: Process and save each company
+  yield { type: 'status', data: { message: 'Processing companies...', progress: 60 } };
+  
+  let successfullyCreated = 0;
+  
+  for (let i = 0; i < companies.length; i++) {
+    const company = companies[i];
+    const progress = 60 + Math.round((i / companies.length) * 35);
+    
+    yield { type: 'status', data: { message: `Processing ${company.name}...`, progress } };
+    
+    try {
+      // Apply coordinate fallback
+      let lat = company.latitude;
+      let lng = company.longitude;
+      
+      if (!isValidCoordinate(lat, lng)) {
+        const fallback = applyCoordinateFallback({
+          latitude: lat,
+          longitude: lng,
+          city: company.city,
+          country: company.country,
+        });
+        lat = fallback.latitude;
+        lng = fallback.longitude;
+      }
+      
+      // Prepare company data for storage
+      const companyData = {
+        name: company.name,
+        sector: company.sector || null,
+        businessType: company.businessType || null,
+        description: company.description || null,
+        website: company.website || null,
+        country: company.country || 'Unknown',
+        city: company.city || null,
+        streetAddress: company.streetAddress || null,
+        latitude: lat?.toString() || null,
+        longitude: lng?.toString() || null,
+        revenue: company.revenue || null,
+        revenueCurrency: company.revenueCurrency || null,
+        revenueFiscalYear: company.revenueFiscalYear || null,
+        revenueSource: company.revenueSource || null,
+        employees: company.employees || null,
+        employeesSource: company.employeesSource || null,
+        confidence: company.confidence || 5,
+        relevanceReason: company.relevanceReason || 'Found via search',
+        searchQueryId,
+      };
+      
+      // Create company in database
+      const created = await storage.createCompany(companyData);
+      
+      // Create executives if present
+      if (company.executives && Array.isArray(company.executives)) {
+        for (const exec of company.executives) {
+          if (exec.name && exec.title) {
+            try {
+              await storage.createExecutive({
+                companyId: created.id,
+                name: exec.name,
+                title: exec.title,
+                source: 'Tavily Search',
+              });
+            } catch (e) {
+              console.error(`[TavilySearch] Failed to create executive: ${e}`);
+            }
+          }
+        }
+      }
+      
+      // Fetch the company with executives for the response
+      const companyWithExecutives = await storage.getCompanyWithExecutives(created.id);
+      
+      yield { 
+        type: 'company', 
+        data: { 
+          company: companyWithExecutives,
+          index: i + 1,
+          total: companies.length
+        } 
+      };
+      
+      successfullyCreated++;
+      
+    } catch (error: any) {
+      console.error(`[TavilySearch] Failed to create company ${company.name}:`, error);
+    }
+  }
+  
+  yield { type: 'status', data: { message: 'Search complete', progress: 100 } };
+  yield { 
+    type: 'complete', 
+    data: { 
+      total: successfullyCreated,
+      discoveryStatus: 'complete' as const,
+      usedTavilySearch: true,
+    } 
+  };
+}

@@ -7,7 +7,8 @@ import {
   generateSearchUniqueKey
 } from "./services/discovery";
 import { 
-  discoverWithTavilyResearch
+  discoverWithTavilyResearch,
+  discoverWithTavilySearch
 } from "./services/retrievalDiscovery";
 import { webSearchService } from "./services/webSearch";
 import { 
@@ -527,18 +528,18 @@ Please provide a comprehensive business profile as JSON.`
       await storage.deleteCompaniesBySearchQuery(searchQuery.id);
       console.log("[Routes] Cleared previous results for search ID:", searchQuery.id);
 
-      // Step 5: Run Tavily Research API discovery (no LLM layer)
-      if (!webSearchService.isResearchConfigured()) {
-        return res.status(503).json({ error: "Tavily Research API is not configured. Please add TAVILY_API_KEY to your secrets." });
+      // Step 5: Run Tavily Search + LLM extraction (faster than Research API)
+      if (!webSearchService.isConfigured()) {
+        return res.status(503).json({ error: "Tavily Search is not configured. Please add TAVILY_API_KEY to your secrets." });
       }
 
-      console.log("[Routes] Running Tavily Research discovery for:", query);
+      console.log("[Routes] Running Tavily Search discovery for:", query);
       const companies: any[] = [];
       let discoveryError: string | null = null;
       
       let discoveryErrorCode: string | null = null;
       
-      for await (const event of discoverWithTavilyResearch(criteria, searchQuery.id, query)) {
+      for await (const event of discoverWithTavilySearch(criteria, searchQuery.id, query)) {
         if (event.type === 'company' && event.data?.company) {
           companies.push(event.data.company);
         } else if (event.type === 'error' && event.data?.message) {
@@ -555,7 +556,7 @@ Please provide a comprehensive business profile as JSON.`
         return res.status(statusCode).json({ error: discoveryError });
       }
       
-      console.log(`[Routes] Tavily Research complete: ${companies.length} companies found`);
+      console.log(`[Routes] Tavily Search complete: ${companies.length} companies found`);
 
       // Step 6: Update result count
       await storage.updateSearchQueryResultCount(searchQuery.id, companies.length);

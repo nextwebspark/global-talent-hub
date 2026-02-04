@@ -12,18 +12,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models first - these are confirmed working free models on OpenRouter
-  { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2 3B (Free)', free: true },
-  { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B (Free)', free: true },
-  { id: 'google/gemma-2-9b-it:free', name: 'Gemma 2 9B (Free)', free: true },
-  { id: 'qwen/qwen-2-7b-instruct:free', name: 'Qwen 2 7B (Free)', free: true },
-  { id: 'mistralai/mistral-7b-instruct:free', name: 'Mistral 7B (Free)', free: true },
+  // Free models - verified working on OpenRouter (Feb 2026)
+  { id: 'openrouter/auto', name: 'Auto (Best Available)', free: true },
+  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
+  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', free: true },
+  { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', free: true },
+  { id: 'qwen/qwen2.5-vl-72b-instruct:free', name: 'Qwen 2.5 72B', free: true },
+  { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1', free: true },
   // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', free: false },
   { id: 'openai/gpt-4o', name: 'GPT-4o', free: false },
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', free: true },
 ];
 
 const EditableField = ({ 
@@ -135,7 +136,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
   const [isLoadingCompanyNotes, setIsLoadingCompanyNotes] = useState(false);
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
-  const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
+  const [enrichmentModel, setEnrichmentModel] = useState('openrouter/auto');
 
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
@@ -1166,7 +1167,13 @@ function ExecutiveDetailView({
                         if (response.ok) {
                           const { imageUrl } = await response.json();
                           setLocalExecutive(prev => prev ? { ...prev, imageUrl } : prev);
+                          const { executives, setExecutives } = useAppStore.getState();
+                          setExecutives(executives.map(e => 
+                            e.id === String(localExecutive.id) ? { ...e, imageUrl } : e
+                          ));
                           toast.success('Profile picture updated');
+                        } else {
+                          toast.error('Failed to upload image');
                         }
                       } catch (error) {
                         toast.error('Failed to upload image');

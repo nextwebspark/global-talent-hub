@@ -11,37 +11,29 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Free models first
-  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash Exp', provider: 'Google', free: true },
+  // Free models - verified working on OpenRouter (Feb 2026)
+  { id: 'openrouter/auto', name: 'Auto (Best Available)', provider: 'OpenRouter', free: true },
+  { id: 'google/gemini-2.0-flash-exp:free', name: 'Gemini 2.0 Flash', provider: 'Google', free: true },
   { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
   { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', provider: 'Meta', free: true },
   { id: 'deepseek/deepseek-r1:free', name: 'DeepSeek R1', provider: 'DeepSeek', free: true },
-  { id: 'deepseek/deepseek-chat-v3-0324:free', name: 'DeepSeek Chat V3', provider: 'DeepSeek', free: true },
-  { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen 3 235B', provider: 'Qwen', free: true },
-  { id: 'qwen/qwen-2.5-72b-instruct:free', name: 'Qwen 2.5 72B', provider: 'Qwen', free: true },
+  { id: 'qwen/qwen2.5-vl-72b-instruct:free', name: 'Qwen 2.5 72B', provider: 'Qwen', free: true },
   { id: 'mistralai/mistral-small-3.1-24b-instruct:free', name: 'Mistral Small 3.1', provider: 'Mistral', free: true },
-  // Paid models
+  // Paid models - more capable
+  { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', free: false },
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', provider: 'Anthropic', free: false },
   { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', free: false },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', free: false },
-  { id: 'openai/gpt-4.1', name: 'GPT-4.1', provider: 'OpenAI', free: false },
-  { id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'OpenAI', free: false },
   { id: 'google/gemini-2.5-pro-preview', name: 'Gemini 2.5 Pro', provider: 'Google', free: false },
   { id: 'google/gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash', provider: 'Google', free: false },
-  { id: 'google/gemini-2.0-flash-001', name: 'Gemini 2.0 Flash', provider: 'Google', free: false },
-  { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', provider: 'Meta', free: false },
-  { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', free: false },
-  { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek', free: false },
-  { id: 'mistralai/mistral-large-2411', name: 'Mistral Large', provider: 'Mistral', free: false },
-  { id: 'x-ai/grok-3-beta', name: 'Grok 3 Beta', provider: 'xAI', free: false },
 ];
 
 export default function Landing() {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('google/gemini-2.0-flash-exp:free');
+  const [selectedModel, setSelectedModel] = useState('openrouter/auto');
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);

@@ -194,13 +194,13 @@ export interface TavilyResearchCompany {
   country?: string | null;
   city?: string | null;
   streetAddress?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  revenue?: number | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  revenue?: string | number | null;
   revenueCurrency?: string | null;
   revenueFiscalYear?: number | null;
   revenueSource?: string | null;
-  employees?: number | null;
+  employees?: number | string | null;
   employeesSource?: string | null;
   confidence?: number;
   relevanceReason?: string;
@@ -222,7 +222,135 @@ export interface TavilyResearchResult {
   responseTime?: number;
 }
 
+// Revenue parsing utility - handles formats like "SAR 75.3bn 2023", "$15.2B", "AED 28.4 billion"
+export function parseRevenueString(revenueStr: string | null | undefined): {
+  value: number | null;
+  currency: string | null;
+  fiscalYear: number | null;
+  original: string | null;
+} {
+  if (!revenueStr || typeof revenueStr !== 'string') {
+    return { value: null, currency: null, fiscalYear: null, original: null };
+  }
+  
+  const original = revenueStr.trim();
+  
+  // Currency patterns - common 3-letter codes and symbols
+  const currencyPatterns: { pattern: RegExp; code: string }[] = [
+    { pattern: /\bUSD\b|\$|US\$/i, code: 'USD' },
+    { pattern: /\bSAR\b/i, code: 'SAR' },
+    { pattern: /\bAED\b/i, code: 'AED' },
+    { pattern: /\bEUR\b|€/i, code: 'EUR' },
+    { pattern: /\bGBP\b|£/i, code: 'GBP' },
+    { pattern: /\bQAR\b/i, code: 'QAR' },
+    { pattern: /\bOMR\b/i, code: 'OMR' },
+    { pattern: /\bKWD\b/i, code: 'KWD' },
+    { pattern: /\bBHD\b/i, code: 'BHD' },
+    { pattern: /\bINR\b|₹/i, code: 'INR' },
+    { pattern: /\bCHF\b/i, code: 'CHF' },
+    { pattern: /\bJPY\b|¥/i, code: 'JPY' },
+    { pattern: /\bCNY\b|RMB/i, code: 'CNY' },
+  ];
+  
+  let currency: string | null = null;
+  for (const { pattern, code } of currencyPatterns) {
+    if (pattern.test(original)) {
+      currency = code;
+      break;
+    }
+  }
+  
+  // Extract year (4 digits, typically 2020-2030 range)
+  const yearMatch = original.match(/\b(20[1-3]\d)\b/);
+  const fiscalYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
+  
+  // Extract numeric value with multiplier
+  let value: number | null = null;
+  
+  // Match patterns like "75.3bn", "15.2 billion", "$28.4B", "1,500,000,000"
+  const valuePatterns = [
+    // "75.3bn", "15.2B", "28.4 billion"
+    /(\d+(?:[.,]\d+)?)\s*(?:bn|billion|b)\b/i,
+    // "500mn", "750M", "800 million"
+    /(\d+(?:[.,]\d+)?)\s*(?:mn|million|m)\b/i,
+    // "1.5tn", "1.2 trillion"
+    /(\d+(?:[.,]\d+)?)\s*(?:tn|trillion|t)\b/i,
+    // "150k", "200 thousand"
+    /(\d+(?:[.,]\d+)?)\s*(?:k|thousand)\b/i,
+    // Raw number with commas: "1,500,000,000"
+    /(\d{1,3}(?:,\d{3})+(?:\.\d+)?)/,
+    // Simple decimal: "15200000000"
+    /(\d+(?:\.\d+)?)/,
+  ];
+  
+  const multipliers: { [key: string]: number } = {
+    'bn': 1e9, 'billion': 1e9, 'b': 1e9,
+    'mn': 1e6, 'million': 1e6, 'm': 1e6,
+    'tn': 1e12, 'trillion': 1e12, 't': 1e12,
+    'k': 1e3, 'thousand': 1e3,
+  };
+  
+  for (const pattern of valuePatterns) {
+    const match = original.match(pattern);
+    if (match) {
+      // Clean the number (remove commas, handle European decimals)
+      let numStr = match[1].replace(/,/g, '');
+      const num = parseFloat(numStr);
+      
+      if (!isNaN(num)) {
+        // Check for multiplier suffix
+        const multiplierMatch = original.toLowerCase().match(/(billion|million|trillion|thousand|bn|mn|tn|b|m|t|k)/);
+        if (multiplierMatch) {
+          const mult = multipliers[multiplierMatch[1].toLowerCase()] || 1;
+          value = num * mult;
+        } else {
+          value = num;
+        }
+        break;
+      }
+    }
+  }
+  
+  return { value, currency, fiscalYear, original };
+}
+
+// Coordinate validation - checks if coordinates are valid (not near-zero, within bounds)
+export function isValidCoordinate(lat: number | string | null | undefined, lng: number | string | null | undefined): boolean {
+  const latNum = typeof lat === 'string' ? parseFloat(lat) : lat;
+  const lngNum = typeof lng === 'string' ? parseFloat(lng) : lng;
+  
+  if (latNum === null || latNum === undefined || lngNum === null || lngNum === undefined) return false;
+  if (isNaN(latNum) || isNaN(lngNum)) return false;
+  
+  // Check if near-zero (likely invalid)
+  if (Math.abs(latNum) < 1 && Math.abs(lngNum) < 1) return false;
+  
+  // Check valid ranges
+  if (latNum < -90 || latNum > 90) return false;
+  if (lngNum < -180 || lngNum > 180) return false;
+  
+  return true;
+}
+
+// Parse coordinate that might be string or number
+export function parseCoordinate(coord: number | string | null | undefined): number | null {
+  if (coord === null || coord === undefined) return null;
+  const num = typeof coord === 'string' ? parseFloat(coord) : coord;
+  return isNaN(num) ? null : num;
+}
+
+// Parse employee count that might have commas or text like "10,000+" or "~5000"
+export function parseEmployeeCount(employees: number | string | null | undefined): number | null {
+  if (employees === null || employees === undefined) return null;
+  if (typeof employees === 'number') return Math.round(employees);
+  
+  const str = String(employees).replace(/[,\s+~]/g, '');
+  const num = parseInt(str, 10);
+  return isNaN(num) ? null : num;
+}
+
 // The output schema for Tavily Research API - must match JSON Schema format
+// Uses flexible types to accept various formats from Tavily's AI
 const COMPANY_RESEARCH_SCHEMA = {
   properties: {
     companies: {
@@ -239,13 +367,11 @@ const COMPANY_RESEARCH_SCHEMA = {
           country: { type: "string", description: "Headquarters country" },
           city: { type: "string", description: "Headquarters city" },
           streetAddress: { type: "string", description: "Full street address if available" },
-          latitude: { type: "number", description: "GPS latitude of headquarters" },
-          longitude: { type: "number", description: "GPS longitude of headquarters" },
-          revenue: { type: "number", description: "Annual revenue as a number (e.g., 15200000000 for 15.2 billion). Only include if explicitly stated as 'revenue' from authoritative source." },
-          revenueCurrency: { type: "string", description: "3-letter currency code (USD, AED, EUR, SAR, etc.)" },
-          revenueFiscalYear: { type: "integer", description: "Fiscal year for the revenue figure (e.g., 2023, 2024)" },
-          revenueSource: { type: "string", description: "Source of revenue data (e.g., Annual Report 2023, KPMG Report)" },
-          employees: { type: "integer", description: "Number of employees" },
+          latitude: { type: ["number", "string"], description: "GPS latitude of headquarters" },
+          longitude: { type: ["number", "string"], description: "GPS longitude of headquarters" },
+          revenue: { type: ["string", "number"], description: "Annual revenue with currency and year, e.g., 'SAR 75.3bn 2023', 'AED 28.4 billion FY2024', '$15.2B 2023'. Include the exact figure from authoritative sources. Can be a formatted string or a raw number." },
+          revenueSource: { type: "string", description: "Source of revenue data (e.g., Annual Report 2023, KPMG Report, Company Website)" },
+          employees: { type: ["integer", "string"], description: "Number of employees (can include commas, e.g., '10,000')" },
           employeesSource: { type: "string", description: "Source of employee count" },
           confidence: { type: "integer", description: "Data quality confidence score 1-10" },
           relevanceReason: { type: "string", description: "Why this company matches the search query" },
@@ -383,15 +509,29 @@ export class TavilyResearchService {
       executiveInstructions = `- Key executives (CEO, CFO, COO, Managing Director, etc.) with their titles and LinkedIn profiles`;
     }
     
-    const enhancedQuery = `Find the top ${limit} ${query}. For each company, find:
-- Official company name and headquarters location (country, city, street address)
-- Company website URL
-- A 2-4 sentence description of what the company does and its market position
-- Annual revenue (only if explicitly stated as "revenue" with currency and fiscal year)
-- Number of employees
-${executiveInstructions}
+    const enhancedQuery = `Find the top ${limit} ${query}. For each company, provide:
 
-IMPORTANT: Only include revenue if you find it explicitly stated as "revenue" from annual reports, regulatory filings, or reputable business news. Do not estimate or calculate revenue.`;
+COMPANY DETAILS:
+- Official company name
+- Headquarters location (country, city, full street address if available)
+- Company website URL (e.g., https://www.company.com)
+- 2-4 sentence description of what the company does and its market position
+
+FINANCIAL DATA (IMPORTANT - use local currency):
+- Annual revenue in the format: "[CURRENCY] [AMOUNT] [YEAR]" (e.g., "SAR 75.3bn 2023", "AED 28.4 billion FY2024", "USD 15.2B 2023")
+- Use the company's local/domiciled currency (SAR, AED, QAR, EUR, GBP, USD, etc.)
+- Only include if explicitly stated as "revenue" from annual reports, financial statements, or reputable business news
+- Include the source (e.g., "Annual Report 2023", "KPMG Report")
+- Number of employees with source
+
+EXECUTIVES (CRITICAL - find and include):
+${executiveInstructions}
+- For each executive: full name, exact title, LinkedIn profile URL if available
+- Source where each executive was found (e.g., "LinkedIn", "Company Website", "Annual Report")
+
+RANKING:
+- Rank companies by revenue (highest first)
+- Include confidence score 1-10 based on source reliability`;
 
     console.log(`[TavilyResearch] Starting research: ${query} (executive filter: ${executiveRoleInfo.specificRole || 'all'})`);
     console.log(`[TavilyResearch] Executive instructions: ${executiveInstructions}`);

@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
-import { webSearchService, classifySourceTier, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
+import { webSearchService, classifySourceTier, parseRevenueString, parseCoordinate, parseEmployeeCount, isValidCoordinate, type WebSearchResult, type SourceTierClassification, type TavilyResearchCompany, type TavilyResearchExecutive } from "./webSearch";
+import { applyCoordinateFallback } from "./coordinateFallback";
 import { validateCompanyData } from "./discovery";
 import { DEFAULT_MODEL, FALLBACK_MODELS, parseOpenRouterError, getApprovedModel } from "./discovery";
 import type { SearchCriteria } from "./discovery";
@@ -564,9 +565,13 @@ export async function* discoverWithTavilyResearch(
   }
   
   // Classify sources using existing tier classification
+  // Sources from Tavily Research can be strings (URLs) or objects
   const sourceTiers = { tier1: 0, tier2: 0, tier3: 0 };
   for (const source of researchResult.sources) {
-    const classification = classifySourceTier(source.url, source.title);
+    const sourceUrl = typeof source === 'string' ? source : (source as any).url || '';
+    const sourceTitle = typeof source === 'string' ? '' : (source as any).title || '';
+    const sourceSnippet = typeof source === 'string' ? '' : (source as any).snippet || '';
+    const classification = classifySourceTier(sourceUrl, sourceTitle, sourceSnippet);
     if (classification.tier === 1) sourceTiers.tier1++;
     else if (classification.tier === 2) sourceTiers.tier2++;
     else sourceTiers.tier3++;
@@ -590,29 +595,57 @@ export async function* discoverWithTavilyResearch(
     
     yield { type: 'status', data: { message: `Processing ${company.name}...`, progress } };
     
-    // Validate revenue data - requires currency + year + source
+    // Flexible revenue parsing - handles both structured data and formatted strings
     let validatedRevenue: number | null = null;
     let validatedCurrency: string | null = null;
     let validatedYear: number | null = null;
-    let validatedSource: string | null = null;
+    let validatedSource: string | null = company.revenueSource || null;
     
-    const hasCurrency = company.revenueCurrency && company.revenueCurrency.length >= 2;
-    const hasYear = company.revenueFiscalYear && company.revenueFiscalYear >= 2015 && company.revenueFiscalYear <= 2030;
-    const hasSource = company.revenueSource && company.revenueSource.length > 3;
-    const hasRevenue = company.revenue && company.revenue > 0;
-    
-    if (hasRevenue && hasCurrency && hasYear && hasSource) {
-      validatedRevenue = company.revenue!;
-      validatedCurrency = company.revenueCurrency!;
-      validatedYear = company.revenueFiscalYear!;
-      validatedSource = company.revenueSource!;
-      console.log(`[TavilyResearch] ${company.name}: Revenue validated (${validatedCurrency} ${validatedRevenue} FY${validatedYear})`);
-    } else if (hasRevenue) {
-      console.log(`[TavilyResearch] ${company.name}: Revenue REJECTED - missing metadata`);
-      validatedSource = 'Revenue rejected: missing required metadata';
+    // Try to parse revenue - could be a number or a formatted string like "SAR 75.3bn 2023"
+    if (company.revenue) {
+      if (typeof company.revenue === 'string') {
+        // Parse formatted revenue string
+        const parsed = parseRevenueString(company.revenue);
+        if (parsed.value) {
+          validatedRevenue = parsed.value;
+          validatedCurrency = parsed.currency || company.revenueCurrency || null;
+          validatedYear = parsed.fiscalYear || company.revenueFiscalYear || null;
+          console.log(`[TavilyResearch] ${company.name}: Revenue parsed from string "${company.revenue}" → ${validatedCurrency || 'Unknown'} ${validatedRevenue} FY${validatedYear || 'Unknown'}`);
+        } else {
+          console.log(`[TavilyResearch] ${company.name}: Could not parse revenue string "${company.revenue}"`);
+        }
+      } else if (typeof company.revenue === 'number' && company.revenue > 0) {
+        // Already a number - use it directly
+        validatedRevenue = company.revenue;
+        validatedCurrency = company.revenueCurrency || null;
+        validatedYear = company.revenueFiscalYear || null;
+        console.log(`[TavilyResearch] ${company.name}: Revenue numeric ${validatedCurrency || ''} ${validatedRevenue} FY${validatedYear || 'Unknown'}`);
+      }
     }
     
-    // Validate company data
+    // Parse coordinates flexibly (might be strings) and apply fallback
+    const parsedLat = parseCoordinate(company.latitude);
+    const parsedLng = parseCoordinate(company.longitude);
+    const hasValidCoords = isValidCoordinate(parsedLat, parsedLng);
+    
+    // Apply coordinate fallback if invalid coordinates
+    const coordResult = hasValidCoords 
+      ? { latitude: parsedLat, longitude: parsedLng, locationPrecision: 'exact' as const }
+      : applyCoordinateFallback({
+          latitude: parsedLat,
+          longitude: parsedLng,
+          city: company.city || null,
+          country: company.country || null,
+        });
+    
+    if (!hasValidCoords && coordResult.latitude && coordResult.longitude) {
+      console.log(`[TavilyResearch] ${company.name}: Coordinates fallback from ${coordResult.locationPrecision} (${company.city || company.country})`);
+    }
+    
+    // Parse employee count flexibly (might include commas or text)
+    const parsedEmployees = parseEmployeeCount(company.employees);
+    
+    // Validate company data with parsed values
     const validatedData = validateCompanyData({
       name: company.name,
       sector: company.sector || undefined,
@@ -622,13 +655,13 @@ export async function* discoverWithTavilyResearch(
       country: company.country || undefined,
       city: company.city || undefined,
       streetAddress: company.streetAddress || undefined,
-      latitude: company.latitude || undefined,
-      longitude: company.longitude || undefined,
+      latitude: coordResult.latitude || undefined,
+      longitude: coordResult.longitude || undefined,
       revenue: validatedRevenue,
       revenueCurrency: validatedCurrency,
       revenueFiscalYear: validatedYear,
       revenueSource: validatedSource,
-      employees: company.employees || undefined,
+      employees: parsedEmployees || undefined,
       employeesSource: company.employeesSource || undefined,
       confidence: company.confidence || 5,
       relevanceReason: company.relevanceReason || 'Found via Tavily Research',
@@ -655,8 +688,8 @@ export async function* discoverWithTavilyResearch(
           try {
             // Derive executive confidence from source quality or company confidence
             const execConfidence = exec.source 
-              ? (classifySourceTier(exec.source, '').tier === 1 ? 8 
-                : classifySourceTier(exec.source, '').tier === 2 ? 6 
+              ? (classifySourceTier(exec.source, '', '').tier === 1 ? 8 
+                : classifySourceTier(exec.source, '', '').tier === 2 ? 6 
                 : 4)
               : Math.max(4, (company.confidence || 5) - 2);
             

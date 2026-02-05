@@ -190,18 +190,23 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
       if (!response.ok) throw new Error('Failed to add company');
       
       const created = await response.json();
+      const newCompanyCountry = created.country || 'Unknown';
+      
       addCompany({
         id: String(created.id),
         name: created.name,
         industry: created.sector || '',
         hq_city: created.region || 'Unknown',
-        hq_country: created.country || 'Unknown',
+        hq_country: newCompanyCountry,
         lat: parseFloat(created.latitude) || 0,
         lng: parseFloat(created.longitude) || 0,
         revenue_usd: parseFloat(created.revenue) || 0,
         employees: created.employees || 0,
-        confidence: created.confidence || 5
+        confidence: created.confidence || 5,
+        color: created.color || '#1e3a8a'
       });
+      
+      setExpandedCountries(prev => new Set(prev).add(newCompanyCountry));
       
       setNewCompany({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
       setShowAddForm(false);

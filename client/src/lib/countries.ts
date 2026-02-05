@@ -197,3 +197,65 @@ export function getCountryCentroid(country: string): { lat: number; lng: number 
   const key = country.toLowerCase().trim();
   return COUNTRY_CENTROIDS[key] || null;
 }
+
+export const COUNTRY_ALIASES: Record<string, string> = {
+  'uae': 'United Arab Emirates',
+  'u.a.e.': 'United Arab Emirates',
+  'emirates': 'United Arab Emirates',
+  'ksa': 'Saudi Arabia',
+  'kingdom of saudi arabia': 'Saudi Arabia',
+  'uk': 'United Kingdom',
+  'u.k.': 'United Kingdom',
+  'great britain': 'United Kingdom',
+  'britain': 'United Kingdom',
+  'england': 'United Kingdom',
+  'usa': 'United States',
+  'u.s.a.': 'United States',
+  'u.s.': 'United States',
+  'us': 'United States',
+  'america': 'United States',
+  'united states of america': 'United States',
+  'prc': 'China',
+  "people's republic of china": 'China',
+  'rok': 'South Korea',
+  'republic of korea': 'South Korea',
+  'korea': 'South Korea',
+  'rsa': 'South Africa',
+  'republic of south africa': 'South Africa',
+  'ussr': 'Russia',
+  'russian federation': 'Russia',
+  'holland': 'Netherlands',
+  'the netherlands': 'Netherlands',
+  'czech': 'Czech Republic',
+  'czechia': 'Czech Republic',
+  'hk': 'Hong Kong',
+  'singapore city': 'Singapore',
+  'drc': 'DR Congo',
+  'democratic republic of congo': 'DR Congo',
+  'democratic republic of the congo': 'DR Congo',
+  'cote d\'ivoire': 'Ivory Coast',
+  'côte d\'ivoire': 'Ivory Coast',
+};
+
+export function normalizeCountryName(country: string): string {
+  if (!country) return 'Unknown';
+  
+  const trimmed = country.trim();
+  const key = trimmed.toLowerCase();
+  
+  if (COUNTRY_ALIASES[key]) {
+    return COUNTRY_ALIASES[key];
+  }
+  
+  const exactMatch = COUNTRIES.find(c => c.toLowerCase() === key);
+  if (exactMatch) {
+    return exactMatch;
+  }
+  
+  const partialMatch = COUNTRIES.find(c => c.toLowerCase().includes(key) || key.includes(c.toLowerCase()));
+  if (partialMatch) {
+    return partialMatch;
+  }
+  
+  return trimmed;
+}

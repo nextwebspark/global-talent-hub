@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Company as APICompany, Executive as APIExecutive } from './api';
+import { normalizeCountryName } from './countries';
 
 // Helper to persist company updates to the database
 async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<void> {
@@ -268,7 +269,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     name: String(apiCompany.name || 'Unknown Company').trim(),
     industry: String(apiCompany.sector || 'Unknown').trim(),
     hq_city: String(apiCompany.region || 'Unknown').trim(),
-    hq_country: String(apiCompany.country || 'Unknown').trim(),
+    hq_country: normalizeCountryName(apiCompany.country || ''),
     streetAddress: ext.streetAddress ? String(ext.streetAddress).trim() : undefined,
     lat: isValidCoordinate(lat, lng) ? lat : 0,
     lng: isValidCoordinate(lat, lng) ? lng : 0,

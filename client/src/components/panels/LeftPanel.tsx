@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
 import L from 'leaflet';
 import * as XLSX from 'xlsx';
-import { COUNTRIES, getCountryCentroid } from '@/lib/countries';
+import { COUNTRIES, getCountryCentroid, normalizeCountryName } from '@/lib/countries';
 
 interface CountryData {
   name: string;
@@ -161,11 +161,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
 
     setIsAdding(true);
     try {
-      const normalizedCountry = newCompany.hq_country 
-        ? (COUNTRIES.find(c => c.toLowerCase() === newCompany.hq_country.toLowerCase()) ||
-           COUNTRIES.find(c => c.toLowerCase().includes(newCompany.hq_country.toLowerCase())) ||
-           newCompany.hq_country)
-        : 'Unknown';
+      const normalizedCountry = normalizeCountryName(newCompany.hq_country);
       
       const centroid = getCountryCentroid(normalizedCountry);
       const lat = centroid ? centroid.lat : 0;

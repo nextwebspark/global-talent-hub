@@ -645,7 +645,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <MapComponent />
+      <MapComponent isLeftPanelOpen={isLeftPanelOpen} />
       
       {isRightPanelOpen && selectedCompanyId && (
         <div 

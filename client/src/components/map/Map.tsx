@@ -121,15 +121,19 @@ const EXECUTIVE_COLORS = [
   'hsl(199 89% 48%)', // Blue
 ];
 
-export default function MapComponent() {
+interface MapComponentProps {
+  isLeftPanelOpen?: boolean;
+}
+
+export default function MapComponent({ isLeftPanelOpen = true }: MapComponentProps) {
   const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, employeeFilter, hiddenCountries, hiddenCompanies } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
   // Filter companies based on revenue/employee sliders, valid coordinates, and visibility
-  // Revenue threshold: slider value * 500M (0-100 maps to 0-50B)
-  const revenueThreshold = revenueFilter * 500000000;
-  // Employee threshold: slider value * 1000 (0-100 maps to 0-100K)
-  const employeeThreshold = employeeFilter * 1000;
+  // Revenue threshold: slider value * 50M (0-100 maps to 0-$5B)
+  const revenueThreshold = revenueFilter * 50000000;
+  // Employee threshold: slider value * 100 (0-100 maps to 0-10K)
+  const employeeThreshold = employeeFilter * 100;
   
   const filteredCompanies = companies.filter(c => {
     // Apply revenue filter (only if filter is set)
@@ -223,6 +227,18 @@ export default function MapComponent() {
     
     return result;
   }, [filteredCompanies]);
+
+  // Trigger map resize when left panel is toggled
+  useEffect(() => {
+    // Use the window-exposed map instance from MapUpdater (more reliable)
+    const timer = setTimeout(() => {
+      const map = (window as any).leafletMap;
+      if (map) {
+        map.invalidateSize();
+      }
+    }, 300); // Wait for CSS transition to complete
+    return () => clearTimeout(timer);
+  }, [isLeftPanelOpen]);
 
   return (
     <div className="h-full w-full bg-slate-100 relative z-0">

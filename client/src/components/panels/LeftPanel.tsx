@@ -48,9 +48,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     revenueFilter, setRevenueFilter, employeeFilter, setEmployeeFilter
   } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
-  const [execTitleFilter, setExecTitleFilter] = useState('');
-  const [execCompanyFilter, setExecCompanyFilter] = useState('');
-  const [execConfidenceFilter, setExecConfidenceFilter] = useState(0);
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
@@ -315,10 +312,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   }, [companies, executives]);
 
   const filteredCountries = useMemo(() => {
-    // Revenue threshold: slider value * 500M (0-100 maps to 0-50B)
-    const revenueThreshold = revenueFilter * 500000000;
-    // Employee threshold: slider value * 1000 (0-100 maps to 0-100K)
-    const employeeThreshold = employeeFilter * 1000;
+    // Revenue threshold: slider value * 50M (0-100 maps to 0-$5B)
+    const revenueThreshold = revenueFilter * 50000000;
+    // Employee threshold: slider value * 100 (0-100 maps to 0-10K)
+    const employeeThreshold = employeeFilter * 100;
     
     let result = countriesData;
     
@@ -336,24 +333,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         .filter(country => country.companies.length > 0);
     }
     
-    // Apply executive filters (title, company, and confidence)
-    const hasExecFilters = execTitleFilter.trim() || execCompanyFilter || execConfidenceFilter > 0;
-    if (hasExecFilters) {
-      const titleFilter = execTitleFilter.toLowerCase();
-      result = result.map(country => ({
-        ...country,
-        companies: country.companies
-          .filter(c => !execCompanyFilter || c.id === execCompanyFilter) // Company filter
-          .map(c => ({
-            ...c,
-            executives: c.executives.filter(e => {
-              if (execConfidenceFilter > 0 && (e.confidence || 0) < execConfidenceFilter) return false;
-              if (titleFilter && !e.title.toLowerCase().includes(titleFilter) && !e.name.toLowerCase().includes(titleFilter)) return false;
-              return true;
-            })
-          }))
-      })).filter(country => country.companies.length > 0);
-    }
     
     // Apply text search filter
     if (searchFilter.trim()) {
@@ -371,7 +350,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     }
     
     return result;
-  }, [countriesData, searchFilter, revenueFilter, employeeFilter, execTitleFilter, execCompanyFilter, execConfidenceFilter]);
+  }, [countriesData, searchFilter, revenueFilter, employeeFilter]);
 
   const toggleCountry = (countryName: string) => {
     setExpandedCountries(prev => {
@@ -587,7 +566,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                   Min Revenue
                 </span>
                 <span className="font-medium text-foreground">
-                  {revenueFilter === 0 ? 'All' : `$${(revenueFilter * 500).toLocaleString()}M+`}
+                  {revenueFilter === 0 ? 'All' : revenueFilter >= 100 ? '$5B+' : `$${revenueFilter * 50}M+`}
                 </span>
               </div>
               <Slider
@@ -608,7 +587,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                   Min Employees
                 </span>
                 <span className="font-medium text-foreground">
-                  {employeeFilter === 0 ? 'All' : `${(employeeFilter * 1000).toLocaleString()}+`}
+                  {employeeFilter === 0 ? 'All' : employeeFilter >= 100 ? '10K+' : `${(employeeFilter * 100).toLocaleString()}+`}
                 </span>
               </div>
               <Slider
@@ -622,43 +601,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               />
             </div>
             
-            {/* Executive Filters */}
-            <div className="pt-2 border-t border-border/50 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Executive Filters</p>
-              <Input
-                placeholder="Filter by title (CEO, CFO, etc.)"
-                value={execTitleFilter}
-                onChange={(e) => setExecTitleFilter(e.target.value)}
-                className="h-7 text-xs"
-                data-testid="input-exec-title-filter"
-              />
-              <select
-                value={execCompanyFilter}
-                onChange={(e) => setExecCompanyFilter(e.target.value)}
-                className="w-full h-7 text-xs px-2 border rounded bg-background"
-                data-testid="select-exec-company-filter"
-              >
-                <option value="">All Companies</option>
-                {companies.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Min Confidence</span>
-                  <span className="font-medium">{execConfidenceFilter === 0 ? 'All' : `${execConfidenceFilter}+`}</span>
-                </div>
-                <Slider
-                  value={[execConfidenceFilter]}
-                  onValueChange={([value]) => setExecConfidenceFilter(value)}
-                  min={0}
-                  max={10}
-                  step={1}
-                  className="cursor-pointer"
-                  data-testid="slider-exec-confidence"
-                />
-              </div>
-            </div>
           </div>
         </div>
 

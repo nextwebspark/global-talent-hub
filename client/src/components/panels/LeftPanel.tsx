@@ -2,8 +2,9 @@ import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2 } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -43,9 +44,13 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     companies, executives, selectCompany, selectExecutive, selectedCompanyId, 
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
     hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
-    discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI
+    discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI,
+    revenueFilter, setRevenueFilter, employeeFilter, setEmployeeFilter
   } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
+  const [execTitleFilter, setExecTitleFilter] = useState('');
+  const [execCompanyFilter, setExecCompanyFilter] = useState('');
+  const [execConfidenceFilter, setExecConfidenceFilter] = useState(0);
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
@@ -310,8 +315,47 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   }, [companies, executives]);
 
   const filteredCountries = useMemo(() => {
+    // Revenue threshold: slider value * 500M (0-100 maps to 0-50B)
+    const revenueThreshold = revenueFilter * 500000000;
+    // Employee threshold: slider value * 1000 (0-100 maps to 0-100K)
+    const employeeThreshold = employeeFilter * 1000;
+    
     let result = countriesData;
     
+    // Apply revenue and employee filters first
+    if (revenueFilter > 0 || employeeFilter > 0) {
+      result = result
+        .map(country => ({
+          ...country,
+          companies: country.companies.filter(c => {
+            if (revenueFilter > 0 && (c.revenue_usd || 0) < revenueThreshold) return false;
+            if (employeeFilter > 0 && (c.employees || 0) < employeeThreshold) return false;
+            return true;
+          })
+        }))
+        .filter(country => country.companies.length > 0);
+    }
+    
+    // Apply executive filters (title, company, and confidence)
+    const hasExecFilters = execTitleFilter.trim() || execCompanyFilter || execConfidenceFilter > 0;
+    if (hasExecFilters) {
+      const titleFilter = execTitleFilter.toLowerCase();
+      result = result.map(country => ({
+        ...country,
+        companies: country.companies
+          .filter(c => !execCompanyFilter || c.id === execCompanyFilter) // Company filter
+          .map(c => ({
+            ...c,
+            executives: c.executives.filter(e => {
+              if (execConfidenceFilter > 0 && (e.confidence || 0) < execConfidenceFilter) return false;
+              if (titleFilter && !e.title.toLowerCase().includes(titleFilter) && !e.name.toLowerCase().includes(titleFilter)) return false;
+              return true;
+            })
+          }))
+      })).filter(country => country.companies.length > 0);
+    }
+    
+    // Apply text search filter
     if (searchFilter.trim()) {
       const filter = searchFilter.toLowerCase();
       result = result
@@ -327,7 +371,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     }
     
     return result;
-  }, [countriesData, searchFilter]);
+  }, [countriesData, searchFilter, revenueFilter, employeeFilter, execTitleFilter, execCompanyFilter, execConfidenceFilter]);
 
   const toggleCountry = (countryName: string) => {
     setExpandedCountries(prev => {
@@ -532,6 +576,89 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               onChange={(e) => setSearchFilter(e.target.value)}
               data-testid="input-filter-panel"
             />
+          </div>
+          
+          {/* Revenue & Employee Filters */}
+          <div className="mt-3 space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <DollarSign className="h-3 w-3" />
+                  Min Revenue
+                </span>
+                <span className="font-medium text-foreground">
+                  {revenueFilter === 0 ? 'All' : `$${(revenueFilter * 500).toLocaleString()}M+`}
+                </span>
+              </div>
+              <Slider
+                value={[revenueFilter]}
+                onValueChange={([value]) => setRevenueFilter(value)}
+                min={0}
+                max={100}
+                step={1}
+                className="cursor-pointer"
+                data-testid="slider-revenue-filter"
+              />
+            </div>
+            
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <Users className="h-3 w-3" />
+                  Min Employees
+                </span>
+                <span className="font-medium text-foreground">
+                  {employeeFilter === 0 ? 'All' : `${(employeeFilter * 1000).toLocaleString()}+`}
+                </span>
+              </div>
+              <Slider
+                value={[employeeFilter]}
+                onValueChange={([value]) => setEmployeeFilter(value)}
+                min={0}
+                max={100}
+                step={1}
+                className="cursor-pointer"
+                data-testid="slider-employee-filter"
+              />
+            </div>
+            
+            {/* Executive Filters */}
+            <div className="pt-2 border-t border-border/50 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Executive Filters</p>
+              <Input
+                placeholder="Filter by title (CEO, CFO, etc.)"
+                value={execTitleFilter}
+                onChange={(e) => setExecTitleFilter(e.target.value)}
+                className="h-7 text-xs"
+                data-testid="input-exec-title-filter"
+              />
+              <select
+                value={execCompanyFilter}
+                onChange={(e) => setExecCompanyFilter(e.target.value)}
+                className="w-full h-7 text-xs px-2 border rounded bg-background"
+                data-testid="select-exec-company-filter"
+              >
+                <option value="">All Companies</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Min Confidence</span>
+                  <span className="font-medium">{execConfidenceFilter === 0 ? 'All' : `${execConfidenceFilter}+`}</span>
+                </div>
+                <Slider
+                  value={[execConfidenceFilter]}
+                  onValueChange={([value]) => setExecConfidenceFilter(value)}
+                  min={0}
+                  max={10}
+                  step={1}
+                  className="cursor-pointer"
+                  data-testid="slider-exec-confidence"
+                />
+              </div>
+            </div>
           </div>
         </div>
 

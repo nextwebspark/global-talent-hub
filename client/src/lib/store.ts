@@ -183,7 +183,8 @@ interface AppState {
   panelView: 'company' | 'executive';
   searchQuery: string;
   scalingMetric: 'revenue' | 'employees';
-  revenueFilter: number;
+  revenueFilter: number; // 0-100 percentage threshold
+  employeeFilter: number; // 0-100 percentage threshold
   
   // Discovery status tracking
   discoveryStatus: DiscoveryStatus | null;
@@ -212,6 +213,7 @@ interface AppState {
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
   setRevenueFilter: (value: number) => void;
+  setEmployeeFilter: (value: number) => void;
   
   // Discovery status actions
   setDiscoveryStatus: (status: DiscoveryStatus | undefined, reasons?: string[]) => void;
@@ -325,6 +327,7 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: '',
   scalingMetric: 'revenue',
   revenueFilter: 0,
+  employeeFilter: 0,
   discoveryStatus: null,
   degradationReasons: undefined,
   hiddenCountries: new Set<string>(),
@@ -370,6 +373,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
   setRevenueFilter: (value) => set({ revenueFilter: value }),
+  setEmployeeFilter: (value) => set({ employeeFilter: value }),
   
   // Discovery status actions
   setDiscoveryStatus: (status, reasons) => set({ 
@@ -437,6 +441,7 @@ export const useAppStore = create<AppState>((set) => ({
     searchQuery: '',
     scalingMetric: 'revenue',
     revenueFilter: 0,
+    employeeFilter: 0,
     discoveryStatus: null,
     degradationReasons: undefined,
     hiddenCountries: new Set<string>(),

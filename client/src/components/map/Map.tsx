@@ -122,16 +122,20 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, hiddenCountries, hiddenCompanies } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, employeeFilter, hiddenCountries, hiddenCompanies } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
-  // Filter companies based on revenue slider, valid coordinates, and visibility
-  const maxRevenue = 50000000000;
-  const filterThreshold = (revenueFilter / 100) * maxRevenue;
+  // Filter companies based on revenue/employee sliders, valid coordinates, and visibility
+  // Revenue threshold: slider value * 500M (0-100 maps to 0-50B)
+  const revenueThreshold = revenueFilter * 500000000;
+  // Employee threshold: slider value * 1000 (0-100 maps to 0-100K)
+  const employeeThreshold = employeeFilter * 1000;
   
   const filteredCompanies = companies.filter(c => {
-    // Ensure revenue meets threshold
-    if (c.revenue_usd < filterThreshold) return false;
+    // Apply revenue filter (only if filter is set)
+    if (revenueFilter > 0 && (c.revenue_usd || 0) < revenueThreshold) return false;
+    // Apply employee filter (only if filter is set)
+    if (employeeFilter > 0 && (c.employees || 0) < employeeThreshold) return false;
     // Ensure valid coordinates (not 0,0 and within valid ranges)
     if (!isValidCoordinate(c.lat, c.lng)) return false;
     // Check visibility - hidden by country or individually hidden

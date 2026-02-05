@@ -98,6 +98,8 @@ export interface Executive {
   source: string;
   profileUrl?: string;
   imageUrl?: string;
+  linkedin?: string;
+  notes?: string;
   confidence: number;
   enrichmentSource?: string;
   enrichmentConfidence?: number;
@@ -307,6 +309,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     source: String((apiExec as any).source || 'Unknown').trim(),
     profileUrl: (apiExec as any).profileUrl || (apiExec as any).linkedin || undefined,
     imageUrl: (apiExec as any).imageUrl || undefined,
+    linkedin: (apiExec as any).linkedin || undefined,
+    notes: (apiExec as any).notes || undefined,
     confidence,
     enrichmentSource,
     enrichmentConfidence,

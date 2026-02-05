@@ -160,6 +160,108 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk import executives from Excel/pasted data
+  app.post("/api/executives/bulk-import", async (req, res) => {
+    try {
+      const { searchQueryId, mappings, records } = req.body;
+      
+      if (!searchQueryId || !mappings || !records || !Array.isArray(records)) {
+        return res.status(400).json({ error: "Missing required fields: searchQueryId, mappings, records" });
+      }
+
+      // Prefetch all companies for this search query to avoid N+1 queries
+      const existingCompanies = await storage.getCompaniesBySearchQuery(searchQueryId);
+      const companyMap = new Map<string, number>();
+      existingCompanies.forEach(c => companyMap.set(c.name.toLowerCase(), c.id));
+
+      let imported = 0;
+      const errors: string[] = [];
+
+      for (const record of records) {
+        try {
+          // Extract fields based on mappings with safe string conversion
+          const nameRaw = mappings.name ? record[mappings.name] : null;
+          const name = nameRaw ? String(nameRaw).trim() : null;
+          if (!name) continue;
+
+          const titleRaw = mappings.title ? record[mappings.title] : 'Executive';
+          const title = String(titleRaw || 'Executive').trim();
+          const companyNameRaw = mappings.company ? record[mappings.company] : null;
+          const companyName = companyNameRaw ? String(companyNameRaw).trim() : null;
+          const countryRaw = mappings.country ? record[mappings.country] : null;
+          const country = countryRaw ? String(countryRaw).trim() : null;
+          const linkedinRaw = mappings.linkedin ? record[mappings.linkedin] : null;
+          const linkedin = linkedinRaw ? String(linkedinRaw).trim() : null;
+          const notesRaw = mappings.notes ? record[mappings.notes] : null;
+          const notes = notesRaw ? String(notesRaw).trim() : null;
+
+          // Find or create company using cached map
+          let companyId: number | null = null;
+          
+          if (companyName) {
+            const lowerName = companyName.toLowerCase();
+            if (companyMap.has(lowerName)) {
+              companyId = companyMap.get(lowerName)!;
+            } else {
+              // Create new company
+              const newCompany = await storage.createCompanyFromDiscovery({
+                name: companyName,
+                country: country || 'Unknown',
+                sector: null,
+                businessType: null,
+                searchQueryId
+              });
+              companyId = newCompany.id;
+              companyMap.set(lowerName, companyId);
+            }
+          } else {
+            // No company name - use first existing company or create placeholder
+            if (existingCompanies.length > 0) {
+              companyId = existingCompanies[0].id;
+            } else if (!companyMap.has('imported contacts')) {
+              const newCompany = await storage.createCompanyFromDiscovery({
+                name: 'Imported Contacts',
+                country: country || 'Unknown',
+                sector: null,
+                businessType: null,
+                searchQueryId
+              });
+              companyId = newCompany.id;
+              companyMap.set('imported contacts', companyId);
+            } else {
+              companyId = companyMap.get('imported contacts')!;
+            }
+          }
+
+          if (companyId) {
+            await storage.createExecutiveManual({
+              companyId,
+              name,
+              title,
+              linkedin,
+              notes,
+              confidence: 5
+            });
+            imported++;
+          }
+        } catch (recordError) {
+          console.error('Error importing record:', recordError);
+          const errorName = mappings.name ? record[mappings.name] : 'unknown';
+          errors.push(`Failed to import: ${errorName}`);
+        }
+      }
+
+      res.json({ 
+        imported, 
+        total: records.length,
+        errors: errors.length > 0 ? errors.slice(0, 5) : undefined 
+      });
+    } catch (error) {
+      console.error("Error bulk importing executives:", error);
+      res.status(500).json({ error: "Bulk import failed" });
+    }
+  });
+
   // Executive image upload endpoint
   app.post("/api/executives/:id/image", upload.single('image'), async (req, res) => {
     try {

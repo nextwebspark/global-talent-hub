@@ -4,11 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users, Table, Map, Download, Upload } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
 import L from 'leaflet';
+import * as XLSX from 'xlsx';
 
 interface CountryData {
   name: string;
@@ -47,11 +48,18 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI,
     revenueFilterRange, setRevenueFilterRange, employeeFilterRange, setEmployeeFilterRange
   } = useAppStore();
+  const [activeTab, setActiveTab] = useState<'map' | 'table'>('map');
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAddExecForm, setShowAddExecForm] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importPreview, setImportPreview] = useState<{headers: string[], rows: string[][], mappings: Record<string, string>} | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [tableSortColumn, setTableSortColumn] = useState<'country' | 'name' | 'title' | 'notes'>('country');
+  const [tableSortDirection, setTableSortDirection] = useState<'asc' | 'desc'>('asc');
   const [newCompany, setNewCompany] = useState({
     name: '',
     hq_city: '',
@@ -311,6 +319,176 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     return sorted;
   }, [companies, executives]);
 
+  // Table data for Excel-like view
+  const tableData = useMemo(() => {
+    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string }[] = [];
+    
+    companies.forEach(company => {
+      const companyExecs = executives.filter(e => e.company_id === company.id);
+      companyExecs.forEach(exec => {
+        data.push({
+          id: exec.id,
+          country: company.hq_country || 'Unknown',
+          name: exec.name,
+          title: exec.title,
+          notes: exec.notes || '',
+          companyId: company.id,
+          companyName: company.name
+        });
+      });
+    });
+
+    // Sort by current column with safe string conversion
+    data.sort((a, b) => {
+      const aVal = String(a[tableSortColumn] ?? '');
+      const bVal = String(b[tableSortColumn] ?? '');
+      const comparison = aVal.localeCompare(bVal);
+      return tableSortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return data;
+  }, [companies, executives, tableSortColumn, tableSortDirection]);
+
+  const handleTableSort = (column: 'country' | 'name' | 'title' | 'notes') => {
+    if (tableSortColumn === column) {
+      setTableSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setTableSortColumn(column);
+      setTableSortDirection('asc');
+    }
+  };
+
+  const handleExportToExcel = () => {
+    // Export only the 4 required columns: Country, Executive, Title, Notes
+    const exportData = tableData.map(row => ({
+      'Country': row.country || '',
+      'Executive': row.name || '',
+      'Title': row.title || '',
+      'Notes': row.notes || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Executives');
+    
+    // Generate file
+    const projectName = currentProject?.query?.slice(0, 30) || 'executives';
+    XLSX.writeFile(wb, `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_export.xlsx`);
+    toast.success('Exported to Excel');
+  };
+
+  const detectColumnMappings = (headers: string[]): Record<string, string> => {
+    const mappings: Record<string, string> = {};
+    const normalizedHeaders = headers.map(h => h.toLowerCase().trim());
+    
+    // Detect common field variations
+    const fieldPatterns: Record<string, string[]> = {
+      name: ['name', 'executive', 'executive name', 'full name', 'person', 'candidate'],
+      company: ['company', 'company name', 'organization', 'employer', 'firm'],
+      title: ['title', 'position', 'role', 'job title', 'designation'],
+      country: ['country', 'location', 'hq country', 'headquarters'],
+      linkedin: ['linkedin', 'linkedin url', 'linkedin profile', 'profile url'],
+      notes: ['notes', 'comments', 'remarks', 'description']
+    };
+
+    normalizedHeaders.forEach((header, index) => {
+      for (const [field, patterns] of Object.entries(fieldPatterns)) {
+        if (patterns.includes(header) && !mappings[field]) {
+          mappings[field] = headers[index];
+          break;
+        }
+      }
+    });
+
+    return mappings;
+  };
+
+  const handlePasteData = () => {
+    if (!importText.trim()) {
+      toast.error('Please paste some data');
+      return;
+    }
+
+    const lines = importText.trim().split('\n');
+    if (lines.length < 2) {
+      toast.error('Need at least a header row and one data row');
+      return;
+    }
+
+    // Detect delimiter (tab or comma)
+    const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+    const rows = lines.slice(1).map(line => 
+      line.split(delimiter).map(cell => cell.trim().replace(/^"|"$/g, ''))
+    );
+
+    const mappings = detectColumnMappings(headers);
+    setImportPreview({ headers, rows, mappings });
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview || !currentProject?.id) return;
+
+    setIsImporting(true);
+    try {
+      const { headers, rows, mappings } = importPreview;
+      
+      // Build import records
+      const records = rows.map(row => {
+        const record: Record<string, string> = {};
+        headers.forEach((header, index) => {
+          record[header] = row[index] || '';
+        });
+        return record;
+      }).filter(r => {
+        // Must have at least a name
+        const nameField = mappings.name;
+        return nameField && r[nameField]?.trim();
+      });
+
+      if (records.length === 0) {
+        toast.error('No valid records found (need at least a name)');
+        setIsImporting(false);
+        return;
+      }
+
+      // Call bulk import API
+      const response = await fetch('/api/executives/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          searchQueryId: parseInt(currentProject.id),
+          mappings,
+          records
+        })
+      });
+
+      if (!response.ok) throw new Error('Import failed');
+
+      const result = await response.json();
+      
+      // Reload data
+      if (loadFromAPI && currentProject.id) {
+        const res = await fetch(`/api/search-results/${currentProject.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.companies) {
+            loadFromAPI(data.companies);
+          }
+        }
+      }
+
+      toast.success(`Imported ${result.imported} executives`);
+      setShowImportModal(false);
+      setImportText('');
+      setImportPreview(null);
+    } catch (error) {
+      toast.error('Import failed');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const filteredCountries = useMemo(() => {
     // Revenue thresholds: slider values * 50M (0-100 maps to 0-$5B)
     const revenueMin = revenueFilterRange[0] * 50000000;
@@ -488,6 +666,35 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               </Button>
             </div>
           </div>
+          
+          {/* Tab Navigation */}
+          <div className="flex gap-1 mb-3 p-1 bg-muted/40 rounded-lg">
+            <button
+              onClick={() => setActiveTab('map')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                activeTab === 'map'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid="tab-map-view"
+            >
+              <Map className="h-3.5 w-3.5" />
+              Map View
+            </button>
+            <button
+              onClick={() => setActiveTab('table')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                activeTab === 'table'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              data-testid="tab-table-view"
+            >
+              <Table className="h-3.5 w-3.5" />
+              Table View
+            </button>
+          </div>
+          
           <div className="flex gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <MapPin className="h-3 w-3" /> {filteredCountries.length} countries
@@ -552,6 +759,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           )}
         </div>
 
+        {/* Map View Content */}
+        {activeTab === 'map' && (
+          <>
         <div className="p-3 border-b border-border bg-muted/30 min-w-[280px]">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -891,6 +1101,202 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
             )}
           </div>
         </ScrollArea>
+          </>
+        )}
+
+        {/* Table View Content */}
+        {activeTab === 'table' && (
+          <>
+            <div className="p-3 border-b border-border bg-muted/30 min-w-[280px] flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowImportModal(true)}
+                className="h-7 text-xs"
+                data-testid="button-import-excel"
+              >
+                <Upload className="h-3 w-3 mr-1" />
+                Import
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportToExcel}
+                disabled={tableData.length === 0}
+                className="h-7 text-xs"
+                data-testid="button-export-excel"
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Export
+              </Button>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {tableData.length} records
+              </span>
+            </div>
+
+            <ScrollArea className="flex-1 w-full">
+              <div className="min-w-[280px]">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th 
+                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
+                        onClick={() => handleTableSort('country')}
+                        data-testid="th-country"
+                      >
+                        Country {tableSortColumn === 'country' && (tableSortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                      <th 
+                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
+                        onClick={() => handleTableSort('name')}
+                        data-testid="th-executive"
+                      >
+                        Executive {tableSortColumn === 'name' && (tableSortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                      <th 
+                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
+                        onClick={() => handleTableSort('title')}
+                        data-testid="th-title"
+                      >
+                        Title {tableSortColumn === 'title' && (tableSortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                      <th 
+                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
+                        onClick={() => handleTableSort('notes')}
+                        data-testid="th-notes"
+                      >
+                        Notes {tableSortColumn === 'notes' && (tableSortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableData.map((row) => (
+                      <tr 
+                        key={row.id} 
+                        className="border-b border-border/30 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => {
+                          selectCompany(row.companyId);
+                          selectExecutive(row.id);
+                        }}
+                        data-testid={`table-row-${row.id}`}
+                      >
+                        <td className="p-2 truncate max-w-[80px]" title={row.country}>{row.country}</td>
+                        <td className="p-2 truncate max-w-[100px]" title={row.name}>{row.name}</td>
+                        <td className="p-2 truncate max-w-[100px]" title={row.title}>{row.title}</td>
+                        <td className="p-2 truncate max-w-[80px]" title={row.notes}>{row.notes || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                {tableData.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No executives found</p>
+                    <p className="text-xs mt-1">Add companies and executives to see them here</p>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </>
+        )}
+
+        {/* Import Modal */}
+        {showImportModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowImportModal(false)}>
+            <div 
+              className="bg-background rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-border flex items-center justify-between">
+                <h3 className="font-semibold">Import from Excel</h3>
+                <button onClick={() => { setShowImportModal(false); setImportPreview(null); setImportText(''); }} className="text-muted-foreground hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              
+              <div className="p-4 flex-1 overflow-auto">
+                {!importPreview ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Copy rows from Excel and paste below. Include the header row.
+                      The system will auto-detect columns like Name, Company, Title, LinkedIn, Notes, etc.
+                    </p>
+                    <textarea
+                      className="w-full h-48 p-3 text-sm border rounded-md font-mono bg-muted/30"
+                      placeholder="Paste your Excel data here..."
+                      value={importText}
+                      onChange={(e) => setImportText(e.target.value)}
+                      data-testid="textarea-import"
+                    />
+                    <Button onClick={handlePasteData} className="w-full" data-testid="button-preview-import">
+                      Preview Import
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">Detected Column Mappings</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(importPreview.mappings).map(([field, header]) => (
+                          <span key={field} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs">
+                            {field} → {header}
+                          </span>
+                        ))}
+                      </div>
+                      {Object.keys(importPreview.mappings).length === 0 && (
+                        <p className="text-amber-600 text-xs">No columns auto-detected. Make sure your header row includes common field names.</p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <h4 className="font-medium text-sm mb-2">Preview ({importPreview.rows.length} rows)</h4>
+                      <div className="border rounded-md overflow-auto max-h-48">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/50 sticky top-0">
+                            <tr>
+                              {importPreview.headers.map((h, i) => (
+                                <th key={i} className="text-left p-2 font-medium whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.rows.slice(0, 5).map((row, i) => (
+                              <tr key={i} className="border-b border-border/30">
+                                {row.map((cell, j) => (
+                                  <td key={j} className="p-2 truncate max-w-[150px]" title={cell}>{cell || '-'}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {importPreview.rows.length > 5 && (
+                          <div className="p-2 text-center text-xs text-muted-foreground bg-muted/30">
+                            ... and {importPreview.rows.length - 5} more rows
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={() => { setImportPreview(null); }} className="flex-1">
+                        Back
+                      </Button>
+                      <Button 
+                        onClick={handleConfirmImport} 
+                        disabled={isImporting || !importPreview.mappings.name}
+                        className="flex-1"
+                        data-testid="button-confirm-import"
+                      >
+                        {isImporting ? 'Importing...' : `Import ${importPreview.rows.length} Records`}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         
         <div className="p-2 border-t border-border bg-muted/20 text-[10px] text-center text-muted-foreground min-w-[280px]">
           {filteredCountries.reduce((sum, c) => sum + c.companies.length, 0)} Companies in {filteredCountries.length} Countries

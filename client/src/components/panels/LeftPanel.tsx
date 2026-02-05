@@ -45,7 +45,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
     hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
     discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI,
-    revenueFilter, setRevenueFilter, employeeFilter, setEmployeeFilter
+    revenueFilterRange, setRevenueFilterRange, employeeFilterRange, setEmployeeFilterRange
   } = useAppStore();
   const [searchFilter, setSearchFilter] = useState('');
   const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
@@ -312,21 +312,28 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   }, [companies, executives]);
 
   const filteredCountries = useMemo(() => {
-    // Revenue threshold: slider value * 50M (0-100 maps to 0-$5B)
-    const revenueThreshold = revenueFilter * 50000000;
-    // Employee threshold: slider value * 100 (0-100 maps to 0-10K)
-    const employeeThreshold = employeeFilter * 100;
+    // Revenue thresholds: slider values * 50M (0-100 maps to 0-$5B)
+    const revenueMin = revenueFilterRange[0] * 50000000;
+    const revenueMax = revenueFilterRange[1] * 50000000;
+    // Employee thresholds: slider values * 100 (0-100 maps to 0-10K)
+    const employeeMin = employeeFilterRange[0] * 100;
+    const employeeMax = employeeFilterRange[1] * 100;
     
     let result = countriesData;
     
-    // Apply revenue and employee filters first
-    if (revenueFilter > 0 || employeeFilter > 0) {
+    // Apply revenue and employee range filters
+    const hasRevenueFilter = revenueFilterRange[0] > 0 || revenueFilterRange[1] < 100;
+    const hasEmployeeFilter = employeeFilterRange[0] > 0 || employeeFilterRange[1] < 100;
+    
+    if (hasRevenueFilter || hasEmployeeFilter) {
       result = result
         .map(country => ({
           ...country,
           companies: country.companies.filter(c => {
-            if (revenueFilter > 0 && (c.revenue_usd || 0) < revenueThreshold) return false;
-            if (employeeFilter > 0 && (c.employees || 0) < employeeThreshold) return false;
+            const revenue = c.revenue_usd || 0;
+            const employees = c.employees || 0;
+            if (hasRevenueFilter && (revenue < revenueMin || revenue > revenueMax)) return false;
+            if (hasEmployeeFilter && (employees < employeeMin || employees > employeeMax)) return false;
             return true;
           })
         }))
@@ -350,7 +357,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     }
     
     return result;
-  }, [countriesData, searchFilter, revenueFilter, employeeFilter]);
+  }, [countriesData, searchFilter, revenueFilterRange, employeeFilterRange]);
 
   const toggleCountry = (countryName: string) => {
     setExpandedCountries(prev => {
@@ -557,21 +564,23 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
             />
           </div>
           
-          {/* Revenue & Employee Filters */}
+          {/* Revenue & Employee Range Filters */}
           <div className="mt-3 space-y-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1 text-muted-foreground">
                   <DollarSign className="h-3 w-3" />
-                  Min Revenue
+                  Revenue Range
                 </span>
                 <span className="font-medium text-foreground">
-                  {revenueFilter === 0 ? 'All' : revenueFilter >= 100 ? '$5B+' : `$${revenueFilter * 50}M+`}
+                  {revenueFilterRange[0] === 0 && revenueFilterRange[1] === 100 
+                    ? 'All' 
+                    : `$${revenueFilterRange[0] * 50}M - $${revenueFilterRange[1] >= 100 ? '5B+' : `${revenueFilterRange[1] * 50}M`}`}
                 </span>
               </div>
               <Slider
-                value={[revenueFilter]}
-                onValueChange={([value]) => setRevenueFilter(value)}
+                value={revenueFilterRange}
+                onValueChange={(value) => setRevenueFilterRange(value as [number, number])}
                 min={0}
                 max={100}
                 step={1}
@@ -584,15 +593,17 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1 text-muted-foreground">
                   <Users className="h-3 w-3" />
-                  Min Employees
+                  Employee Range
                 </span>
                 <span className="font-medium text-foreground">
-                  {employeeFilter === 0 ? 'All' : employeeFilter >= 100 ? '10K+' : `${(employeeFilter * 100).toLocaleString()}+`}
+                  {employeeFilterRange[0] === 0 && employeeFilterRange[1] === 100 
+                    ? 'All' 
+                    : `${(employeeFilterRange[0] * 100).toLocaleString()} - ${employeeFilterRange[1] >= 100 ? '10K+' : (employeeFilterRange[1] * 100).toLocaleString()}`}
                 </span>
               </div>
               <Slider
-                value={[employeeFilter]}
-                onValueChange={([value]) => setEmployeeFilter(value)}
+                value={employeeFilterRange}
+                onValueChange={(value) => setEmployeeFilterRange(value as [number, number])}
                 min={0}
                 max={100}
                 step={1}

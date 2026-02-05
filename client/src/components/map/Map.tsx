@@ -125,20 +125,22 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, employeeFilter, hiddenCountries, hiddenCompanies } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
-  // Filter companies based on revenue/employee sliders, valid coordinates, and visibility
-  // Revenue threshold: slider value * 50M (0-100 maps to 0-$5B)
-  const revenueThreshold = revenueFilter * 50000000;
-  // Employee threshold: slider value * 100 (0-100 maps to 0-10K)
-  const employeeThreshold = employeeFilter * 100;
+  // Filter companies based on revenue/employee range sliders, valid coordinates, and visibility
+  const revenueMin = revenueFilterRange[0] * 50000000;
+  const revenueMax = revenueFilterRange[1] * 50000000;
+  const employeeMin = employeeFilterRange[0] * 100;
+  const employeeMax = employeeFilterRange[1] * 100;
+  const hasRevenueFilter = revenueFilterRange[0] > 0 || revenueFilterRange[1] < 100;
+  const hasEmployeeFilter = employeeFilterRange[0] > 0 || employeeFilterRange[1] < 100;
   
   const filteredCompanies = companies.filter(c => {
-    // Apply revenue filter (only if filter is set)
-    if (revenueFilter > 0 && (c.revenue_usd || 0) < revenueThreshold) return false;
-    // Apply employee filter (only if filter is set)
-    if (employeeFilter > 0 && (c.employees || 0) < employeeThreshold) return false;
+    const revenue = c.revenue_usd || 0;
+    const employees = c.employees || 0;
+    if (hasRevenueFilter && (revenue < revenueMin || revenue > revenueMax)) return false;
+    if (hasEmployeeFilter && (employees < employeeMin || employees > employeeMax)) return false;
     // Ensure valid coordinates (not 0,0 and within valid ranges)
     if (!isValidCoordinate(c.lat, c.lng)) return false;
     // Check visibility - hidden by country or individually hidden
@@ -237,13 +239,11 @@ export default function MapComponent() {
         className="outline-none"
         zoomControl={false}
         minZoom={2}
-        maxBounds={[[-90, -180], [90, 180]]}
-        maxBoundsViscosity={1.0}
+        worldCopyJump={true}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          noWrap={true}
         />
         
         <MapUpdater />

@@ -183,8 +183,8 @@ interface AppState {
   panelView: 'company' | 'executive';
   searchQuery: string;
   scalingMetric: 'revenue' | 'employees';
-  revenueFilter: number; // 0-100 percentage threshold
-  employeeFilter: number; // 0-100 percentage threshold
+  revenueFilterRange: [number, number]; // [min, max] in 0-100 scale
+  employeeFilterRange: [number, number]; // [min, max] in 0-100 scale
   
   // Discovery status tracking
   discoveryStatus: DiscoveryStatus | null;
@@ -212,8 +212,8 @@ interface AppState {
   setPanelView: (view: 'company' | 'executive') => void;
   setSearchQuery: (query: string) => void;
   setScalingMetric: (metric: 'revenue' | 'employees') => void;
-  setRevenueFilter: (value: number) => void;
-  setEmployeeFilter: (value: number) => void;
+  setRevenueFilterRange: (value: [number, number]) => void;
+  setEmployeeFilterRange: (value: [number, number]) => void;
   
   // Discovery status actions
   setDiscoveryStatus: (status: DiscoveryStatus | undefined, reasons?: string[]) => void;
@@ -326,8 +326,8 @@ export const useAppStore = create<AppState>((set) => ({
   panelView: 'company',
   searchQuery: '',
   scalingMetric: 'revenue',
-  revenueFilter: 0,
-  employeeFilter: 0,
+  revenueFilterRange: [0, 100],
+  employeeFilterRange: [0, 100],
   discoveryStatus: null,
   degradationReasons: undefined,
   hiddenCountries: new Set<string>(),
@@ -372,8 +372,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPanelView: (view) => set({ panelView: view }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setScalingMetric: (metric) => set({ scalingMetric: metric }),
-  setRevenueFilter: (value) => set({ revenueFilter: value }),
-  setEmployeeFilter: (value) => set({ employeeFilter: value }),
+  setRevenueFilterRange: (value) => set({ revenueFilterRange: value }),
+  setEmployeeFilterRange: (value) => set({ employeeFilterRange: value }),
   
   // Discovery status actions
   setDiscoveryStatus: (status, reasons) => set({ 
@@ -440,8 +440,8 @@ export const useAppStore = create<AppState>((set) => ({
     panelView: 'company',
     searchQuery: '',
     scalingMetric: 'revenue',
-    revenueFilter: 0,
-    employeeFilter: 0,
+    revenueFilterRange: [0, 100],
+    employeeFilterRange: [0, 100],
     discoveryStatus: null,
     degradationReasons: undefined,
     hiddenCountries: new Set<string>(),

@@ -20,6 +20,9 @@ function isValidCoordinate(lat: number, lng: number): boolean {
   );
 }
 
+// Global flag to track marker dragging (shared between MapUpdater and Markers)
+let isMarkerDragging = false;
+
 // Component to handle map bounds updates
 function MapUpdater() {
   const companies = useAppStore(state => state.companies);
@@ -76,8 +79,8 @@ function MapUpdater() {
     });
     const now = Date.now();
     
-    // Skip auto-fit if user is actively interacting with the map
-    if (isUserInteractingRef.current) {
+    // Skip auto-fit if user is actively interacting with the map or dragging a marker
+    if (isUserInteractingRef.current || isMarkerDragging) {
       prevCountRef.current = visibleCompanies.length;
       return;
     }
@@ -121,11 +124,7 @@ const EXECUTIVE_COLORS = [
   'hsl(199 89% 48%)', // Blue
 ];
 
-interface MapComponentProps {
-  isLeftPanelOpen?: boolean;
-}
-
-export default function MapComponent({ isLeftPanelOpen = true }: MapComponentProps) {
+export default function MapComponent() {
   const { companies, executives, selectedCompanyId, selectCompany, updateCompany, scalingMetric, revenueFilter, employeeFilter, hiddenCountries, hiddenCompanies } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
 
@@ -228,17 +227,6 @@ export default function MapComponent({ isLeftPanelOpen = true }: MapComponentPro
     return result;
   }, [filteredCompanies]);
 
-  // Trigger map resize when left panel is toggled
-  useEffect(() => {
-    // Use the window-exposed map instance from MapUpdater (more reliable)
-    const timer = setTimeout(() => {
-      const map = (window as any).leafletMap;
-      if (map) {
-        map.invalidateSize();
-      }
-    }, 300); // Wait for CSS transition to complete
-    return () => clearTimeout(timer);
-  }, [isLeftPanelOpen]);
 
   return (
     <div className="h-full w-full bg-slate-100 relative z-0">
@@ -306,7 +294,11 @@ export default function MapComponent({ isLeftPanelOpen = true }: MapComponentPro
               draggable={true}
               eventHandlers={{
                 click: () => selectCompany(company.id),
+                dragstart: () => {
+                  isMarkerDragging = true;
+                },
                 dragend: (e) => {
+                  isMarkerDragging = false;
                   const marker = e.target;
                   const position = marker.getLatLng();
                   updateCompany(company.id, {

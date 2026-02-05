@@ -404,24 +404,40 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-background overflow-hidden font-sans text-foreground">
-      <LeftPanel 
-        width={leftPanelWidth} 
-        isOpen={isLeftPanelOpen} 
-        onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)} 
-      />
-      {isLeftPanelOpen && (
-        <div 
-          className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
-          onMouseDown={() => setIsResizingLeft(true)}
-          data-testid="resize-handle-left"
-        >
-          <div className="absolute inset-y-0 -left-1 -right-1" />
-        </div>
-      )}
+    <div className="relative h-screen w-screen bg-background overflow-hidden font-sans text-foreground">
+      {/* Map as fixed background layer - always fills entire viewport */}
+      <div className="absolute inset-0 z-0">
+        <MapComponent />
+      </div>
       
-      <div className="flex-1 relative z-0">
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-5xl px-4">
+      {/* Left Panel overlay */}
+      <div className="absolute top-0 left-0 h-full z-20 flex">
+        <LeftPanel 
+          width={leftPanelWidth} 
+          isOpen={isLeftPanelOpen} 
+          onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)} 
+        />
+        {isLeftPanelOpen && (
+          <div 
+            className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0"
+            onMouseDown={() => setIsResizingLeft(true)}
+            data-testid="resize-handle-left"
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+          </div>
+        )}
+      </div>
+      
+      {/* Search bar overlay - centered in the available space */}
+      <div 
+        className="absolute top-4 z-30" 
+        style={{ 
+          left: isLeftPanelOpen ? leftPanelWidth + 16 : 56, 
+          right: isRightPanelOpen && selectedCompanyId ? rightPanelWidth + 16 : 16,
+          transition: 'left 0.3s ease, right 0.3s ease'
+        }}
+      >
+        <div className="max-w-5xl mx-auto px-4">
           <form onSubmit={handleNewSearch} className="flex flex-col gap-3">
             <div className="relative" ref={historyRef}>
               <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
@@ -645,22 +661,23 @@ export default function Dashboard() {
         )}
       </div>
 
-      <MapComponent isLeftPanelOpen={isLeftPanelOpen} />
-      
-      {isRightPanelOpen && selectedCompanyId && (
-        <div 
-          className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative z-30 shrink-0"
-          onMouseDown={() => setIsResizingRight(true)}
-          data-testid="resize-handle-right"
-        >
-          <div className="absolute inset-y-0 -left-1 -right-1" />
-        </div>
-      )}
-      <RightPanel 
-        width={rightPanelWidth} 
-        isOpen={isRightPanelOpen} 
-        onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
-      />
+      {/* Right Panel overlay */}
+      <div className="absolute top-0 right-0 h-full z-20 flex">
+        {isRightPanelOpen && selectedCompanyId && (
+          <div 
+            className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0"
+            onMouseDown={() => setIsResizingRight(true)}
+            data-testid="resize-handle-right"
+          >
+            <div className="absolute inset-y-0 -left-1 -right-1" />
+          </div>
+        )}
+        <RightPanel 
+          width={rightPanelWidth} 
+          isOpen={isRightPanelOpen} 
+          onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
+        />
+      </div>
       
       {showMatchReview && (
         <MatchReviewPanel

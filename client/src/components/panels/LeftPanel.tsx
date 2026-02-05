@@ -171,12 +171,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCompany.name,
-          hqCity: newCompany.hq_city || 'Unknown',
-          hqCountry: normalizedCountry,
-          revenueUsd: parseFloat(newCompany.revenue_usd) || 0,
+          region: newCompany.hq_city || 'Unknown',
+          country: normalizedCountry,
+          revenue: parseFloat(newCompany.revenue_usd) || null,
           employees: parseInt(newCompany.employees) || 0,
-          lat: 0,
-          lng: 0,
+          latitude: 0,
+          longitude: 0,
           confidence: 5,
           searchQueryId: parseInt(currentProject.id)
         })
@@ -188,12 +188,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
       addCompany({
         id: String(created.id),
         name: created.name,
-        industry: created.industry || '',
-        hq_city: created.hqCity || 'Unknown',
-        hq_country: created.hqCountry || 'Unknown',
-        lat: created.lat || 0,
-        lng: created.lng || 0,
-        revenue_usd: created.revenueUsd || 0,
+        industry: created.sector || '',
+        hq_city: created.region || 'Unknown',
+        hq_country: created.country || 'Unknown',
+        lat: parseFloat(created.latitude) || 0,
+        lng: parseFloat(created.longitude) || 0,
+        revenue_usd: parseFloat(created.revenue) || 0,
         employees: created.employees || 0,
         confidence: created.confidence || 5
       });
@@ -384,7 +384,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     XLSX.utils.book_append_sheet(wb, ws, 'Executives');
     
     // Generate file
-    const projectName = currentProject?.query?.slice(0, 30) || 'executives';
+    const projectName = currentProject?.search_string?.slice(0, 30) || 'executives';
     XLSX.writeFile(wb, `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_export.xlsx`);
     toast.success('Exported to Excel');
   };

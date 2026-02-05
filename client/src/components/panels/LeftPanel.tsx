@@ -59,7 +59,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   const [importText, setImportText] = useState('');
   const [importPreview, setImportPreview] = useState<{headers: string[], rows: string[][], mappings: Record<string, string>} | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [tableSortColumn, setTableSortColumn] = useState<'country' | 'name' | 'title' | 'notes'>('country');
+  const [tableSortColumn, setTableSortColumn] = useState<'country' | 'companyName' | 'name' | 'title' | 'notes'>('country');
   const [tableSortDirection, setTableSortDirection] = useState<'asc' | 'desc'>('asc');
   const [editingCell, setEditingCell] = useState<{id: string, field: 'country' | 'name' | 'title' | 'notes'} | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -361,7 +361,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     return data;
   }, [companies, executives, tableSortColumn, tableSortDirection]);
 
-  const handleTableSort = (column: 'country' | 'name' | 'title' | 'notes') => {
+  const handleTableSort = (column: 'country' | 'companyName' | 'name' | 'title' | 'notes') => {
     if (tableSortColumn === column) {
       setTableSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -1293,6 +1293,13 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                       </th>
                       <th 
                         className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
+                        onClick={() => handleTableSort('companyName')}
+                        data-testid="th-company"
+                      >
+                        Company {tableSortColumn === 'companyName' && (tableSortDirection === 'asc' ? '↑' : '↓')}
+                      </th>
+                      <th 
+                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
                         onClick={() => handleTableSort('name')}
                         data-testid="th-executive"
                       >
@@ -1361,6 +1368,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                           ) : (
                             <span className="truncate block hover:bg-primary/10 rounded px-1" title={row.country}>{row.country || '-'}</span>
                           )}
+                        </td>
+                        <td className="p-2 max-w-[100px]">
+                          <span className="truncate block" title={row.companyName}>{row.companyName}</span>
                         </td>
                         <td 
                           className="p-2 max-w-[100px]"

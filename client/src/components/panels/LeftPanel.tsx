@@ -23,6 +23,7 @@ interface CountryData {
     hq_city: string;
     lat: number;
     lng: number;
+    color?: string;
     executives: {
       id: string;
       name: string;
@@ -43,7 +44,7 @@ interface LeftPanelProps {
 
 export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
   const { 
-    companies, executives, selectCompany, selectExecutive, selectedCompanyId, 
+    companies, executives, selectCompany, selectExecutive, selectedCompanyId, selectedExecutiveId,
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
     hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
     discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI,
@@ -173,10 +174,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           name: newCompany.name,
           region: newCompany.hq_city || 'Unknown',
           country: normalizedCountry,
-          revenue: parseFloat(newCompany.revenue_usd) || null,
+          revenue: newCompany.revenue_usd ? String(parseFloat(newCompany.revenue_usd)) : null,
           employees: parseInt(newCompany.employees) || 0,
-          latitude: 0,
-          longitude: 0,
+          latitude: "0",
+          longitude: "0",
           confidence: 5,
           searchQueryId: parseInt(currentProject.id)
         })
@@ -305,6 +306,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
         hq_city: company.hq_city,
         lat: company.lat,
         lng: company.lng,
+        color: company.color,
         executives: companyExecs
       });
     });
@@ -333,7 +335,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
 
   // Table data for Excel-like view
   const tableData = useMemo(() => {
-    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string }[] = [];
+    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string; companyColor: string }[] = [];
     
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
@@ -345,7 +347,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           title: exec.title,
           notes: exec.notes || '',
           companyId: company.id,
-          companyName: company.name
+          companyName: company.name,
+          companyColor: company.color || '#1e3a8a'
         });
       });
     });
@@ -1076,22 +1079,24 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                         const isHighlighted = selectedCompanyId === company.id;
                         const isCompanyHidden = hiddenCompanies.has(company.id) || isCountryHidden;
                         
+                        const companyColor = company.color || '#1e3a8a';
                         return (
                           <div key={company.id} className="group/company">
                             <div
                               className={`
                                 flex items-center gap-2 p-2.5 rounded-md cursor-pointer transition-all duration-200
-                                ${isHighlighted ? 'bg-accent/20 border border-accent/40' : 'hover:bg-muted/40 border border-transparent'}
+                                ${isHighlighted ? '' : 'hover:bg-muted/40 border border-transparent'}
                               `}
+                              style={isHighlighted ? { backgroundColor: `${companyColor}20`, borderLeft: `3px solid ${companyColor}`, borderRadius: '6px' } : undefined}
                               onClick={() => {
                                 toggleCompany(company.id);
                                 selectCompany(company.id);
                               }}
                               data-testid={`row-company-${company.id}`}
                             >
-                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? 'text-accent' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} />
+                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isHighlighted ? '' : 'text-muted-foreground'} ${isCompanyExpanded ? 'rotate-90' : ''}`} style={isHighlighted ? { color: companyColor } : undefined} />
                               <div className="flex-1 min-w-0">
-                                <div className={`font-medium text-sm truncate ${isHighlighted ? 'text-accent' : ''}`} title={company.name}>
+                                <div className={`font-medium text-sm truncate`} style={isHighlighted ? { color: companyColor } : undefined} title={company.name}>
                                   {company.name}
                                 </div>
                                 <div className="text-xs text-muted-foreground truncate">
@@ -1142,10 +1147,13 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
 
                             {isCompanyExpanded && (
                               <div className="ml-5 pl-3 border-l border-border/30 space-y-0.5 py-1">
-                                {company.executives.map((exec) => (
+                                {company.executives.map((exec) => {
+                                  const isExecSelected = selectedExecutiveId === exec.id;
+                                  return (
                                   <div
                                     key={exec.id}
-                                    className="flex items-center gap-2 p-2 rounded hover:bg-muted/30 transition-colors cursor-pointer group/exec"
+                                    className={`flex items-center gap-2 p-2 rounded transition-colors cursor-pointer group/exec ${isExecSelected ? '' : 'hover:bg-muted/30'}`}
+                                    style={isExecSelected ? { backgroundColor: `${companyColor}20`, borderLeft: `3px solid ${companyColor}` } : undefined}
                                     onClick={(e) => handleSelectExecutive(e, exec.id, company.id)}
                                     data-testid={`exec-${exec.id}`}
                                   >
@@ -1190,7 +1198,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                                       <Trash2 className="h-3 w-3" />
                                     </button>
                                   </div>
-                                ))}
+                                );
+                                })}
                                 
                                 {showAddExecForm === company.id ? (
                                   <form onSubmit={(e) => handleAddExecutive(e, company.id)} className="p-2 bg-muted/20 rounded space-y-1.5">
@@ -1322,10 +1331,13 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                     </tr>
                   </thead>
                   <tbody>
-                    {tableData.map((row) => (
+                    {tableData.map((row) => {
+                      const isRowSelected = selectedCompanyId === row.companyId || selectedExecutiveId === row.id;
+                      return (
                       <tr 
                         key={row.id} 
-                        className="border-b border-border/30 hover:bg-muted/30 cursor-pointer"
+                        className={`border-b border-border/30 cursor-pointer transition-colors ${isRowSelected ? 'bg-opacity-20' : 'hover:bg-muted/30'}`}
+                        style={isRowSelected ? { backgroundColor: `${row.companyColor}30`, borderLeft: `3px solid ${row.companyColor}` } : undefined}
                         onClick={() => handleRowClick(row)}
                         data-testid={`table-row-${row.id}`}
                       >
@@ -1424,7 +1436,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                           )}
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
                 

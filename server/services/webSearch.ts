@@ -655,7 +655,7 @@ export class TavilyResearchService {
    * Detect if the query is asking for specific executive roles
    * Returns info about whether to filter executives and how
    */
-  private detectExecutiveRole(query: string): { 
+  public detectExecutiveRole(query: string): { 
     specificRole: string | null; 
     roleDescription: string; 
     allInFunction: boolean 
@@ -733,6 +733,47 @@ export class TavilyResearchService {
     
     // Has executive intent but no specific role matched - return all executives
     return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
+  }
+  
+  /**
+   * Check if an executive title matches a specific role filter
+   */
+  public matchesRoleFilter(execTitle: string, roleFilter: { specificRole: string | null; allInFunction: boolean }): boolean {
+    if (!roleFilter.specificRole) {
+      return true; // No filter, include all
+    }
+    
+    const title = execTitle.toLowerCase();
+    const role = roleFilter.specificRole.toLowerCase();
+    
+    // Specific role matching
+    const roleMatchers: Record<string, (t: string) => boolean> = {
+      'ceo': (t) => /\b(ceo|chief executive officer|managing director|president)\b/.test(t),
+      'cfo': (t) => /\b(cfo|chief financial officer|finance director)\b/.test(t),
+      'coo': (t) => /\b(coo|chief operating officer|operations director)\b/.test(t),
+      'cto': (t) => /\b(cto|chief technology officer|tech director)\b/.test(t),
+      'cmo': (t) => /\b(cmo|chief marketing officer|marketing director)\b/.test(t),
+      'chro': (t) => /\b(chro|chief (human resources|hr|people) officer|hr director|people director)\b/.test(t),
+      'cio': (t) => /\b(cio|chief information officer|it director|chief investment officer)\b/.test(t),
+      'clo': (t) => /\b(clo|chief legal officer|general counsel|legal director)\b/.test(t),
+      'md': (t) => /\bmanaging director\b/.test(t),
+      'chairman': (t) => /\b(chairman|chairwoman|chair)\b/.test(t),
+      // Function-based matching (allInFunction = true)
+      'finance': (t) => /\b(finance|financial|treasury|controller|accounting)\b/.test(t),
+      'hr': (t) => /\b(hr|human resource|people|talent|recruitment)\b/.test(t),
+      'technology': (t) => /\b(technology|tech|it|information|digital|engineering)\b/.test(t),
+      'marketing': (t) => /\b(marketing|brand|communications|pr|public relations)\b/.test(t),
+      'operations': (t) => /\b(operations|operational|supply chain|logistics)\b/.test(t),
+      'sales': (t) => /\b(sales|commercial|business development|revenue)\b/.test(t),
+    };
+    
+    const matcher = roleMatchers[role];
+    if (matcher) {
+      return matcher(title);
+    }
+    
+    // Fallback: check if role is contained in title
+    return title.includes(role);
   }
   
   /**
@@ -1227,6 +1268,22 @@ export class WebSearchService {
     }
     
     return this.researchService.research(query, limit);
+  }
+  
+  // Detect if query is asking for specific executive roles
+  detectExecutiveRole(query: string): { specificRole: string | null; roleDescription: string; allInFunction: boolean } {
+    if (!this.researchService) {
+      return { specificRole: null, roleDescription: 'all key executives', allInFunction: false };
+    }
+    return this.researchService.detectExecutiveRole(query);
+  }
+  
+  // Check if an executive title matches a role filter
+  matchesRoleFilter(execTitle: string, roleFilter: { specificRole: string | null; allInFunction: boolean }): boolean {
+    if (!this.researchService) {
+      return true;
+    }
+    return this.researchService.matchesRoleFilter(execTitle, roleFilter);
   }
 }
 

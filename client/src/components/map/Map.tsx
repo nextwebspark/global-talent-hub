@@ -1,6 +1,6 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import { useAppStore, type Executive } from '@/lib/store';
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -91,7 +91,9 @@ function MapUpdater() {
       
       // For the first company, fit immediately. For subsequent, debounce to 500ms
       if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
+        // Add slight padding to bounds to account for potential scatter offsets
         const bounds = L.latLngBounds(visibleCompanies.map(c => [c.lat, c.lng]));
+        bounds.pad(0.1); // 10% padding to ensure scattered markers stay visible
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true, duration: 0.5 });
         lastFitTimeRef.current = now;
       }
@@ -179,6 +181,45 @@ export default function MapComponent() {
     }
   };
 
+  // Apply scatter offsets to prevent overlapping bubbles in the same location
+  const scatteredCompanies = useMemo(() => {
+    const locationGroups = new Map<string, typeof filteredCompanies>();
+    
+    // Group companies by rounded coordinates (same general location)
+    filteredCompanies.forEach(company => {
+      // Round to 1 decimal place to detect nearby companies
+      const key = `${Math.round(company.lat * 10) / 10},${Math.round(company.lng * 10) / 10}`;
+      if (!locationGroups.has(key)) {
+        locationGroups.set(key, []);
+      }
+      locationGroups.get(key)!.push(company);
+    });
+    
+    // Apply scatter offset to groups with multiple companies
+    const result: Array<typeof filteredCompanies[0] & { displayLat: number; displayLng: number }> = [];
+    locationGroups.forEach((group) => {
+      if (group.length === 1) {
+        result.push({ ...group[0], displayLat: group[0].lat, displayLng: group[0].lng });
+      } else {
+        // Scatter companies in a circle around their center
+        const angleStep = (2 * Math.PI) / group.length;
+        const scatterRadius = 0.15 + (group.length * 0.03); // Small offset in degrees (max ~0.5 degrees)
+        group.forEach((company, index) => {
+          const angle = index * angleStep;
+          const offsetLat = Math.sin(angle) * scatterRadius;
+          const offsetLng = Math.cos(angle) * scatterRadius;
+          result.push({
+            ...company,
+            displayLat: company.lat + offsetLat,
+            displayLng: company.lng + offsetLng
+          });
+        });
+      }
+    });
+    
+    return result;
+  }, [filteredCompanies]);
+
   return (
     <div className="h-full w-full bg-slate-100 relative z-0">
       <MapContainer 
@@ -187,15 +228,19 @@ export default function MapComponent() {
         style={{ height: '100%', width: '100%' }}
         className="outline-none"
         zoomControl={false}
+        minZoom={2}
+        maxBounds={[[-90, -180], [90, 180]]}
+        maxBoundsViscosity={1.0}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          noWrap={true}
         />
         
         <MapUpdater />
 
-        {filteredCompanies.map((company) => {
+        {scatteredCompanies.map((company) => {
           const isSelected = selectedCompanyId === company.id;
           const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const radius = getRadius(value);
@@ -236,7 +281,7 @@ export default function MapComponent() {
           return (
             <Marker
               key={company.id}
-              position={[company.lat, company.lng]}
+              position={[company.displayLat, company.displayLng]}
               icon={customIcon}
               draggable={true}
               eventHandlers={{

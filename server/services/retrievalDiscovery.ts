@@ -654,6 +654,12 @@ export async function* discoverWithTavilyResearch(
     return;
   }
   
+  // Detect if the query is asking for a specific executive role
+  const roleFilter = webSearchService.detectExecutiveRole(query);
+  if (roleFilter.specificRole) {
+    console.log(`[TavilyResearch] Executive role filter detected: ${roleFilter.specificRole} (${roleFilter.roleDescription})`);
+  }
+  
   yield { type: 'status', data: { message: 'Researching companies with AI...', progress: 10 } };
   
   let researchResult;
@@ -811,9 +817,19 @@ export async function* discoverWithTavilyResearch(
       yield { type: 'company', data: { company: createdCompany } };
       successfullyCreated++;
       
-      // Create executives if present
+      // Create executives if present (filter by role if specified in query)
       if (company.executives && company.executives.length > 0) {
-        for (const exec of company.executives) {
+        // Filter executives by role if a specific role was requested
+        const filteredExecs = roleFilter.specificRole
+          ? company.executives.filter((exec: TavilyResearchExecutive) => 
+              webSearchService.matchesRoleFilter(exec.title || '', roleFilter))
+          : company.executives;
+        
+        if (roleFilter.specificRole && filteredExecs.length !== company.executives.length) {
+          console.log(`[TavilyResearch] ${company.name}: Filtered executives from ${company.executives.length} to ${filteredExecs.length} (role: ${roleFilter.specificRole})`);
+        }
+        
+        for (const exec of filteredExecs) {
           try {
             // Derive executive confidence from source quality or company confidence
             const execConfidence = exec.source 
@@ -924,6 +940,12 @@ export async function* discoverWithTavilySearch(
   if (!webSearchService.isConfigured()) {
     yield { type: 'error', data: { message: 'Tavily Search not configured', code: 'NOT_CONFIGURED' } };
     return;
+  }
+  
+  // Detect if the query is asking for a specific executive role
+  const roleFilter = webSearchService.detectExecutiveRole(query);
+  if (roleFilter.specificRole) {
+    console.log(`[TavilySearch] Executive role filter detected: ${roleFilter.specificRole}`);
   }
   
   // Step 1: Run Tavily search with advanced answer to get rich results
@@ -1095,9 +1117,19 @@ Extract up to ${limit} companies that match the query. Include ALL executives, r
       const { company: created, isNew } = await storage.upsertCompanyNonDestructive(companyData, searchQueryId);
       console.log(`[TavilySearch] ${isNew ? 'Created' : 'Updated'} company: ${company.name}`);
       
-      // Create executives if present
+      // Create executives if present (filter by role if specified in query)
       if (company.executives && Array.isArray(company.executives)) {
-        for (const exec of company.executives) {
+        // Filter executives by role if a specific role was requested
+        const filteredExecs = roleFilter.specificRole
+          ? company.executives.filter((exec: any) => 
+              exec.title && webSearchService.matchesRoleFilter(exec.title, roleFilter))
+          : company.executives;
+        
+        if (roleFilter.specificRole && filteredExecs.length !== company.executives.length) {
+          console.log(`[TavilySearch] ${company.name}: Filtered executives from ${company.executives.length} to ${filteredExecs.length} (role: ${roleFilter.specificRole})`);
+        }
+        
+        for (const exec of filteredExecs) {
           if (exec.name && exec.title) {
             try {
               await storage.createExecutive({

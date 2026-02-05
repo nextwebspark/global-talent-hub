@@ -186,7 +186,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
       if (!response.ok) throw new Error('Failed to add company');
       
       const created = await response.json();
-      const newCompanyCountry = created.country || 'Unknown';
+      const newCompanyCountry = normalizeCountryName(created.country || normalizedCountry);
       
       addCompany({
         id: String(created.id),

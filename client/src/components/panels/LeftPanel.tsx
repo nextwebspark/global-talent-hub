@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
 import L from 'leaflet';
 import * as XLSX from 'xlsx';
-import { COUNTRIES } from '@/lib/countries';
+import { COUNTRIES, getCountryCentroid } from '@/lib/countries';
 
 interface CountryData {
   name: string;
@@ -166,6 +166,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
            COUNTRIES.find(c => c.toLowerCase().includes(newCompany.hq_country.toLowerCase())) ||
            newCompany.hq_country)
         : 'Unknown';
+      
+      const centroid = getCountryCentroid(normalizedCountry);
+      const lat = centroid ? centroid.lat : 0;
+      const lng = centroid ? centroid.lng : 0;
         
       const response = await fetch('/api/companies', {
         method: 'POST',
@@ -176,8 +180,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
           country: normalizedCountry,
           revenue: newCompany.revenue_usd ? String(parseFloat(newCompany.revenue_usd)) : null,
           employees: parseInt(newCompany.employees) || 0,
-          latitude: "0",
-          longitude: "0",
+          latitude: String(lat),
+          longitude: String(lng),
           confidence: 5,
           searchQueryId: parseInt(currentProject.id)
         })
@@ -335,22 +339,37 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
 
   // Table data for Excel-like view
   const tableData = useMemo(() => {
-    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string; companyColor: string }[] = [];
+    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean }[] = [];
     
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
-      companyExecs.forEach(exec => {
+      if (companyExecs.length === 0) {
         data.push({
-          id: exec.id,
+          id: `company-${company.id}`,
           country: company.hq_country || 'Unknown',
-          name: exec.name,
-          title: exec.title,
-          notes: exec.notes || '',
+          name: '',
+          title: '',
+          notes: '',
           companyId: company.id,
           companyName: company.name,
-          companyColor: company.color || '#1e3a8a'
+          companyColor: company.color || '#1e3a8a',
+          isCompanyRow: true
         });
-      });
+      } else {
+        companyExecs.forEach(exec => {
+          data.push({
+            id: exec.id,
+            country: company.hq_country || 'Unknown',
+            name: exec.name,
+            title: exec.title,
+            notes: exec.notes || '',
+            companyId: company.id,
+            companyName: company.name,
+            companyColor: company.color || '#1e3a8a',
+            isCompanyRow: false
+          });
+        });
+      }
     });
 
     // Sort by current column with safe string conversion

@@ -1627,5 +1627,138 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
+  app.post("/api/import-project", async (req, res) => {
+    try {
+      const { projectName, records, mappings } = req.body;
+
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        return res.status(400).json({ error: "No records provided" });
+      }
+      if (!mappings || typeof mappings !== 'object') {
+        return res.status(400).json({ error: "No column mappings provided" });
+      }
+
+      const name = projectName || `Import ${new Date().toLocaleDateString()}`;
+      const uniqueKey = `import_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const searchQuery = await storage.createSearchQuery({
+        query: name,
+        uniqueKey,
+        parsedCriteria: JSON.stringify({ source: 'excel-import', recordCount: records.length }),
+        resultCount: 0,
+      });
+      const searchQueryId = searchQuery.id;
+
+      const companyMap = new Map<string, number>();
+      let imported = 0;
+      const errors: string[] = [];
+
+      const safeStr = (raw: any): string | null => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).trim();
+        return s.length > 0 ? s : null;
+      };
+
+      const mappedFieldHeaders = new Set(Object.values(mappings).filter(Boolean));
+
+      for (const record of records) {
+        try {
+          const execName = safeStr(mappings.name ? record[mappings.name] : null);
+          const title = safeStr(mappings.title ? record[mappings.title] : null) || 'Executive';
+          const companyName = safeStr(mappings.company ? record[mappings.company] : null);
+          const country = safeStr(mappings.country ? record[mappings.country] : null);
+          const normalizedCountry = country ? normalizeCountryName(country) : null;
+          const email = safeStr(mappings.email ? record[mappings.email] : null);
+          const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
+          const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
+          const notes = safeStr(mappings.notes ? record[mappings.notes] : null);
+          const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
+          const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
+          const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
+
+          if (!execName && !companyName && !title) continue;
+
+          const customFields: Record<string, string> = {};
+          for (const [header, value] of Object.entries(record)) {
+            if (!mappedFieldHeaders.has(header)) {
+              const v = safeStr(value);
+              if (v) customFields[header] = v;
+            }
+          }
+
+          let companyId: number | null = null;
+          const resolvedCompanyName = companyName || 'Imported Contacts';
+          const lowerName = resolvedCompanyName.toLowerCase();
+
+          if (companyMap.has(lowerName)) {
+            companyId = companyMap.get(lowerName)!;
+          } else {
+            const countryForCoords = normalizedCountry || 'Unknown';
+            const coords = applyCoordinateFallback({ country: countryForCoords });
+            const newCompany = await storage.createCompanyFromDiscovery({
+              name: resolvedCompanyName,
+              country: countryForCoords,
+              sector: null,
+              businessType: null,
+              searchQueryId,
+              latitude: coords.latitude ? String(coords.latitude) : null,
+              longitude: coords.longitude ? String(coords.longitude) : null,
+            });
+            companyId = newCompany.id;
+            companyMap.set(lowerName, companyId);
+          }
+
+          if (companyId && (execName || title !== 'Executive')) {
+            await storage.createExecutiveManual({
+              companyId,
+              name: execName || 'Unknown',
+              title,
+              email,
+              phone,
+              linkedin,
+              notes,
+              careerSummary,
+              remunerationNotes,
+              availability,
+              customFields: Object.keys(customFields).length > 0 ? customFields : null,
+              confidence: 5
+            });
+          }
+          imported++;
+        } catch (recordError) {
+          console.error('[ImportProject] Error importing record:', recordError);
+          errors.push(`Failed to import record`);
+        }
+      }
+
+      await storage.updateSearchQueryResultCount(searchQueryId, companyMap.size);
+
+      const fullResults = await storage.getFullSearchResults(searchQueryId);
+
+      console.log(`[ImportProject] Created project "${name}" with ${companyMap.size} companies, ${imported} records`);
+
+      res.json({
+        success: true,
+        searchQueryId,
+        projectName: name,
+        companiesCreated: companyMap.size,
+        recordsImported: imported,
+        results: fullResults?.companies || [],
+        errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
+      });
+
+      // Fire-and-forget enrichment in background
+      enrichSearchResults(searchQueryId).then(enrichResult => {
+        console.log(`[ImportProject] Background enrichment complete for "${name}":`, enrichResult);
+      }).catch(err => {
+        console.error(`[ImportProject] Background enrichment failed for "${name}":`, err);
+      });
+
+    } catch (error: any) {
+      console.error("[ImportProject] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to import project" });
+    }
+  });
+
   return httpServer;
 }

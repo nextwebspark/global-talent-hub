@@ -224,25 +224,39 @@ export async function registerRoutes(
       let imported = 0;
       const errors: string[] = [];
 
+      const safeStr = (raw: any): string | null => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).trim();
+        return s.length > 0 ? s : null;
+      };
+
+      const mappedFieldHeaders = new Set(Object.values(mappings));
+
       for (const record of records) {
         try {
-          // Extract fields based on mappings with safe string conversion
-          const nameRaw = mappings.name ? record[mappings.name] : null;
-          const name = nameRaw ? String(nameRaw).trim() : null;
-          if (!name) continue;
+          const name = safeStr(mappings.name ? record[mappings.name] : null);
+          const title = safeStr(mappings.title ? record[mappings.title] : null) || 'Executive';
+          const companyName = safeStr(mappings.company ? record[mappings.company] : null);
+          const country = safeStr(mappings.country ? record[mappings.country] : null);
+          const normalizedCountry = country ? normalizeCountryName(country) : null;
+          const email = safeStr(mappings.email ? record[mappings.email] : null);
+          const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
+          const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
+          const notes = safeStr(mappings.notes ? record[mappings.notes] : null);
+          const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
+          const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
+          const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
 
-          const titleRaw = mappings.title ? record[mappings.title] : 'Executive';
-          const title = String(titleRaw || 'Executive').trim();
-          const companyNameRaw = mappings.company ? record[mappings.company] : null;
-          const companyName = companyNameRaw ? String(companyNameRaw).trim() : null;
-          const countryRaw = mappings.country ? record[mappings.country] : null;
-          const country = countryRaw ? normalizeCountryName(String(countryRaw).trim()) : null;
-          const linkedinRaw = mappings.linkedin ? record[mappings.linkedin] : null;
-          const linkedin = linkedinRaw ? String(linkedinRaw).trim() : null;
-          const notesRaw = mappings.notes ? record[mappings.notes] : null;
-          const notes = notesRaw ? String(notesRaw).trim() : null;
+          if (!name && !companyName && !title) continue;
 
-          // Find or create company using cached map
+          const customFields: Record<string, string> = {};
+          for (const [header, value] of Object.entries(record)) {
+            if (!mappedFieldHeaders.has(header)) {
+              const v = safeStr(value);
+              if (v) customFields[header] = v;
+            }
+          }
+
           let companyId: number | null = null;
           
           if (companyName) {
@@ -250,11 +264,11 @@ export async function registerRoutes(
             if (companyMap.has(lowerName)) {
               companyId = companyMap.get(lowerName)!;
             } else {
-              const normalizedCountry = country || 'Unknown';
-              const coords = applyCoordinateFallback({ country: normalizedCountry });
+              const countryForCoords = normalizedCountry || 'Unknown';
+              const coords = applyCoordinateFallback({ country: countryForCoords });
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: companyName,
-                country: normalizedCountry,
+                country: countryForCoords,
                 sector: null,
                 businessType: null,
                 searchQueryId,
@@ -265,11 +279,10 @@ export async function registerRoutes(
               companyMap.set(lowerName, companyId);
             }
           } else {
-            // No company name - use first existing company or create placeholder
             if (existingCompanies.length > 0) {
               companyId = existingCompanies[0].id;
             } else if (!companyMap.has('imported contacts')) {
-              const placeholderCountry = country || 'Unknown';
+              const placeholderCountry = normalizedCountry || 'Unknown';
               const placeholderCoords = applyCoordinateFallback({ country: placeholderCountry });
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: 'Imported Contacts',
@@ -290,10 +303,16 @@ export async function registerRoutes(
           if (companyId) {
             await storage.createExecutiveManual({
               companyId,
-              name,
+              name: name || 'Unknown',
               title,
+              email,
+              phone,
               linkedin,
               notes,
+              careerSummary,
+              remunerationNotes,
+              availability,
+              customFields: Object.keys(customFields).length > 0 ? customFields : null,
               confidence: 5
             });
             imported++;

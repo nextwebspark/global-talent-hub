@@ -41,10 +41,17 @@ export interface TableRowData {
   name: string;
   title: string;
   notes: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  careerSummary: string;
+  remunerationNotes: string;
+  availability: string;
   companyId: string;
   companyName: string;
   companyColor: string;
   isCompanyRow: boolean;
+  customFields?: Record<string, string>;
 }
 
 interface DataTableProps {
@@ -125,8 +132,15 @@ function DraggableHeader({ header, onDragStart, onDragOver, onDrop, onDragEnd, i
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(['country', 'companyName', 'name', 'title', 'notes']);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    email: false,
+    phone: false,
+    linkedin: false,
+    careerSummary: false,
+    remunerationNotes: false,
+    availability: false,
+  });
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -137,64 +151,88 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
-  const columns = useMemo(() => [
-    columnHelper.accessor('country', {
-      header: 'Country',
-      cell: (info) => {
-        if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
+  const customFieldKeys = useMemo(() => {
+    const keys = new Set<string>();
+    data.forEach(row => {
+      if (row.customFields) {
+        Object.keys(row.customFields).forEach(k => keys.add(k));
+      }
+    });
+    return Array.from(keys);
+  }, [data]);
+
+  const textCell = (info: any) => <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>;
+
+  const groupedCell = (info: any) => {
+    if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
+      return (
+        <span className="font-semibold flex items-center gap-1">
+          {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {info.getValue()} ({info.row.subRows.length})
+        </span>
+      );
+    }
+    return <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>;
+  };
+
+  const columns = useMemo(() => {
+    const cols = [
+      columnHelper.accessor('country', {
+        header: 'Country',
+        cell: groupedCell,
+        size: 100,
+        enableGrouping: true,
+      }),
+      columnHelper.accessor('companyName', {
+        header: 'Company',
+        cell: (info) => {
+          if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
+            return (
+              <span className="font-semibold flex items-center gap-1">
+                {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                {info.getValue()} ({info.row.subRows.length})
+              </span>
+            );
+          }
+          const color = info.row.original?.companyColor || '#1e3a8a';
           return (
-            <span className="font-semibold flex items-center gap-1">
-              {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {info.getValue()} ({info.row.subRows.length})
+            <span className="truncate block" title={info.getValue()}>
+              <span className="inline-block w-2 h-2 rounded-full mr-1.5 shrink-0" style={{ backgroundColor: color }} />
+              {info.getValue()}
             </span>
           );
-        }
-        return <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>;
-      },
-      size: 100,
-      enableGrouping: true,
-    }),
-    columnHelper.accessor('companyName', {
-      header: 'Company',
-      cell: (info) => {
-        if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
-          return (
-            <span className="font-semibold flex items-center gap-1">
-              {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              {info.getValue()} ({info.row.subRows.length})
-            </span>
-          );
-        }
-        const color = info.row.original?.companyColor || '#1e3a8a';
-        return (
-          <span className="truncate block" title={info.getValue()}>
-            <span className="inline-block w-2 h-2 rounded-full mr-1.5 shrink-0" style={{ backgroundColor: color }} />
-            {info.getValue()}
-          </span>
-        );
-      },
-      size: 140,
-      enableGrouping: true,
-    }),
-    columnHelper.accessor('name', {
-      header: 'Executive',
-      cell: (info) => <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>,
-      size: 130,
-      enableGrouping: false,
-    }),
-    columnHelper.accessor('title', {
-      header: 'Title',
-      cell: (info) => <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>,
-      size: 140,
-      enableGrouping: false,
-    }),
-    columnHelper.accessor('notes', {
-      header: 'Notes',
-      cell: (info) => <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>,
-      size: 120,
-      enableGrouping: false,
-    }),
-  ], []);
+        },
+        size: 140,
+        enableGrouping: true,
+      }),
+      columnHelper.accessor('name', { header: 'Executive', cell: textCell, size: 130, enableGrouping: false }),
+      columnHelper.accessor('title', { header: 'Title', cell: textCell, size: 140, enableGrouping: false }),
+      columnHelper.accessor('notes', { header: 'Notes', cell: textCell, size: 120, enableGrouping: false }),
+      columnHelper.accessor('email', { header: 'Email', cell: textCell, size: 160, enableGrouping: false }),
+      columnHelper.accessor('phone', { header: 'Phone', cell: textCell, size: 120, enableGrouping: false }),
+      columnHelper.accessor('linkedin', { header: 'LinkedIn', cell: textCell, size: 160, enableGrouping: false }),
+      columnHelper.accessor('careerSummary', { header: 'Career Summary', cell: textCell, size: 180, enableGrouping: false }),
+      columnHelper.accessor('remunerationNotes', { header: 'Remuneration', cell: textCell, size: 140, enableGrouping: false }),
+      columnHelper.accessor('availability', { header: 'Availability', cell: textCell, size: 120, enableGrouping: false }),
+    ];
+
+    customFieldKeys.forEach(key => {
+      cols.push(
+        columnHelper.accessor(
+          (row) => row.customFields?.[key] || '',
+          {
+            id: `custom_${key}`,
+            header: key,
+            cell: textCell,
+            size: 120,
+            enableGrouping: false,
+          }
+        ) as any
+      );
+    });
+
+    return cols;
+  }, [customFieldKeys]);
 
   const table = useReactTable({
     data,

@@ -101,6 +101,12 @@ export interface Executive {
   imageUrl?: string;
   linkedin?: string;
   notes?: string;
+  email?: string;
+  phone?: string;
+  careerSummary?: string;
+  remunerationNotes?: string;
+  availability?: string;
+  customFields?: Record<string, string>;
   confidence: number;
   enrichmentSource?: string;
   enrichmentConfidence?: number;
@@ -302,6 +308,12 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
   const enrichmentTimestamp = (apiExec as any).enrichmentTimestamp || undefined;
   const isEnriched = Boolean(enrichmentSource || (apiExec as any).clockworkId);
   
+  const rawCustomFields = (apiExec as any).customFields;
+  let customFields: Record<string, string> | undefined;
+  if (rawCustomFields && typeof rawCustomFields === 'object' && Object.keys(rawCustomFields).length > 0) {
+    customFields = rawCustomFields;
+  }
+
   return {
     id: String(apiExec.id || '0'),
     company_id: String(companyId || '0'),
@@ -312,6 +324,12 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     imageUrl: (apiExec as any).imageUrl || undefined,
     linkedin: (apiExec as any).linkedin || undefined,
     notes: (apiExec as any).notes || undefined,
+    email: (apiExec as any).email || undefined,
+    phone: (apiExec as any).phone || undefined,
+    careerSummary: (apiExec as any).careerSummary || undefined,
+    remunerationNotes: (apiExec as any).remunerationNotes || undefined,
+    availability: (apiExec as any).availability || undefined,
+    customFields,
     confidence,
     enrichmentSource,
     enrichmentConfidence,

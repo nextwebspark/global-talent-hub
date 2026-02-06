@@ -338,7 +338,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
 
   // Table data for Excel-like view
   const tableData = useMemo(() => {
-    const data: { id: string; country: string; name: string; title: string; notes: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean }[] = [];
+    const data: { id: string; country: string; name: string; title: string; notes: string; email: string; phone: string; linkedin: string; careerSummary: string; remunerationNotes: string; availability: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean; customFields?: Record<string, string> }[] = [];
     
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
@@ -349,6 +349,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           name: '',
           title: '',
           notes: '',
+          email: '',
+          phone: '',
+          linkedin: '',
+          careerSummary: '',
+          remunerationNotes: '',
+          availability: '',
           companyId: company.id,
           companyName: company.name,
           companyColor: company.color || '#1e3a8a',
@@ -362,10 +368,17 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
             name: exec.name,
             title: exec.title,
             notes: exec.notes || '',
+            email: exec.email || '',
+            phone: exec.phone || '',
+            linkedin: exec.linkedin || '',
+            careerSummary: exec.careerSummary || '',
+            remunerationNotes: exec.remunerationNotes || '',
+            availability: exec.availability || '',
             companyId: company.id,
             companyName: company.name,
             companyColor: company.color || '#1e3a8a',
-            isCompanyRow: false
+            isCompanyRow: false,
+            customFields: exec.customFields
           });
         });
       }
@@ -375,19 +388,32 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
   }, [companies, executives]);
 
   const handleExportToExcel = () => {
-    // Export only the 4 required columns: Country, Executive, Title, Notes
-    const exportData = tableData.map(row => ({
-      'Country': row.country || '',
-      'Executive': row.name || '',
-      'Title': row.title || '',
-      'Notes': row.notes || ''
-    }));
+    const exportData = tableData.map(row => {
+      const base: Record<string, string> = {
+        'Country': row.country || '',
+        'Company': row.companyName || '',
+        'Executive': row.name || '',
+        'Title': row.title || '',
+        'Notes': row.notes || '',
+        'Email': row.email || '',
+        'Phone': row.phone || '',
+        'LinkedIn': row.linkedin || '',
+        'Career Summary': row.careerSummary || '',
+        'Remuneration': row.remunerationNotes || '',
+        'Availability': row.availability || '',
+      };
+      if (row.customFields) {
+        Object.entries(row.customFields).forEach(([k, v]) => {
+          base[k] = v || '';
+        });
+      }
+      return base;
+    });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Executives');
     
-    // Generate file
     const projectName = currentProject?.search_string?.slice(0, 30) || 'executives';
     XLSX.writeFile(wb, `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_export.xlsx`);
     toast.success('Exported to Excel');
@@ -414,28 +440,103 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const ALL_FIELD_PATTERNS: Record<string, string[]> = {
+    name: [
+      'name', 'full name', 'fullname', 'executive', 'executive name', 'person', 'candidate',
+      'contact', 'contact name', 'individual', 'first name', 'firstname', 'last name', 'lastname',
+      'employee name', 'staff name', 'member', 'personnel', 'talent', 'prospect',
+      'candidate name', 'applicant', 'interviewee', 'nominee', 'person name'
+    ],
+    company: [
+      'company', 'company name', 'companyname', 'organization', 'organisation', 'employer',
+      'firm', 'business', 'enterprise', 'corporation', 'corp', 'entity', 'group',
+      'current company', 'current employer', 'current organization', 'current organisation',
+      'employer name', 'org', 'org name', 'workplace', 'place of work', 'holding',
+      'conglomerate', 'parent company', 'subsidiary', 'brand'
+    ],
+    title: [
+      'title', 'job title', 'jobtitle', 'position', 'role', 'designation', 'function',
+      'job role', 'current title', 'current position', 'current role', 'job function',
+      'rank', 'grade', 'level', 'seniority', 'post', 'appointment', 'office',
+      'position title', 'role title', 'job designation', 'professional title'
+    ],
+    country: [
+      'country', 'location', 'hq country', 'headquarters', 'hq', 'nation', 'region',
+      'geography', 'geo', 'territory', 'market', 'domicile', 'base', 'based in',
+      'country of origin', 'home country', 'operating country', 'jurisdiction',
+      'country/region', 'loc', 'city/country', 'headquartered'
+    ],
+    email: [
+      'email', 'e-mail', 'email address', 'e-mail address', 'mail', 'email id',
+      'contact email', 'work email', 'business email', 'corporate email',
+      'personal email', 'primary email', 'emailaddress'
+    ],
+    phone: [
+      'phone', 'telephone', 'tel', 'mobile', 'cell', 'cellphone', 'cell phone',
+      'phone number', 'contact number', 'mobile number', 'work phone', 'direct line',
+      'landline', 'office phone', 'business phone', 'primary phone', 'phonenumber',
+      'mob', 'contact phone'
+    ],
+    linkedin: [
+      'linkedin', 'linkedin url', 'linkedin profile', 'profile url', 'linkedin link',
+      'li url', 'li profile', 'linked in', 'social profile', 'linkedin page',
+      'professional profile', 'linkedin address'
+    ],
+    notes: [
+      'notes', 'comments', 'remarks', 'description', 'additional info', 'memo',
+      'observation', 'info', 'information', 'additional notes', 'general notes',
+      'comment', 'remark', 'note', 'detail', 'details', 'other', 'misc',
+      'miscellaneous', 'summary', 'overview'
+    ],
+    careerSummary: [
+      'career summary', 'bio', 'biography', 'background', 'career', 'experience',
+      'work history', 'professional summary', 'profile summary', 'career history',
+      'work experience', 'employment history', 'professional background',
+      'career background', 'career profile', 'resume summary', 'cv summary'
+    ],
+    remunerationNotes: [
+      'remuneration', 'salary', 'compensation', 'pay', 'package', 'total compensation',
+      'comp', 'tc', 'total comp', 'salary range', 'pay range', 'earnings',
+      'remuneration notes', 'comp notes', 'salary notes', 'base salary',
+      'base pay', 'annual salary', 'ctc', 'cost to company', 'wage', 'income'
+    ],
+    availability: [
+      'availability', 'available', 'status', 'availability status', 'open to',
+      'notice period', 'notice', 'start date', 'available from', 'can start',
+      'ready', 'timeline', 'availability date', 'current status', 'employment status'
+    ]
+  };
+
   const detectColumnMappings = (headers: string[]): Record<string, string> => {
     const mappings: Record<string, string> = {};
-    const normalizedHeaders = headers.map(h => h.toLowerCase().trim());
-    
-    // Detect common field variations
-    const fieldPatterns: Record<string, string[]> = {
-      name: ['name', 'executive', 'executive name', 'full name', 'person', 'candidate'],
-      company: ['company', 'company name', 'organization', 'employer', 'firm'],
-      title: ['title', 'position', 'role', 'job title', 'designation'],
-      country: ['country', 'location', 'hq country', 'headquarters'],
-      linkedin: ['linkedin', 'linkedin url', 'linkedin profile', 'profile url'],
-      notes: ['notes', 'comments', 'remarks', 'description']
-    };
+    const normalizedHeaders = headers.map(h => h.toLowerCase().trim().replace(/[_\-\.]/g, ' '));
+    const usedIndices = new Set<number>();
 
     normalizedHeaders.forEach((header, index) => {
-      for (const [field, patterns] of Object.entries(fieldPatterns)) {
-        if (patterns.includes(header) && !mappings[field]) {
+      for (const [field, patterns] of Object.entries(ALL_FIELD_PATTERNS)) {
+        if (mappings[field]) continue;
+        if (patterns.includes(header)) {
           mappings[field] = headers[index];
+          usedIndices.add(index);
           break;
         }
       }
     });
+
+    if (Object.keys(mappings).length < normalizedHeaders.length) {
+      normalizedHeaders.forEach((header, index) => {
+        if (usedIndices.has(index)) return;
+        for (const [field, patterns] of Object.entries(ALL_FIELD_PATTERNS)) {
+          if (mappings[field]) continue;
+          const match = patterns.some(p => header.includes(p) || p.includes(header));
+          if (match) {
+            mappings[field] = headers[index];
+            usedIndices.add(index);
+            break;
+          }
+        }
+      });
+    }
 
     return mappings;
   };
@@ -470,7 +571,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
     try {
       const { headers, rows, mappings } = importPreview;
       
-      // Build import records
       const records = rows.map(row => {
         const record: Record<string, string> = {};
         headers.forEach((header, index) => {
@@ -478,13 +578,17 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         });
         return record;
       }).filter(r => {
-        // Must have at least a name
         const nameField = mappings.name;
-        return nameField && r[nameField]?.trim();
+        const companyField = mappings.company;
+        const titleField = mappings.title;
+        const hasName = nameField && r[nameField]?.trim();
+        const hasCompany = companyField && r[companyField]?.trim();
+        const hasTitle = titleField && r[titleField]?.trim();
+        return hasName || hasCompany || hasTitle;
       });
 
       if (records.length === 0) {
-        toast.error('No valid records found (need at least a name)');
+        toast.error('No valid records found (need at least a name, company, or title)');
         setIsImporting(false);
         return;
       }
@@ -1279,16 +1383,56 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                 ) : (
                   <div className="space-y-4">
                     <div>
-                      <h4 className="font-medium text-sm mb-2">Detected Column Mappings</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {Object.entries(importPreview.mappings).map(([field, header]) => (
-                          <span key={field} className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded text-xs">
-                            {field} → {header}
-                          </span>
-                        ))}
+                      <h4 className="font-medium text-sm mb-2">Column Mappings</h4>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Auto-detected mappings shown below. Use the dropdowns to adjust or assign unmapped columns.
+                      </p>
+                      <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-auto">
+                        {importPreview.headers.map((header, idx) => {
+                          const currentMapping = Object.entries(importPreview.mappings).find(([, h]) => h === header)?.[0] || '';
+                          return (
+                            <div key={idx} className="flex items-center gap-2 text-xs">
+                              <span className="font-mono bg-muted/50 px-2 py-1 rounded min-w-[120px] truncate" title={header}>
+                                {header}
+                              </span>
+                              <span className="text-muted-foreground">→</span>
+                              <select
+                                className="flex-1 border rounded px-2 py-1 text-xs bg-background"
+                                value={currentMapping}
+                                onChange={(e) => {
+                                  const newMappings = { ...importPreview.mappings };
+                                  Object.keys(newMappings).forEach(k => {
+                                    if (newMappings[k] === header) delete newMappings[k];
+                                  });
+                                  if (e.target.value) {
+                                    newMappings[e.target.value] = header;
+                                  }
+                                  setImportPreview({ ...importPreview, mappings: newMappings });
+                                }}
+                                data-testid={`mapping-select-${idx}`}
+                              >
+                                <option value="">-- Custom Field (keep as-is) --</option>
+                                <option value="name" disabled={!!importPreview.mappings.name && importPreview.mappings.name !== header}>Name</option>
+                                <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>
+                                <option value="title" disabled={!!importPreview.mappings.title && importPreview.mappings.title !== header}>Title</option>
+                                <option value="country" disabled={!!importPreview.mappings.country && importPreview.mappings.country !== header}>Country</option>
+                                <option value="email" disabled={!!importPreview.mappings.email && importPreview.mappings.email !== header}>Email</option>
+                                <option value="phone" disabled={!!importPreview.mappings.phone && importPreview.mappings.phone !== header}>Phone</option>
+                                <option value="linkedin" disabled={!!importPreview.mappings.linkedin && importPreview.mappings.linkedin !== header}>LinkedIn</option>
+                                <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
+                                <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
+                                <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
+                                <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Availability</option>
+                              </select>
+                              {currentMapping && (
+                                <span className="text-green-600 text-xs shrink-0">Mapped</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                      {Object.keys(importPreview.mappings).length === 0 && (
-                        <p className="text-amber-600 text-xs">No columns auto-detected. Make sure your header row includes common field names.</p>
+                      {!importPreview.mappings.name && !importPreview.mappings.company && !importPreview.mappings.title && (
+                        <p className="text-amber-600 text-xs mt-2">Please map at least one column to Name, Company, or Title to import.</p>
                       )}
                     </div>
                     
@@ -1298,9 +1442,15 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                         <table className="w-full text-xs">
                           <thead className="bg-muted/50 sticky top-0">
                             <tr>
-                              {importPreview.headers.map((h, i) => (
-                                <th key={i} className="text-left p-2 font-medium whitespace-nowrap">{h}</th>
-                              ))}
+                              {importPreview.headers.map((h, i) => {
+                                const mapped = Object.entries(importPreview.mappings).find(([, v]) => v === h)?.[0];
+                                return (
+                                  <th key={i} className={`text-left p-2 font-medium whitespace-nowrap ${mapped ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground'}`}>
+                                    {h}
+                                    {mapped && <span className="ml-1 text-[10px] opacity-60">({mapped})</span>}
+                                  </th>
+                                );
+                              })}
                             </tr>
                           </thead>
                           <tbody>
@@ -1327,7 +1477,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                       </Button>
                       <Button 
                         onClick={handleConfirmImport} 
-                        disabled={isImporting || !importPreview.mappings.name}
+                        disabled={isImporting || (!importPreview.mappings.name && !importPreview.mappings.company && !importPreview.mappings.title)}
                         className="flex-1"
                         data-testid="button-confirm-import"
                       >

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, serial, integer, text, varchar, timestamp, numeric, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, varchar, timestamp, numeric, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -76,6 +76,7 @@ export const executives = pgTable("executives", {
   enrichmentTimestamp: timestamp("enrichment_timestamp"),
   clockworkId: text("clockwork_id"),
   clockworkProjectId: text("clockwork_project_id"),
+  customFields: jsonb("custom_fields"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

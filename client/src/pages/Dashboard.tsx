@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCompanies, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
@@ -23,6 +23,15 @@ export default function Dashboard() {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(true);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [isLeftFullscreen, setIsLeftFullscreen] = useState(false);
+  const [isRightFullscreen, setIsRightFullscreen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   const [showMatchReview, setShowMatchReview] = useState(false);
   const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
@@ -199,13 +208,24 @@ export default function Dashboard() {
       </div>
       
       {/* Left Panel overlay */}
-      <div className="absolute top-0 left-0 h-full z-20 flex">
+      <div className={`absolute top-0 left-0 h-full z-20 flex ${isLeftFullscreen ? 'w-full' : ''}`}>
         <LeftPanel 
-          width={leftPanelWidth} 
+          width={isLeftFullscreen ? windowWidth : leftPanelWidth} 
           isOpen={isLeftPanelOpen} 
-          onToggle={() => setIsLeftPanelOpen(!isLeftPanelOpen)} 
+          onToggle={() => {
+            if (isLeftFullscreen) {
+              setIsLeftFullscreen(false);
+            } else {
+              setIsLeftPanelOpen(!isLeftPanelOpen);
+            }
+          }}
+          isFullscreen={isLeftFullscreen}
+          onToggleFullscreen={() => {
+            setIsLeftFullscreen(!isLeftFullscreen);
+            if (!isLeftPanelOpen) setIsLeftPanelOpen(true);
+          }}
         />
-        {isLeftPanelOpen && (
+        {isLeftPanelOpen && !isLeftFullscreen && (
           <div 
             className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0"
             onMouseDown={() => setIsResizingLeft(true)}
@@ -217,8 +237,8 @@ export default function Dashboard() {
       </div>
       
       {/* Right Panel overlay */}
-      <div className="absolute top-0 right-0 h-full z-20 flex">
-        {isRightPanelOpen && selectedCompanyId && (
+      <div className={`absolute top-0 right-0 h-full z-20 flex ${isRightFullscreen ? 'w-full' : ''}`}>
+        {isRightPanelOpen && selectedCompanyId && !isRightFullscreen && (
           <div 
             className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0"
             onMouseDown={() => setIsResizingRight(true)}
@@ -228,9 +248,20 @@ export default function Dashboard() {
           </div>
         )}
         <RightPanel 
-          width={rightPanelWidth} 
+          width={isRightFullscreen ? windowWidth : rightPanelWidth} 
           isOpen={isRightPanelOpen} 
-          onToggle={() => setIsRightPanelOpen(!isRightPanelOpen)} 
+          onToggle={() => {
+            if (isRightFullscreen) {
+              setIsRightFullscreen(false);
+            } else {
+              setIsRightPanelOpen(!isRightPanelOpen);
+            }
+          }}
+          isFullscreen={isRightFullscreen}
+          onToggleFullscreen={() => {
+            setIsRightFullscreen(!isRightFullscreen);
+            if (!isRightPanelOpen) setIsRightPanelOpen(true);
+          }}
         />
       </div>
       

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera, Link2, FileDown } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera, Link2, FileDown, Maximize2, Minimize2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
@@ -115,9 +115,11 @@ interface RightPanelProps {
   width?: number;
   isOpen?: boolean;
   onToggle?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-export default function RightPanel({ width = 384, isOpen = true, onToggle }: RightPanelProps) {
+export default function RightPanel({ width = 384, isOpen = true, onToggle, isFullscreen = false, onToggleFullscreen }: RightPanelProps) {
   const { 
     selectedCompanyId, 
     companies, 
@@ -474,9 +476,16 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle }: Rig
                 inputClassName="text-xl font-serif font-bold"
               />
             </div>
-            <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive shrink-0 ml-2" data-testid="button-close-panel">
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1 shrink-0 ml-2">
+              {onToggleFullscreen && (
+                <Button variant="ghost" size="icon" onClick={onToggleFullscreen} className="h-8 w-8" data-testid="button-fullscreen-right-panel">
+                  {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" onClick={() => selectCompany(null)} className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" data-testid="button-close-panel">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           
           <div className="flex items-center text-sm text-muted-foreground gap-1 mb-2" data-testid="text-location">

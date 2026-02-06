@@ -5,6 +5,53 @@ import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
+import { applyCoordinateFallback } from "./services/coordinateFallback";
+
+const COUNTRY_ALIASES: Record<string, string> = {
+  'uae': 'United Arab Emirates', 'u.a.e.': 'United Arab Emirates', 'emirates': 'United Arab Emirates',
+  'ksa': 'Saudi Arabia', 'kingdom of saudi arabia': 'Saudi Arabia',
+  'uk': 'United Kingdom', 'u.k.': 'United Kingdom', 'great britain': 'United Kingdom', 'britain': 'United Kingdom', 'england': 'United Kingdom',
+  'usa': 'United States', 'u.s.a.': 'United States', 'u.s.': 'United States', 'us': 'United States', 'america': 'United States', 'united states of america': 'United States',
+  'prc': 'China', "people's republic of china": 'China',
+  'rok': 'South Korea', 'republic of korea': 'South Korea', 'korea': 'South Korea',
+  'rsa': 'South Africa', 'republic of south africa': 'South Africa',
+  'ussr': 'Russia', 'russian federation': 'Russia',
+  'holland': 'Netherlands', 'the netherlands': 'Netherlands',
+  'czech': 'Czech Republic', 'czechia': 'Czech Republic',
+  'hk': 'Hong Kong', 'singapore city': 'Singapore',
+  'drc': 'DR Congo', 'democratic republic of congo': 'DR Congo', 'democratic republic of the congo': 'DR Congo',
+  "cote d'ivoire": 'Ivory Coast', "côte d'ivoire": 'Ivory Coast',
+};
+
+const KNOWN_COUNTRIES = [
+  'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Jordan', 'Lebanon',
+  'Iraq', 'Iran', 'Israel', 'Palestine', 'Syria', 'Yemen', 'Egypt', 'Turkey', 'United States',
+  'United Kingdom', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Switzerland', 'Canada',
+  'Australia', 'Japan', 'China', 'India', 'Singapore', 'Hong Kong', 'South Korea', 'Brazil', 'Mexico',
+  'Russia', 'South Africa', 'Nigeria', 'Kenya', 'Morocco', 'Pakistan', 'Indonesia', 'Malaysia',
+  'Thailand', 'Vietnam', 'Philippines', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Poland', 'Austria',
+  'Belgium', 'Ireland', 'Portugal', 'Greece', 'Czech Republic', 'New Zealand', 'Argentina', 'Chile',
+  'Colombia', 'Peru', 'Luxembourg', 'Taiwan', 'Hungary', 'Romania', 'Ukraine', 'Slovakia', 'Croatia',
+  'Slovenia', 'Bulgaria', 'Serbia', 'Tunisia', 'Algeria', 'Libya', 'Ghana', 'Ethiopia', 'Tanzania',
+  'Uganda', 'Zimbabwe', 'Zambia', 'Mozambique', 'Angola', 'Ivory Coast', 'Senegal', 'Cameroon',
+  'DR Congo', 'Bangladesh', 'Sri Lanka', 'Nepal', 'Myanmar', 'Cambodia', 'Laos', 'Mongolia',
+  'Kazakhstan', 'Uzbekistan', 'Azerbaijan', 'Georgia', 'Armenia', 'Afghanistan', 'Costa Rica',
+  'Panama', 'Puerto Rico', 'Dominican Republic', 'Guatemala', 'Ecuador', 'Bolivia', 'Paraguay',
+  'Uruguay', 'Venezuela', 'Cuba', 'Jamaica', 'Trinidad and Tobago', 'Bahamas', 'Bermuda', 'Iceland',
+  'Malta', 'Cyprus', 'Monaco', 'Liechtenstein', 'Andorra', 'San Marino', 'Vatican City',
+];
+
+function normalizeCountryName(country: string): string {
+  if (!country) return 'Unknown';
+  const trimmed = country.trim();
+  const key = trimmed.toLowerCase();
+  if (COUNTRY_ALIASES[key]) return COUNTRY_ALIASES[key];
+  const exactMatch = KNOWN_COUNTRIES.find(c => c.toLowerCase() === key);
+  if (exactMatch) return exactMatch;
+  const partialMatch = KNOWN_COUNTRIES.find(c => c.toLowerCase().includes(key) || key.includes(c.toLowerCase()));
+  if (partialMatch) return partialMatch;
+  return trimmed;
+}
 
 // Configure multer for image uploads
 const uploadDir = path.join(process.cwd(), 'uploads');
@@ -189,7 +236,7 @@ export async function registerRoutes(
           const companyNameRaw = mappings.company ? record[mappings.company] : null;
           const companyName = companyNameRaw ? String(companyNameRaw).trim() : null;
           const countryRaw = mappings.country ? record[mappings.country] : null;
-          const country = countryRaw ? String(countryRaw).trim() : null;
+          const country = countryRaw ? normalizeCountryName(String(countryRaw).trim()) : null;
           const linkedinRaw = mappings.linkedin ? record[mappings.linkedin] : null;
           const linkedin = linkedinRaw ? String(linkedinRaw).trim() : null;
           const notesRaw = mappings.notes ? record[mappings.notes] : null;
@@ -203,13 +250,16 @@ export async function registerRoutes(
             if (companyMap.has(lowerName)) {
               companyId = companyMap.get(lowerName)!;
             } else {
-              // Create new company
+              const normalizedCountry = country || 'Unknown';
+              const coords = applyCoordinateFallback({ country: normalizedCountry });
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: companyName,
-                country: country || 'Unknown',
+                country: normalizedCountry,
                 sector: null,
                 businessType: null,
-                searchQueryId
+                searchQueryId,
+                latitude: coords.latitude ? String(coords.latitude) : null,
+                longitude: coords.longitude ? String(coords.longitude) : null,
               });
               companyId = newCompany.id;
               companyMap.set(lowerName, companyId);
@@ -219,12 +269,16 @@ export async function registerRoutes(
             if (existingCompanies.length > 0) {
               companyId = existingCompanies[0].id;
             } else if (!companyMap.has('imported contacts')) {
+              const placeholderCountry = country || 'Unknown';
+              const placeholderCoords = applyCoordinateFallback({ country: placeholderCountry });
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: 'Imported Contacts',
-                country: country || 'Unknown',
+                country: placeholderCountry,
                 sector: null,
                 businessType: null,
-                searchQueryId
+                searchQueryId,
+                latitude: placeholderCoords.latitude ? String(placeholderCoords.latitude) : null,
+                longitude: placeholderCoords.longitude ? String(placeholderCoords.longitude) : null,
               });
               companyId = newCompany.id;
               companyMap.set('imported contacts', companyId);

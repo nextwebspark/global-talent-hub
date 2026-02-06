@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users, Table, Map as MapIcon, Download, Upload, Check } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users, Table, Map as MapIcon, Download, Upload, Check, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
@@ -40,9 +40,11 @@ interface LeftPanelProps {
   width?: number;
   isOpen?: boolean;
   onToggle?: () => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
 }
 
-export default function LeftPanel({ width = 360, isOpen = true, onToggle }: LeftPanelProps) {
+export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFullscreen = false, onToggleFullscreen }: LeftPanelProps) {
   const { 
     companies, executives, selectCompany, selectExecutive, selectedCompanyId, selectedExecutiveId,
     deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
@@ -62,10 +64,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
   const [isImporting, setIsImporting] = useState(false);
   const [tableSortColumn, setTableSortColumn] = useState<'country' | 'companyName' | 'name' | 'title' | 'notes'>('country');
   const [tableSortDirection, setTableSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [editingCell, setEditingCell] = useState<{id: string, field: 'country' | 'name' | 'title' | 'notes'} | null>(null);
-  const [editValue, setEditValue] = useState('');
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
-  const [countrySearch, setCountrySearch] = useState('');
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const [newCompany, setNewCompany] = useState({
     name: '',
@@ -412,97 +411,16 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
     toast.success('Exported to Excel');
   };
 
-  const handleCellEdit = (id: string, field: 'country' | 'name' | 'title' | 'notes', currentValue: string) => {
-    setEditingCell({ id, field });
-    setEditValue(currentValue || '');
-    if (field === 'country') {
-      setCountrySearch(currentValue || '');
-    }
-  };
-
   const handleRowClick = (row: typeof tableData[0]) => {
-    if (!editingCell) {
-      selectCompany(row.companyId);
+    selectCompany(row.companyId);
+    if (!row.isCompanyRow) {
       selectExecutive(row.id);
     }
   };
 
-  const normalizeCountry = (value: string): string => {
-    const match = COUNTRIES.find(c => c.toLowerCase() === value.toLowerCase());
-    if (match) return match;
-    const partial = COUNTRIES.find(c => c.toLowerCase().includes(value.toLowerCase()));
-    return partial || value;
-  };
-
-  const handleCellSave = async () => {
-    if (!editingCell) return;
-    
-    const row = tableData.find(r => r.id === editingCell.id);
-    if (!row) {
-      setEditingCell(null);
-      return;
-    }
-
-    let saveValue = editValue;
-    if (editingCell.field === 'country') {
-      saveValue = normalizeCountry(editValue);
-    }
-
-    try {
-      if (editingCell.field === 'country') {
-        const response = await fetch(`/api/companies/${row.companyId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ country: saveValue })
-        });
-        if (!response.ok) throw new Error('Failed to update');
-        if (currentProject?.id) {
-          const res = await fetch(`/api/search-results/${currentProject.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.companies) loadFromAPI(data.companies);
-          }
-        }
-      } else {
-        const updateData: Record<string, string> = {};
-        updateData[editingCell.field] = saveValue;
-        
-        const response = await fetch(`/api/executives/${row.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updateData)
-        });
-        if (!response.ok) throw new Error('Failed to update');
-        if (currentProject?.id) {
-          const res = await fetch(`/api/search-results/${currentProject.id}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.companies) loadFromAPI(data.companies);
-          }
-        }
-      }
-    } catch (error) {
-      toast.error('Failed to save change');
-    }
-    
-    setEditingCell(null);
-    setEditValue('');
-  };
-
-  const handleCellKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleCellSave();
-    } else if (e.key === 'Escape') {
-      setEditingCell(null);
-      setEditValue('');
-    }
-  };
-
   const countryDropdownOptions = useMemo(() => {
-    if (!countrySearch) return COUNTRIES;
-    return COUNTRIES.filter(c => c.toLowerCase().includes(countrySearch.toLowerCase()));
-  }, [countrySearch]);
+    return COUNTRIES;
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -766,6 +684,26 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
             <div className="flex items-center gap-2">
               <img src={logoImage} alt="Logo" className="h-6 w-auto" />
               <h2 className="text-lg font-serif font-bold text-foreground">Results</h2>
+              {onToggleFullscreen && (
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onToggleFullscreen}
+                        className="h-6 w-6"
+                        data-testid="button-fullscreen-left-panel"
+                      >
+                        {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      {isFullscreen ? 'Exit full screen' : 'Full screen'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
             </div>
             <div className="flex gap-1">
               <TooltipProvider delayDuration={0}>
@@ -1361,99 +1299,20 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle }: Left
                         onClick={() => handleRowClick(row)}
                         data-testid={`table-row-${row.id}`}
                       >
-                        <td 
-                          className="p-2 max-w-[80px]"
-                          onClick={(e) => { e.stopPropagation(); handleCellEdit(row.id, 'country', row.country); }}
-                        >
-                          {editingCell?.id === row.id && editingCell?.field === 'country' ? (
-                            <div className="relative">
-                              <Input
-                                value={editValue}
-                                onChange={(e) => {
-                                  setEditValue(e.target.value);
-                                  setCountrySearch(e.target.value);
-                                }}
-                                onBlur={() => setTimeout(handleCellSave, 150)}
-                                onKeyDown={handleCellKeyDown}
-                                autoFocus
-                                className="h-6 text-xs p-1"
-                              />
-                              <div className="absolute z-50 w-40 mt-1 bg-background border rounded-md shadow-lg max-h-32 overflow-auto">
-                                {countryDropdownOptions.filter(c => 
-                                  c.toLowerCase().includes(editValue.toLowerCase())
-                                ).slice(0, 8).map(country => (
-                                  <button
-                                    key={country}
-                                    type="button"
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      setEditValue(country);
-                                      setTimeout(handleCellSave, 50);
-                                    }}
-                                    className="w-full text-left px-2 py-1 text-xs hover:bg-muted/50"
-                                  >
-                                    {country}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="truncate block hover:bg-primary/10 rounded px-1" title={row.country}>{row.country || '-'}</span>
-                          )}
+                        <td className="p-2 max-w-[80px]">
+                          <span className="truncate block px-1" title={row.country}>{row.country || '-'}</span>
                         </td>
                         <td className="p-2 max-w-[100px]">
                           <span className="truncate block" title={row.companyName}>{row.companyName}</span>
                         </td>
-                        <td 
-                          className="p-2 max-w-[100px]"
-                          onClick={(e) => { e.stopPropagation(); handleCellEdit(row.id, 'name', row.name); }}
-                        >
-                          {editingCell?.id === row.id && editingCell?.field === 'name' ? (
-                            <Input
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={handleCellSave}
-                              onKeyDown={handleCellKeyDown}
-                              autoFocus
-                              className="h-6 text-xs p-1"
-                            />
-                          ) : (
-                            <span className="truncate block hover:bg-primary/10 rounded px-1" title={row.name}>{row.name}</span>
-                          )}
+                        <td className="p-2 max-w-[100px]">
+                          <span className="truncate block px-1" title={row.name}>{row.name || '-'}</span>
                         </td>
-                        <td 
-                          className="p-2 max-w-[100px]"
-                          onClick={(e) => { e.stopPropagation(); handleCellEdit(row.id, 'title', row.title); }}
-                        >
-                          {editingCell?.id === row.id && editingCell?.field === 'title' ? (
-                            <Input
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={handleCellSave}
-                              onKeyDown={handleCellKeyDown}
-                              autoFocus
-                              className="h-6 text-xs p-1"
-                            />
-                          ) : (
-                            <span className="truncate block hover:bg-primary/10 rounded px-1" title={row.title}>{row.title}</span>
-                          )}
+                        <td className="p-2 max-w-[100px]">
+                          <span className="truncate block px-1" title={row.title}>{row.title || '-'}</span>
                         </td>
-                        <td 
-                          className="p-2 max-w-[80px]"
-                          onClick={(e) => { e.stopPropagation(); handleCellEdit(row.id, 'notes', row.notes || ''); }}
-                        >
-                          {editingCell?.id === row.id && editingCell?.field === 'notes' ? (
-                            <Input
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onBlur={handleCellSave}
-                              onKeyDown={handleCellKeyDown}
-                              autoFocus
-                              className="h-6 text-xs p-1"
-                            />
-                          ) : (
-                            <span className="truncate block hover:bg-primary/10 rounded px-1" title={row.notes}>{row.notes || '-'}</span>
-                          )}
+                        <td className="p-2 max-w-[80px]">
+                          <span className="truncate block px-1" title={row.notes}>{row.notes || '-'}</span>
                         </td>
                       </tr>
                     );

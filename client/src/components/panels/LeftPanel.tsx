@@ -8,6 +8,7 @@ import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plu
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
+import DataTable from '@/components/DataTable';
 import L from 'leaflet';
 import * as XLSX from 'xlsx';
 import { COUNTRIES, getCountryCentroid, normalizeCountryName } from '@/lib/countries';
@@ -62,8 +63,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
   const [importText, setImportText] = useState('');
   const [importPreview, setImportPreview] = useState<{headers: string[], rows: string[][], mappings: Record<string, string>} | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [tableSortColumn, setTableSortColumn] = useState<'country' | 'companyName' | 'name' | 'title' | 'notes'>('country');
-  const [tableSortDirection, setTableSortDirection] = useState<'asc' | 'desc'>('asc');
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const [newCompany, setNewCompany] = useState({
@@ -372,25 +371,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
       }
     });
 
-    // Sort by current column with safe string conversion
-    data.sort((a, b) => {
-      const aVal = String(a[tableSortColumn] ?? '');
-      const bVal = String(b[tableSortColumn] ?? '');
-      const comparison = aVal.localeCompare(bVal);
-      return tableSortDirection === 'asc' ? comparison : -comparison;
-    });
-
     return data;
-  }, [companies, executives, tableSortColumn, tableSortDirection]);
-
-  const handleTableSort = (column: 'country' | 'companyName' | 'name' | 'title' | 'notes') => {
-    if (tableSortColumn === column) {
-      setTableSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setTableSortColumn(column);
-      setTableSortDirection('asc');
-    }
-  };
+  }, [companies, executives]);
 
   const handleExportToExcel = () => {
     // Export only the 4 required columns: Country, Executive, Title, Notes
@@ -1219,7 +1201,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         {/* Table View Content */}
         {activeTab === 'table' && (
           <>
-            <div className="p-3 border-b border-border bg-muted/30 min-w-[280px] flex items-center gap-2">
+            <div className="p-2 border-b border-border bg-muted/30 min-w-[280px] flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1241,94 +1223,24 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                 <Download className="h-3 w-3 mr-1" />
                 Export
               </Button>
-              <span className="text-xs text-muted-foreground ml-auto">
-                {tableData.length} records
-              </span>
             </div>
 
-            <ScrollArea className="flex-1 w-full">
-              <div className="min-w-[280px]">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50 sticky top-0">
-                    <tr>
-                      <th 
-                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
-                        onClick={() => handleTableSort('country')}
-                        data-testid="th-country"
-                      >
-                        Country {tableSortColumn === 'country' && (tableSortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th 
-                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
-                        onClick={() => handleTableSort('companyName')}
-                        data-testid="th-company"
-                      >
-                        Company {tableSortColumn === 'companyName' && (tableSortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th 
-                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
-                        onClick={() => handleTableSort('name')}
-                        data-testid="th-executive"
-                      >
-                        Executive {tableSortColumn === 'name' && (tableSortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th 
-                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
-                        onClick={() => handleTableSort('title')}
-                        data-testid="th-title"
-                      >
-                        Title {tableSortColumn === 'title' && (tableSortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                      <th 
-                        className="text-left p-2 font-medium cursor-pointer hover:bg-muted/70"
-                        onClick={() => handleTableSort('notes')}
-                        data-testid="th-notes"
-                      >
-                        Notes {tableSortColumn === 'notes' && (tableSortDirection === 'asc' ? '↑' : '↓')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableData.map((row) => {
-                      const isRowSelected = selectedCompanyId === row.companyId || selectedExecutiveId === row.id;
-                      return (
-                      <tr 
-                        key={row.id} 
-                        className={`border-b border-border/30 cursor-pointer transition-colors ${isRowSelected ? 'bg-opacity-20' : 'hover:bg-muted/30'}`}
-                        style={isRowSelected ? { backgroundColor: `${row.companyColor}30`, borderLeft: `3px solid ${row.companyColor}` } : undefined}
-                        onClick={() => handleRowClick(row)}
-                        data-testid={`table-row-${row.id}`}
-                      >
-                        <td className="p-2 max-w-[80px]">
-                          <span className="truncate block px-1" title={row.country}>{row.country || '-'}</span>
-                        </td>
-                        <td className="p-2 max-w-[100px]">
-                          <span className="truncate block" title={row.companyName}>{row.companyName}</span>
-                        </td>
-                        <td className="p-2 max-w-[100px]">
-                          <span className="truncate block px-1" title={row.name}>{row.name || '-'}</span>
-                        </td>
-                        <td className="p-2 max-w-[100px]">
-                          <span className="truncate block px-1" title={row.title}>{row.title || '-'}</span>
-                        </td>
-                        <td className="p-2 max-w-[80px]">
-                          <span className="truncate block px-1" title={row.notes}>{row.notes || '-'}</span>
-                        </td>
-                      </tr>
-                    );
-                    })}
-                  </tbody>
-                </table>
-                
-                {tableData.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No executives found</p>
-                    <p className="text-xs mt-1">Add companies and executives to see them here</p>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
+            <div className="flex-1 overflow-hidden min-w-[280px]">
+              {tableData.length > 0 ? (
+                <DataTable
+                  data={tableData}
+                  selectedCompanyId={selectedCompanyId}
+                  selectedExecutiveId={selectedExecutiveId}
+                  onRowClick={handleRowClick}
+                />
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No executives found</p>
+                  <p className="text-xs mt-1">Add companies and executives to see them here</p>
+                </div>
+              )}
+            </div>
           </>
         )}
 

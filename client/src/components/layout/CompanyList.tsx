@@ -1,26 +1,20 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, ChevronRight, Building2, User, Eye, EyeOff, Trash2, Plus, X, CheckCircle2, Sparkles, AlertTriangle, Info, DollarSign, Users, Loader2, MapPin, ChevronDown, Filter, Minus } from 'lucide-react';
+import { Search, ChevronRight, Building2, User, Eye, EyeOff, Trash2, X, CheckCircle2, Sparkles, AlertTriangle, Info, DollarSign, Users, MapPin, ChevronDown, Filter, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import L from 'leaflet';
-import { COUNTRIES, getCountryCentroid, normalizeCountryName } from '@/lib/countries';
 
-interface CompanyListProps {
-  showAddForm: boolean;
-  onToggleAddForm: () => void;
-}
-
-export default function CompanyList({ showAddForm, onToggleAddForm }: CompanyListProps) {
+export default function CompanyList() {
   const {
     companies, executives, selectCompany, selectExecutive, selectedCompanyId, selectedExecutiveId,
-    deleteCompany, addCompany, deleteExecutive, addExecutive, currentProject,
+    deleteCompany, deleteExecutive, currentProject,
     hiddenCountries, hiddenCompanies, toggleCountryVisibility, toggleCompanyVisibility,
-    discoveryStatus, degradationReasons, clearDiscoveryStatus, loadFromAPI,
+    discoveryStatus, degradationReasons, clearDiscoveryStatus,
     revenueFilterRange, setRevenueFilterRange, employeeFilterRange, setEmployeeFilterRange
   } = useAppStore();
 
@@ -29,10 +23,7 @@ export default function CompanyList({ showAddForm, onToggleAddForm }: CompanyLis
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
-  const countryDropdownRef = useRef<HTMLDivElement>(null);
-  const [newCompany, setNewCompany] = useState({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
-  const [isAdding, setIsAdding] = useState(false);
+  
 
   const countriesData = useMemo(() => {
     const countryMap = new Map<string, { name: string; companies: any[] }>();
@@ -133,46 +124,7 @@ export default function CompanyList({ showAddForm, onToggleAddForm }: CompanyLis
     catch { toast.error('Failed to delete executive'); }
   };
 
-  const handleAddCompany = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentProject?.id || !newCompany.name.trim()) { toast.error('Please enter a company name'); return; }
-    setIsAdding(true);
-    try {
-      const normalizedCountry = normalizeCountryName(newCompany.hq_country);
-      const centroid = getCountryCentroid(normalizedCountry);
-      const response = await fetch('/api/companies', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newCompany.name, region: newCompany.hq_city || 'Unknown', country: normalizedCountry,
-          revenue: newCompany.revenue_usd ? String(parseFloat(newCompany.revenue_usd)) : null,
-          employees: parseInt(newCompany.employees) || 0,
-          latitude: String(centroid?.lat || 0), longitude: String(centroid?.lng || 0),
-          confidence: 5, searchQueryId: parseInt(currentProject.id)
-        })
-      });
-      if (!response.ok) throw new Error('Failed');
-      const created = await response.json();
-      addCompany({
-        id: String(created.id), name: created.name, industry: created.sector || '',
-        hq_city: created.region || 'Unknown', hq_country: normalizeCountryName(created.country || ''),
-        lat: parseFloat(created.latitude) || 0, lng: parseFloat(created.longitude) || 0,
-        revenue_usd: parseFloat(created.revenue) || 0, employees: created.employees || 0,
-        confidence: created.confidence || 5, color: created.color || '#1e3a8a'
-      });
-      setNewCompany({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
-      onToggleAddForm();
-      toast.success(`Added ${created.name}`);
-    } catch { toast.error('Failed to add company'); }
-    finally { setIsAdding(false); }
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) setCountryDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  
 
   const totalCompanies = companies.length;
   const totalExecs = executives.length;
@@ -273,33 +225,6 @@ export default function CompanyList({ showAddForm, onToggleAddForm }: CompanyLis
           </div>
           <button onClick={() => clearDiscoveryStatus()} className="text-muted-foreground hover:text-foreground shrink-0"><X className="h-3 w-3" /></button>
         </div>
-      )}
-
-      {showAddForm && (
-        <form onSubmit={handleAddCompany} className="mx-2 mt-2 p-2.5 bg-muted/30 rounded-lg border border-border space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium">Add Company</span>
-            <button type="button" onClick={onToggleAddForm}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
-          </div>
-          <Input placeholder="Company name *" value={newCompany.name} onChange={e => setNewCompany({ ...newCompany, name: e.target.value })} className="h-7 text-xs" />
-          <div className="grid grid-cols-2 gap-1.5">
-            <Input placeholder="City" value={newCompany.hq_city} onChange={e => setNewCompany({ ...newCompany, hq_city: e.target.value })} className="h-7 text-xs" />
-            <div className="relative" ref={countryDropdownRef}>
-              <Input placeholder="Country" value={newCompany.hq_country} onChange={e => { setNewCompany({ ...newCompany, hq_country: e.target.value }); setCountryDropdownOpen(true); }} onFocus={() => setCountryDropdownOpen(true)} className="h-7 text-xs" />
-              {countryDropdownOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-32 overflow-auto">
-                  {COUNTRIES.filter(c => c.toLowerCase().includes(newCompany.hq_country.toLowerCase())).slice(0, 8).map(country => (
-                    <button key={country} type="button" onClick={() => { setNewCompany({ ...newCompany, hq_country: country }); setCountryDropdownOpen(false); }}
-                      className="w-full text-left px-2 py-1 text-xs hover:bg-muted/50">{country}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <Button type="submit" size="sm" className="w-full h-7 text-xs" disabled={isAdding}>
-            {isAdding ? 'Adding...' : 'Add Company'}
-          </Button>
-        </form>
       )}
 
       <ScrollArea className="flex-1">

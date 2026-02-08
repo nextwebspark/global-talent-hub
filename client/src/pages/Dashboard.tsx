@@ -9,6 +9,7 @@ import CompanyList from '@/components/layout/CompanyList';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
 import DataTable from '@/components/DataTable';
+import ImportModal from '@/components/layout/ImportModal';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
@@ -24,9 +25,10 @@ export default function Dashboard() {
 
   const [activeView, setActiveView] = useState<ViewMode>('map');
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importModalMode, setImportModalMode] = useState<'import' | 'add'>('import');
   const [rightPanelWidth, setRightPanelWidth] = useState(384);
   const [isResizingRight, setIsResizingRight] = useState(false);
-  const [showAddForm, setShowAddForm] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
 
   const [showMatchReview, setShowMatchReview] = useState(false);
@@ -236,8 +238,9 @@ export default function Dashboard() {
           activeView={activeView}
           onCommandPalette={() => setShowCommandPalette(true)}
           onExport={handleExport}
+          onImport={() => { setImportModalMode('import'); setShowImportModal(true); }}
           onEnrichAll={handleEnrichAll}
-          onAddCompany={() => setShowAddForm(!showAddForm)}
+          onAddCompany={() => { setImportModalMode('add'); setShowImportModal(true); }}
           onHome={() => setLocation('/')}
           isEnriching={isEnriching}
         />
@@ -246,7 +249,7 @@ export default function Dashboard() {
           {activeView === 'map' && (
             <div className="flex-1 relative">
               <MapComponent />
-              <CompanyList showAddForm={showAddForm} onToggleAddForm={() => setShowAddForm(false)} />
+              <CompanyList />
             </div>
           )}
 
@@ -287,6 +290,12 @@ export default function Dashboard() {
         onNavigate={setActiveView}
         onExport={handleExport}
         onEnrichAll={handleEnrichAll}
+      />
+
+      <ImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        mode={importModalMode}
       />
 
       {showMatchReview && (

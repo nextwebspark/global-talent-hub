@@ -8,13 +8,14 @@ interface TopBarProps {
   activeView: ViewMode;
   onCommandPalette: () => void;
   onExport: () => void;
+  onImport: () => void;
   onEnrichAll: () => void;
   onAddCompany: () => void;
   onHome: () => void;
   isEnriching: boolean;
 }
 
-export default function TopBar({ activeView, onCommandPalette, onExport, onEnrichAll, onAddCompany, onHome, isEnriching }: TopBarProps) {
+export default function TopBar({ activeView, onCommandPalette, onExport, onImport, onEnrichAll, onAddCompany, onHome, isEnriching }: TopBarProps) {
   const { currentProject, companies, executives } = useAppStore();
 
   return (
@@ -95,6 +96,21 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onEnric
             <TooltipContent side="bottom" className="text-xs">
               {isEnriching ? 'Enriching...' : 'Enrich all companies'}
             </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onImport}
+                className="h-7 w-7 p-0"
+                data-testid="topbar-import"
+              >
+                <Upload className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">Import data</TooltipContent>
           </Tooltip>
 
           <Tooltip>

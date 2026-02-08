@@ -39,7 +39,7 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
               className="w-8 h-8 rounded-lg flex items-center justify-center mb-4 hover:bg-sidebar-accent transition-colors"
               data-testid="sidebar-home"
             >
-              <img src={logoImage} alt="Home" className="w-5 h-5 object-contain" />
+              <img src={logoImage} alt="Home" className="w-5 h-5 object-contain brightness-[2] invert" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">Home</TooltipContent>

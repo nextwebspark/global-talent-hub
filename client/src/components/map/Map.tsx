@@ -1,13 +1,45 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
 import { useAppStore, type Executive } from '@/lib/store';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import logoImage from '@/assets/images/logo.png';
 
-// Fix for default Leaflet icon issues in React
 import L from 'leaflet';
+
+function useIsDarkMode() {
+  return useSyncExternalStore(
+    (cb) => {
+      const obs = new MutationObserver(cb);
+      obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      return () => obs.disconnect();
+    },
+    () => document.documentElement.classList.contains('dark')
+  );
+}
+
+const DARK_TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const LIGHT_TILES = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+function ReactiveTileLayer() {
+  const isDark = useIsDarkMode();
+  const map = useMap();
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+
+  useEffect(() => {
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    const layer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, { attribution: TILE_ATTRIBUTION });
+    layer.addTo(map);
+    tileLayerRef.current = layer;
+    return () => { if (tileLayerRef.current) map.removeLayer(tileLayerRef.current); };
+  }, [isDark, map]);
+
+  return null;
+}
 
 // Helper to check if coordinates are valid
 function isValidCoordinate(lat: number, lng: number): boolean {
@@ -231,7 +263,7 @@ export default function MapComponent() {
 
 
   return (
-    <div className="h-full w-full bg-slate-100 relative z-0">
+    <div className="h-full w-full bg-background relative z-0">
       <MapContainer 
         center={[20, 0]} 
         zoom={2} 
@@ -241,10 +273,7 @@ export default function MapComponent() {
         minZoom={2}
         worldCopyJump={true}
       >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        />
+        <ReactiveTileLayer />
         
         <MapUpdater />
 
@@ -344,7 +373,7 @@ export default function MapComponent() {
 
       {/* Logo in bottom right */}
       <div className="absolute bottom-4 right-4 z-[400]">
-        <img src={logoImage} alt="ALAC Partners" className="h-48 w-auto opacity-30 mix-blend-multiply" />
+        <img src={logoImage} alt="ALAC Partners" className="h-48 w-auto opacity-20 dark:brightness-200 dark:contrast-50" />
       </div>
 
       {/* Color Picker Overlay */}

@@ -379,30 +379,13 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   // Company view - Per §4: never show nothing
   if (!company) {
     return (
-      <div className="h-full flex shrink-0 relative z-20">
-        {onToggle && (
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-          >
-            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      <div className="h-full bg-background border-l border-border flex flex-col items-center justify-center">
+        <div className="flex flex-col items-center gap-3 p-6 text-center">
+          <AlertCircle className="h-10 w-10 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No company data available</p>
+          <Button variant="ghost" size="sm" onClick={() => selectCompany(null)}>
+            <X className="h-4 w-4 mr-2" /> Clear Selection
           </Button>
-        )}
-        <div 
-          className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
-          style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-        >
-          {isOpen && (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
-              <AlertCircle className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No company data available</p>
-              <Button variant="ghost" size="sm" onClick={() => selectCompany(null)}>
-                <X className="h-4 w-4 mr-2" /> Clear Selection
-              </Button>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -417,25 +400,8 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   const confidenceInfo = getConfidenceLabel(company.confidence);
 
   return (
-    <div className="h-full flex shrink-0 relative z-20 animate-in slide-in-from-right-10 duration-300">
-      {onToggle && (
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={onToggle}
-          className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background"
-          aria-label={isOpen ? "Collapse panel" : "Expand panel"}
-          data-testid="button-toggle-right-panel"
-        >
-          {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
-      )}
-      <div 
-        className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
-        style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-      >
-      
-      <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+    <div className="h-full bg-background border-l border-border flex flex-col overflow-hidden animate-in slide-in-from-right-5 duration-200">
+      <div className="flex flex-col h-full">
         {/* §7.1 Company Header - Sticky */}
         <div className="sticky top-0 z-10 p-4 border-b border-border bg-background/95 backdrop-blur-sm">
           <div className="flex justify-between items-start mb-2">
@@ -780,7 +746,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
             </p>
           )}
         </div>
-      </div>
       </div>
     </div>
   );

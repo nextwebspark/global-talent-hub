@@ -359,35 +359,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
 
   // Per §2: RHP hidden ONLY when no entity is selected
   if (!selectedCompanyId && !selectedExecutiveId) {
-    if (onToggle) {
-      return (
-        <div 
-          className="h-full flex shrink-0 relative z-20"
-        >
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggle}
-            className="absolute -left-8 top-4 h-8 w-8 rounded-r-none rounded-l-md border border-r-0 border-border shadow-md z-50 flex items-center justify-center bg-background hover:bg-accent"
-            aria-label={isOpen ? "Collapse panel" : "Expand panel"}
-            data-testid="button-toggle-right-panel"
-          >
-            {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-          <div 
-            className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
-            style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}
-          >
-            {isOpen && (
-              <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-                <Building2 className="h-12 w-12 text-muted-foreground/20 mb-4" />
-                <p className="text-sm text-muted-foreground font-serif">Select a company on the map to view details</p>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
     return null;
   }
 

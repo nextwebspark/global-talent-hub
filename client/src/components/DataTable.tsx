@@ -29,10 +29,10 @@ import {
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import {
-  ArrowUpDown, ArrowUp, ArrowDown, GripVertical,
+  ArrowUpDown, ArrowUp, ArrowDown,
   Columns3, Group, ChevronRight, ChevronDown,
-  Rows3, Maximize2, Minimize2, Eye, EyeOff,
-  Settings2, Minus, Trash2,
+  Rows3, Maximize2, Minimize2,
+  Minus, Trash2, X,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { toast } from 'sonner';
@@ -73,14 +73,8 @@ const densityPadding: Record<DensityMode, string> = {
 
 const columnHelper = createColumnHelper<TableRowData>();
 
-function DraggableHeader({ header, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDropTarget, density }: {
+function ResizableHeader({ header, density }: {
   header: Header<TableRowData, unknown>;
-  onDragStart: (e: React.DragEvent, headerId: string) => void;
-  onDragOver: (e: React.DragEvent, headerId: string) => void;
-  onDrop: (e: React.DragEvent, headerId: string) => void;
-  onDragEnd: () => void;
-  isDragging: boolean;
-  isDropTarget: boolean;
   density: DensityMode;
 }) {
   const resizeHandler = header.getResizeHandler();
@@ -89,23 +83,15 @@ function DraggableHeader({ header, onDragStart, onDragOver, onDrop, onDragEnd, i
     <th
       key={header.id}
       className={`relative select-none text-left font-medium text-xs whitespace-nowrap border-r border-border/40 bg-muted/50 group
-        ${isDragging ? 'opacity-50' : ''}
-        ${isDropTarget ? 'bg-primary/10 border-l-2 border-l-primary' : ''}
         ${header.column.getCanSort() ? 'cursor-pointer hover:bg-muted/70' : ''}
       `}
       style={{ width: header.getSize(), minWidth: 60 }}
-      draggable={!header.column.getIsGrouped()}
-      onDragStart={(e) => onDragStart(e, header.id)}
-      onDragOver={(e) => onDragOver(e, header.id)}
-      onDrop={(e) => onDrop(e, header.id)}
-      onDragEnd={onDragEnd}
       data-testid={`th-${header.id}`}
     >
       <div
         className={`flex items-center gap-1 ${densityPadding[density]}`}
         onClick={header.column.getToggleSortingHandler()}
       >
-        <GripVertical className="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground shrink-0 cursor-grab" />
         <span className="truncate">
           {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
         </span>
@@ -118,12 +104,22 @@ function DraggableHeader({ header, onDragStart, onDragOver, onDrop, onDragEnd, i
 
       {header.column.getCanResize() && (
         <div
-          onMouseDown={resizeHandler}
-          onTouchStart={resizeHandler}
-          onDoubleClick={() => header.column.resetSize()}
-          className={`absolute top-0 right-0 w-1 h-full cursor-col-resize select-none touch-none 
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            resizeHandler(e);
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            resizeHandler(e);
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            header.column.resetSize();
+          }}
+          className={`absolute top-0 right-0 w-[5px] h-full cursor-col-resize select-none touch-none z-10
             hover:bg-primary/60 active:bg-primary
-            ${header.column.getIsResizing() ? 'bg-primary w-0.5' : ''}
+            ${header.column.getIsResizing() ? 'bg-primary' : 'bg-transparent'}
           `}
           data-testid={`resize-${header.id}`}
         />
@@ -148,9 +144,10 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const [density, setDensity] = useState<DensityMode>('comfortable');
-  const [draggedColumn, setDraggedColumn] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [rowHighlights, setRowHighlights] = useState<Record<string, string>>({});
+
+  const [dragSelectedRows, setDragSelectedRows] = useState<Set<string>>(new Set());
+  const [isDragSelecting, setIsDragSelecting] = useState(false);
+  const dragStartRowRef = useRef<string | null>(null);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -180,30 +177,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
   const columns = useMemo(() => {
     const cols = [
-      columnHelper.display({
-        id: 'selection',
-        header: ({ table }) => (
-          <div className="px-1">
-            <input
-              type="checkbox"
-              className="rounded border-border bg-background"
-              checked={table.getIsAllPageRowsSelected()}
-              onChange={table.getToggleAllPageRowsSelectedHandler()}
-            />
-          </div>
-        ),
-        cell: ({ row }) => (
-          <div className="px-1">
-            <input
-              type="checkbox"
-              className="rounded border-border bg-background"
-              checked={row.getIsSelected()}
-              onChange={row.getToggleSelectedHandler()}
-            />
-          </div>
-        ),
-        size: 30,
-      }),
       columnHelper.accessor('country', {
         header: 'Country',
         cell: groupedCell,
@@ -261,8 +234,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     return cols;
   }, [customFieldKeys]);
 
-  const [rowSelection, setRowSelection] = useState({});
-
   const table = useReactTable({
     data,
     columns,
@@ -273,7 +244,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       grouping,
       expanded,
       columnSizing,
-      rowSelection,
     },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
@@ -281,89 +251,98 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     onGroupingChange: setGrouping,
     onExpandedChange: setExpanded,
     onColumnSizingChange: setColumnSizing,
-    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     columnResizeMode: 'onChange',
     enableMultiSort: true,
-    enableRowSelection: true,
   });
 
-  const handleDragStart = useCallback((e: React.DragEvent, headerId: string) => {
-    setDraggedColumn(headerId);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', headerId);
+  const allRowIds = useMemo(() => {
+    return table.getRowModel().rows
+      .filter(r => !r.getIsGrouped() && r.original)
+      .map(r => r.original!.id);
+  }, [table.getRowModel().rows]);
+
+  const handleDragSelectStart = useCallback((rowId: string, e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-trash-btn]')) return;
+    setIsDragSelecting(true);
+    dragStartRowRef.current = rowId;
+    setDragSelectedRows(new Set([rowId]));
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, headerId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (headerId !== draggedColumn) {
-      setDropTarget(headerId);
-    }
-  }, [draggedColumn]);
+  const handleDragSelectMove = useCallback((rowId: string) => {
+    if (!isDragSelecting || !dragStartRowRef.current) return;
+    const startIdx = allRowIds.indexOf(dragStartRowRef.current);
+    const currentIdx = allRowIds.indexOf(rowId);
+    if (startIdx === -1 || currentIdx === -1) return;
+    const minIdx = Math.min(startIdx, currentIdx);
+    const maxIdx = Math.max(startIdx, currentIdx);
+    const selected = new Set(allRowIds.slice(minIdx, maxIdx + 1));
+    setDragSelectedRows(selected);
+  }, [isDragSelecting, allRowIds]);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain');
-    if (sourceId && sourceId !== targetId) {
-      const newOrder = [...columnOrder];
-      const sourceIndex = newOrder.indexOf(sourceId);
-      const targetIndex = newOrder.indexOf(targetId);
-      if (sourceIndex !== -1 && targetIndex !== -1) {
-        newOrder.splice(sourceIndex, 1);
-        newOrder.splice(targetIndex, 0, sourceId);
-        setColumnOrder(newOrder);
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (isDragSelecting) {
+        setIsDragSelecting(false);
+        dragStartRowRef.current = null;
       }
-    }
-    setDraggedColumn(null);
-    setDropTarget(null);
-  }, [columnOrder]);
+    };
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => window.removeEventListener('mouseup', handleMouseUp);
+  }, [isDragSelecting]);
 
-  const handleDragEnd = useCallback(() => {
-    setDraggedColumn(null);
-    setDropTarget(null);
-  }, []);
-
-  const handleRowHighlight = useCallback((rowId: string, color: string) => {
-    setRowHighlights(prev => {
-      const next = { ...prev };
-      if (next[rowId] === color) {
-        delete next[rowId];
+  const handleDeleteRow = useCallback((original: TableRowData) => {
+    if (window.confirm(`Are you sure you want to delete this record?`)) {
+      if (original.isCompanyRow) {
+        deleteCompany(original.companyId);
+        toast.success(`Deleted ${original.companyName}`);
       } else {
-        next[rowId] = color;
+        deleteExecutive(original.id);
+        toast.success(`Deleted ${original.name || 'executive'}`);
       }
-      return next;
-    });
-  }, []);
+    }
+  }, [deleteCompany, deleteExecutive]);
 
-  const highlightColors = [
-    { name: 'Yellow', value: '#fef9c3' },
-    { name: 'Green', value: '#dcfce7' },
-    { name: 'Blue', value: '#dbeafe' },
-    { name: 'Red', value: '#fecaca' },
-    { name: 'Purple', value: '#f3e8ff' },
-    { name: 'Orange', value: '#ffedd5' },
-  ];
+  const handleDeleteSelected = useCallback(() => {
+    const count = dragSelectedRows.size;
+    if (count === 0) return;
+    if (window.confirm(`Are you sure you want to delete ${count} record${count > 1 ? 's' : ''}?`)) {
+      const rows = table.getRowModel().rows;
+      dragSelectedRows.forEach(id => {
+        const row = rows.find(r => r.original?.id === id);
+        if (row?.original) {
+          if (row.original.isCompanyRow) {
+            deleteCompany(row.original.companyId);
+          } else {
+            deleteExecutive(row.original.id);
+          }
+        }
+      });
+      setDragSelectedRows(new Set());
+      toast.success(`Deleted ${count} record${count > 1 ? 's' : ''}`);
+    }
+  }, [dragSelectedRows, table, deleteCompany, deleteExecutive]);
 
   const getRowStyles = (row: Row<TableRowData>) => {
     const original = row.original;
     if (!original) return {};
-    
+
     const isSelected = selectedCompanyId === original.companyId || selectedExecutiveId === original.id;
-    const highlightColor = rowHighlights[original.id];
-    
+    const isDragSelected = dragSelectedRows.has(original.id);
+
+    if (isDragSelected) {
+      return {
+        backgroundColor: 'hsl(var(--primary) / 0.12)',
+        borderLeft: '3px solid hsl(var(--primary))',
+      };
+    }
     if (isSelected) {
       return {
         backgroundColor: `${original.companyColor}20`,
         borderLeft: `3px solid ${original.companyColor}`,
-      };
-    }
-    if (highlightColor) {
-      return {
-        backgroundColor: highlightColor,
       };
     }
     return {};
@@ -376,8 +355,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 p-2 border-b border-border bg-muted/20 flex-wrap">
+    <div className="flex flex-col h-full relative">
+      <div className="flex items-center gap-1 p-2 border-b border-border bg-muted/20 flex-wrap shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-group-by">
@@ -481,58 +460,31 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           </>
         )}
 
-        {Object.keys(rowSelection).length > 0 && (
-          <Button
-            variant="destructive"
-            size="sm"
-            className="h-7 text-xs ml-2"
-            onClick={() => {
-              if (window.confirm(`Are you sure you want to delete ${Object.keys(rowSelection).length} records?`)) {
-                Object.keys(rowSelection).forEach(rowId => {
-                  const row = table.getRowModel().rowsById[rowId];
-                  if (row && row.original) {
-                    if (row.original.isCompanyRow) {
-                      deleteCompany(row.original.companyId);
-                    } else {
-                      deleteExecutive(row.original.id);
-                    }
-                  }
-                });
-                setRowSelection({});
-                toast.success('Records deleted');
-              }
-            }}
-          >
-            <Trash2 className="h-3 w-3 mr-1" />
-            Delete Selected ({Object.keys(rowSelection).length})
-          </Button>
-        )}
-
         <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
           {table.getRowModel().rows.length} rows
         </span>
       </div>
 
-      <div ref={tableContainerRef} className="flex-1 overflow-auto border-t border-border/20 shadow-inner">
-        <div style={{ width: table.getTotalSize(), minWidth: '100%' }}>
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0 z-20 bg-background shadow-sm">
-              {table.getHeaderGroups().map(headerGroup => (
-                <tr key={headerGroup.id} className="shadow-sm">
+      <div
+        ref={tableContainerRef}
+        className="flex-1 overflow-x-auto overflow-y-auto"
+        style={{ userSelect: isDragSelecting ? 'none' : 'auto' }}
+      >
+        <table
+          className="text-xs border-collapse"
+          style={{ width: Math.max(table.getTotalSize(), 0), minWidth: '100%' }}
+        >
+          <thead className="sticky top-0 z-20">
+            {table.getHeaderGroups().map(headerGroup => (
+              <tr key={headerGroup.id}>
                 {headerGroup.headers.map(header => (
-                  <DraggableHeader
+                  <ResizableHeader
                     key={header.id}
                     header={header}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
-                    isDragging={draggedColumn === header.id}
-                    isDropTarget={dropTarget === header.id}
                     density={density}
                   />
                 ))}
-                <th className="w-8 bg-muted/50 border-b border-border/40" />
+                <th className="w-10 bg-muted/50 sticky right-0 z-10 border-l border-border/40" />
               </tr>
             ))}
           </thead>
@@ -542,22 +494,32 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               const original = row.original;
               const selected = !isGrouped && isRowSelected(row);
               const style = !isGrouped ? getRowStyles(row) : {};
-              const highlightColor = original ? rowHighlights[original.id] : undefined;
+              const isDragSelected = original ? dragSelectedRows.has(original.id) : false;
 
               return (
                 <tr
                   key={row.id}
-                  className={`border-b border-border/20 transition-colors
+                  className={`border-b border-border/20 transition-colors group/row
                     ${isGrouped ? 'bg-muted/30 font-medium cursor-pointer' : 'cursor-pointer'}
-                    ${selected ? '' : 'hover:bg-muted/20'}
-                    ${rowIndex % 2 === 0 && !selected && !highlightColor && !isGrouped ? 'bg-background' : ''}
-                    ${rowIndex % 2 === 1 && !selected && !highlightColor && !isGrouped ? 'bg-muted/10' : ''}
+                    ${!selected && !isDragSelected ? 'hover:bg-muted/20' : ''}
+                    ${rowIndex % 2 === 0 && !selected && !isDragSelected && !isGrouped ? 'bg-background' : ''}
+                    ${rowIndex % 2 === 1 && !selected && !isDragSelected && !isGrouped ? 'bg-muted/10' : ''}
                   `}
                   style={style}
+                  onMouseDown={(e) => {
+                    if (!isGrouped && original) {
+                      handleDragSelectStart(original.id, e);
+                    }
+                  }}
+                  onMouseEnter={() => {
+                    if (!isGrouped && original) {
+                      handleDragSelectMove(original.id);
+                    }
+                  }}
                   onClick={() => {
                     if (isGrouped) {
                       row.toggleExpanded();
-                    } else if (original) {
+                    } else if (original && !isDragSelecting && dragSelectedRows.size <= 1) {
                       onRowClick(original);
                     }
                   }}
@@ -584,7 +546,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                       </td>
                     );
                   })}
-                  <td className="w-8 border-r border-border/20">
+                  <td className="w-10 sticky right-0 z-10 bg-inherit border-l border-border/20">
                     {isGrouped && (
                       <button
                         className="w-full flex items-center justify-center p-1 text-muted-foreground hover:text-foreground"
@@ -595,84 +557,48 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                       </button>
                     )}
                     {!isGrouped && original && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="w-full flex items-center justify-center opacity-0 hover:opacity-100 focus:opacity-100 group-hover:opacity-100 transition-opacity p-1"
-                            onClick={(e) => e.stopPropagation()}
-                            data-testid={`row-actions-${original.id}`}
-                          >
-                            <div className={`w-3 h-3 rounded-sm border border-border/60 ${highlightColor ? '' : 'bg-transparent'}`} style={highlightColor ? { backgroundColor: highlightColor } : {}} />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-36">
-                          <DropdownMenuLabel className="text-xs">Highlight Row</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <div className="flex gap-1 px-2 py-1">
-                            {highlightColors.map(color => (
-                              <button
-                                key={color.value}
-                                className={`w-5 h-5 rounded-sm border transition-all ${highlightColor === color.value ? 'border-primary ring-1 ring-primary scale-110' : 'border-border/60 hover:scale-110'}`}
-                                style={{ backgroundColor: color.value }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRowHighlight(original.id, color.value);
-                                }}
-                                title={color.name}
-                                data-testid={`highlight-${color.name.toLowerCase()}-${original.id}`}
-                              />
-                            ))}
-                          </div>
-                          {highlightColor && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                data-testid={`clear-highlight-${original.id}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setRowHighlights(prev => {
-                                    const next = { ...prev };
-                                    delete next[original.id];
-                                    return next;
-                                  });
-                                }}
-                              >
-                                <Minus className="h-3 w-3 mr-1" />
-                                Clear Highlight
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            data-testid={`delete-record-${original.id}`}
-                            className="text-destructive focus:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Are you sure you want to delete this ${original.isCompanyRow ? 'company' : 'executive'}?`)) {
-                                if (original.isCompanyRow) {
-                                  deleteCompany(original.companyId);
-                                  toast.success(`Deleted ${original.companyName}`);
-                                } else {
-                                  deleteExecutive(original.id);
-                                  toast.success(`Deleted ${original.name || 'executive'}`);
-                                }
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <button
+                        data-trash-btn
+                        className="w-full flex items-center justify-center p-1 text-muted-foreground/0 group-hover/row:text-muted-foreground hover:!text-destructive transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteRow(original);
+                        }}
+                        data-testid={`delete-row-${original.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     )}
                   </td>
                 </tr>
               );
             })}
           </tbody>
-          </table>
-        </div>
+        </table>
       </div>
+
+      {dragSelectedRows.size > 1 && !isDragSelecting && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-destructive text-destructive-foreground shadow-lg rounded-lg px-4 py-2 flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-200">
+          <span className="text-sm font-medium">{dragSelectedRows.size} records selected</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={handleDeleteSelected}
+            data-testid="button-delete-selected"
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Delete
+          </Button>
+          <button
+            className="ml-1 hover:bg-destructive-foreground/20 rounded p-0.5 transition-colors"
+            onClick={() => setDragSelectedRows(new Set())}
+            data-testid="button-clear-selection"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

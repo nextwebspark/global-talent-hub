@@ -1,6 +1,5 @@
 import { Map, Table2, Upload, Search, Settings, Home, Zap } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import logoImage from '@/assets/images/logo.png';
 
 export type ViewMode = 'map' | 'table';
 
@@ -25,10 +24,10 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
           <TooltipTrigger asChild>
             <button
               onClick={onHome}
-              className="w-8 h-8 rounded-lg flex items-center justify-center mb-4 hover:bg-sidebar-accent transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center mb-4 hover:bg-sidebar-accent transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground"
               data-testid="sidebar-home"
             >
-              <img src={logoImage} alt="Home" className="w-5 h-5 object-contain brightness-[2] invert" />
+              <Home className="w-4 h-4" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">Home</TooltipContent>

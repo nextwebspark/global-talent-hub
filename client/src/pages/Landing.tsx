@@ -5,8 +5,7 @@ import { useSearch, useSearchHistory } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles, Bot, Upload, Table2, Plus, Trash2, FileSpreadsheet, X } from 'lucide-react';
-import logoImage from '@/assets/images/logo.png';
+import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles, Bot, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
@@ -455,8 +454,27 @@ export default function Landing() {
     careerSummary: 'Career Summary', remunerationNotes: 'Remuneration', availability: 'Availability',
   };
 
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    if (next) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-background relative overflow-hidden">
+      <button
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 z-20 w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+        data-testid="landing-theme-toggle"
+      >
+        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      </button>
       <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
         <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
       </div>
@@ -467,10 +485,6 @@ export default function Landing() {
         transition={{ duration: 0.8, ease: "easeOut" }}
         className="z-10 w-full max-w-3xl px-6 text-center"
       >
-        <div className="mb-6 flex justify-center">
-          <img src={logoImage} alt="ALAC Partners" className="h-24 w-auto dark:brightness-200 dark:contrast-75" />
-        </div>
-        
         <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-foreground mb-3">
           Global Talent Map
         </h1>

@@ -129,7 +129,7 @@ function ResizableHeader({ header, density }: {
 }
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
-  const { deleteCompany, deleteExecutive } = useAppStore();
+  const { deleteCompany, deleteExecutive, executives: allExecutives } = useAppStore();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     email: false,
@@ -323,37 +323,44 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     };
   }, [isDragSelecting]);
 
-  const handleDeleteRow = useCallback((original: TableRowData) => {
-    if (window.confirm(`Are you sure you want to delete this record?`)) {
-      if (original.isCompanyRow) {
+  const deleteRowAndCleanup = useCallback((original: TableRowData, deletedExecIds: Set<string>) => {
+    if (original.isCompanyRow) {
+      deleteCompany(original.companyId);
+    } else {
+      deleteExecutive(original.id);
+      deletedExecIds.add(original.id);
+      const siblingsLeft = allExecutives.filter(
+        e => e.company_id === original.companyId && !deletedExecIds.has(e.id)
+      );
+      if (siblingsLeft.length === 0) {
         deleteCompany(original.companyId);
-        toast.success(`Deleted ${original.companyName}`);
-      } else {
-        deleteExecutive(original.id);
-        toast.success(`Deleted ${original.name || 'executive'}`);
       }
     }
-  }, [deleteCompany, deleteExecutive]);
+  }, [allExecutives, deleteCompany, deleteExecutive]);
+
+  const handleDeleteRow = useCallback((original: TableRowData) => {
+    if (window.confirm(`Are you sure you want to delete this record?`)) {
+      deleteRowAndCleanup(original, new Set());
+      toast.success(`Deleted ${original.name || original.companyName}`);
+    }
+  }, [deleteRowAndCleanup]);
 
   const handleDeleteSelected = useCallback(() => {
     const count = dragSelectedRows.size;
     if (count === 0) return;
     if (window.confirm(`Are you sure you want to delete ${count} record${count > 1 ? 's' : ''}?`)) {
       const rows = table.getRowModel().rows;
+      const deletedExecIds = new Set<string>();
       dragSelectedRows.forEach(id => {
         const row = rows.find(r => r.original?.id === id);
         if (row?.original) {
-          if (row.original.isCompanyRow) {
-            deleteCompany(row.original.companyId);
-          } else {
-            deleteExecutive(row.original.id);
-          }
+          deleteRowAndCleanup(row.original, deletedExecIds);
         }
       });
       setDragSelectedRows(new Set());
       toast.success(`Deleted ${count} record${count > 1 ? 's' : ''}`);
     }
-  }, [dragSelectedRows, table, deleteCompany, deleteExecutive]);
+  }, [dragSelectedRows, table, deleteRowAndCleanup]);
 
   const getRowStyles = (row: Row<TableRowData>) => {
     const original = row.original;

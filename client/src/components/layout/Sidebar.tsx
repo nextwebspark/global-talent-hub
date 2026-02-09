@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { Map, Table2, Upload, Search, Settings, Sun, Moon, Home, Zap } from 'lucide-react';
+import { Map, Table2, Upload, Search, Settings, Home, Zap } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import logoImage from '@/assets/images/logo.png';
 
@@ -14,16 +13,6 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeView, onViewChange, onCommandPalette, onHome, onImport }: SidebarProps) {
-  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
-
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDark]);
-
   const navItems = [
     { id: 'map' as const, icon: Map, label: 'Map View', shortcut: '1' },
     { id: 'table' as const, icon: Table2, label: 'Table View', shortcut: '2' },
@@ -87,21 +76,6 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
         })}
 
         <div className="flex-1" />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => setIsDark(!isDark)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-              data-testid="sidebar-theme"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">
-            {isDark ? 'Light mode' : 'Dark mode'}
-          </TooltipContent>
-        </Tooltip>
       </TooltipProvider>
     </div>
   );

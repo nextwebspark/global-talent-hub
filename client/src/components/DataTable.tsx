@@ -32,8 +32,10 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown, GripVertical,
   Columns3, Group, ChevronRight, ChevronDown,
   Rows3, Maximize2, Minimize2, Eye, EyeOff,
-  Settings2, Minus,
+  Settings2, Minus, Trash2,
 } from 'lucide-react';
+import { useAppStore } from '@/lib/store';
+import { toast } from 'sonner';
 
 export interface TableRowData {
   id: string;
@@ -131,6 +133,7 @@ function DraggableHeader({ header, onDragStart, onDragOver, onDrop, onDragEnd, i
 }
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
+  const { deleteCompany, deleteExecutive } = useAppStore();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     email: false,
@@ -582,6 +585,33 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                               </DropdownMenuItem>
                             </>
                           )}
+                          <DropdownMenuSeparator />
+                          {!original.isCompanyRow && (
+                            <DropdownMenuItem
+                              data-testid={`delete-executive-${original.id}`}
+                              className="text-destructive focus:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteExecutive(original.id);
+                                toast.success(`Deleted ${original.name || 'executive'}`);
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 mr-1" />
+                              Delete Executive
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            data-testid={`delete-company-${original.id}`}
+                            className="text-destructive focus:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteCompany(original.companyId);
+                              toast.success(`Deleted ${original.companyName}`);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Delete Company
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}

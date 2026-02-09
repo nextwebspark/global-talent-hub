@@ -232,6 +232,13 @@ export async function registerRoutes(
 
       const mappedFieldHeaders = new Set(Object.values(mappings));
 
+      const parseNumeric = (raw: any): number | null => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).replace(/[^0-9.\-]/g, '');
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      };
+
       for (const record of records) {
         try {
           const name = safeStr(mappings.name ? record[mappings.name] : null);
@@ -239,6 +246,10 @@ export async function registerRoutes(
           const companyName = safeStr(mappings.company ? record[mappings.company] : null);
           const country = safeStr(mappings.country ? record[mappings.country] : null);
           const normalizedCountry = country ? normalizeCountryName(country) : null;
+          const city = safeStr(mappings.city ? record[mappings.city] : null);
+          const sector = safeStr(mappings.sector ? record[mappings.sector] : null);
+          const revenueRaw = parseNumeric(mappings.revenue ? record[mappings.revenue] : null);
+          const employeesRaw = parseNumeric(mappings.employees ? record[mappings.employees] : null);
           const email = safeStr(mappings.email ? record[mappings.email] : null);
           const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
           const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
@@ -263,14 +274,25 @@ export async function registerRoutes(
             const lowerName = companyName.toLowerCase();
             if (companyMap.has(lowerName)) {
               companyId = companyMap.get(lowerName)!;
+              const companyUpdates: Record<string, any> = {};
+              if (revenueRaw !== null) companyUpdates.revenue = String(revenueRaw);
+              if (employeesRaw !== null) companyUpdates.employees = Math.round(employeesRaw);
+              if (city) companyUpdates.region = city;
+              if (sector) companyUpdates.sector = sector;
+              if (Object.keys(companyUpdates).length > 0) {
+                await storage.enrichCompanyEmptyFields(companyId, companyUpdates);
+              }
             } else {
               const countryForCoords = normalizedCountry || 'Unknown';
-              const coords = applyCoordinateFallback({ country: countryForCoords });
+              const coords = applyCoordinateFallback({ country: countryForCoords, city: city || undefined });
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: companyName,
                 country: countryForCoords,
-                sector: null,
+                sector: sector,
                 businessType: null,
+                region: city,
+                revenue: revenueRaw !== null ? String(revenueRaw) : null,
+                employees: employeesRaw !== null ? Math.round(employeesRaw) : null,
                 searchQueryId,
                 latitude: coords.latitude ? String(coords.latitude) : null,
                 longitude: coords.longitude ? String(coords.longitude) : null,
@@ -1661,6 +1683,13 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       const mappedFieldHeaders = new Set(Object.values(mappings).filter(Boolean));
 
+      const parseNumeric = (raw: any): number | null => {
+        if (raw === null || raw === undefined) return null;
+        const s = String(raw).replace(/[^0-9.\-]/g, '');
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      };
+
       for (const record of records) {
         try {
           const execName = safeStr(mappings.name ? record[mappings.name] : null);
@@ -1668,6 +1697,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           const companyName = safeStr(mappings.company ? record[mappings.company] : null);
           const country = safeStr(mappings.country ? record[mappings.country] : null);
           const normalizedCountry = country ? normalizeCountryName(country) : null;
+          const city = safeStr(mappings.city ? record[mappings.city] : null);
+          const sector = safeStr(mappings.sector ? record[mappings.sector] : null);
+          const revenueRaw = parseNumeric(mappings.revenue ? record[mappings.revenue] : null);
+          const employeesRaw = parseNumeric(mappings.employees ? record[mappings.employees] : null);
           const email = safeStr(mappings.email ? record[mappings.email] : null);
           const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
           const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
@@ -1692,14 +1725,25 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
           if (companyMap.has(lowerName)) {
             companyId = companyMap.get(lowerName)!;
+            const companyUpdates: Record<string, any> = {};
+            if (revenueRaw !== null) companyUpdates.revenue = String(revenueRaw);
+            if (employeesRaw !== null) companyUpdates.employees = Math.round(employeesRaw);
+            if (city) companyUpdates.region = city;
+            if (sector) companyUpdates.sector = sector;
+            if (Object.keys(companyUpdates).length > 0) {
+              await storage.enrichCompanyEmptyFields(companyId, companyUpdates);
+            }
           } else {
             const countryForCoords = normalizedCountry || 'Unknown';
-            const coords = applyCoordinateFallback({ country: countryForCoords });
+            const coords = applyCoordinateFallback({ country: countryForCoords, city: city || undefined });
             const newCompany = await storage.createCompanyFromDiscovery({
               name: resolvedCompanyName,
               country: countryForCoords,
-              sector: null,
+              sector: sector,
               businessType: null,
+              region: city,
+              revenue: revenueRaw !== null ? String(revenueRaw) : null,
+              employees: employeesRaw !== null ? Math.round(employeesRaw) : null,
               searchQueryId,
               latitude: coords.latitude ? String(coords.latitude) : null,
               longitude: coords.longitude ? String(coords.longitude) : null,

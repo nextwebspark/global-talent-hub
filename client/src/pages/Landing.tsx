@@ -61,6 +61,27 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'country of origin', 'home country', 'operating country', 'jurisdiction',
     'country/region', 'loc', 'city/country', 'headquartered'
   ],
+  city: [
+    'city', 'hq city', 'headquarters city', 'town', 'municipality', 'metro',
+    'metropolitan', 'urban area', 'city/town', 'office city', 'base city'
+  ],
+  sector: [
+    'sector', 'industry', 'vertical', 'segment', 'business type', 'business sector',
+    'industry sector', 'field', 'domain', 'category', 'classification', 'niche',
+    'market segment', 'business area', 'activity', 'primary activity'
+  ],
+  revenue: [
+    'revenue', 'annual revenue', 'total revenue', 'turnover', 'sales', 'annual sales',
+    'gross revenue', 'net revenue', 'revenue usd', 'revenue ($)', 'revenue (usd)',
+    'annual turnover', 'yearly revenue', 'company revenue', 'total sales',
+    'fiscal revenue', 'top line', 'income'
+  ],
+  employees: [
+    'employees', 'employee count', 'headcount', 'staff count', 'workforce',
+    'number of employees', 'team size', 'staff size', 'total employees',
+    'employee number', 'no of employees', 'num employees', 'people count',
+    'fte', 'full time employees', 'personnel count', 'size'
+  ],
   email: [
     'email', 'e-mail', 'email address', 'e-mail address', 'mail', 'email id',
     'contact email', 'work email', 'business email', 'corporate email',
@@ -450,6 +471,7 @@ export default function Landing() {
 
   const FIELD_LABELS: Record<string, string> = {
     name: 'Name', company: 'Company', title: 'Title', country: 'Country',
+    city: 'City', sector: 'Sector', revenue: 'Revenue', employees: 'Employees',
     email: 'Email', phone: 'Phone', linkedin: 'LinkedIn', notes: 'Notes',
     careerSummary: 'Career Summary', remunerationNotes: 'Remuneration', availability: 'Availability',
   };
@@ -845,15 +867,20 @@ export default function Landing() {
                                 data-testid={`mapping-select-${idx}`}
                               >
                                 <option value="">-- skip --</option>
-                                {Object.entries(FIELD_LABELS).map(([key, label]) => (
-                                  <option 
-                                    key={key} 
-                                    value={key}
-                                    disabled={!!importPreview.mappings[key] && importPreview.mappings[key] !== header}
-                                  >
-                                    {label}
-                                  </option>
-                                ))}
+                                <optgroup label="Executive Fields">
+                                  {['name', 'title', 'email', 'phone', 'linkedin', 'notes', 'careerSummary', 'remunerationNotes', 'availability'].map(key => (
+                                    <option key={key} value={key} disabled={!!importPreview.mappings[key] && importPreview.mappings[key] !== header}>
+                                      {FIELD_LABELS[key]}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="Company Fields">
+                                  {['company', 'country', 'city', 'sector', 'revenue', 'employees'].map(key => (
+                                    <option key={key} value={key} disabled={!!importPreview.mappings[key] && importPreview.mappings[key] !== header}>
+                                      {FIELD_LABELS[key]}
+                                    </option>
+                                  ))}
+                                </optgroup>
                               </select>
                             </div>
                           );

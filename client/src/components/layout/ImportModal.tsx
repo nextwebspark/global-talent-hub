@@ -39,6 +39,27 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'country of origin', 'home country', 'operating country', 'jurisdiction',
     'country/region', 'loc', 'city/country', 'headquartered'
   ],
+  city: [
+    'city', 'hq city', 'headquarters city', 'town', 'municipality', 'metro',
+    'metropolitan', 'urban area', 'city/town', 'office city', 'base city'
+  ],
+  sector: [
+    'sector', 'industry', 'vertical', 'segment', 'business type', 'business sector',
+    'industry sector', 'field', 'domain', 'category', 'classification', 'niche',
+    'market segment', 'business area', 'activity', 'primary activity'
+  ],
+  revenue: [
+    'revenue', 'annual revenue', 'total revenue', 'turnover', 'sales', 'annual sales',
+    'gross revenue', 'net revenue', 'revenue usd', 'revenue ($)', 'revenue (usd)',
+    'annual turnover', 'yearly revenue', 'company revenue', 'total sales',
+    'fiscal revenue', 'top line', 'income'
+  ],
+  employees: [
+    'employees', 'employee count', 'headcount', 'staff count', 'workforce',
+    'number of employees', 'team size', 'staff size', 'total employees',
+    'employee number', 'no of employees', 'num employees', 'people count',
+    'fte', 'full time employees', 'personnel count', 'size'
+  ],
   email: [
     'email', 'e-mail', 'email address', 'e-mail address', 'mail', 'email id',
     'contact email', 'work email', 'business email', 'corporate email',
@@ -491,17 +512,25 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                           data-testid={`mapping-select-${idx}`}
                         >
                           <option value="">-- Custom Field (keep as-is) --</option>
-                          <option value="name" disabled={!!importPreview.mappings.name && importPreview.mappings.name !== header}>Name</option>
-                          <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>
-                          <option value="title" disabled={!!importPreview.mappings.title && importPreview.mappings.title !== header}>Title</option>
-                          <option value="country" disabled={!!importPreview.mappings.country && importPreview.mappings.country !== header}>Country</option>
-                          <option value="email" disabled={!!importPreview.mappings.email && importPreview.mappings.email !== header}>Email</option>
-                          <option value="phone" disabled={!!importPreview.mappings.phone && importPreview.mappings.phone !== header}>Phone</option>
-                          <option value="linkedin" disabled={!!importPreview.mappings.linkedin && importPreview.mappings.linkedin !== header}>LinkedIn</option>
-                          <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
-                          <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
-                          <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
-                          <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Availability</option>
+                          <optgroup label="Executive Fields">
+                            <option value="name" disabled={!!importPreview.mappings.name && importPreview.mappings.name !== header}>Name</option>
+                            <option value="title" disabled={!!importPreview.mappings.title && importPreview.mappings.title !== header}>Title</option>
+                            <option value="email" disabled={!!importPreview.mappings.email && importPreview.mappings.email !== header}>Email</option>
+                            <option value="phone" disabled={!!importPreview.mappings.phone && importPreview.mappings.phone !== header}>Phone</option>
+                            <option value="linkedin" disabled={!!importPreview.mappings.linkedin && importPreview.mappings.linkedin !== header}>LinkedIn</option>
+                            <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
+                            <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
+                            <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
+                            <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Availability</option>
+                          </optgroup>
+                          <optgroup label="Company Fields">
+                            <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>
+                            <option value="country" disabled={!!importPreview.mappings.country && importPreview.mappings.country !== header}>Country</option>
+                            <option value="city" disabled={!!importPreview.mappings.city && importPreview.mappings.city !== header}>City</option>
+                            <option value="sector" disabled={!!importPreview.mappings.sector && importPreview.mappings.sector !== header}>Sector / Industry</option>
+                            <option value="revenue" disabled={!!importPreview.mappings.revenue && importPreview.mappings.revenue !== header}>Revenue</option>
+                            <option value="employees" disabled={!!importPreview.mappings.employees && importPreview.mappings.employees !== header}>Employees</option>
+                          </optgroup>
                         </select>
                         {currentMapping && <span className="text-green-500 text-xs shrink-0">Mapped</span>}
                       </div>

@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft } from 'lucide-react';
+import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ViewMode } from './Sidebar';
@@ -17,6 +18,15 @@ interface TopBarProps {
 
 export default function TopBar({ activeView, onCommandPalette, onExport, onImport, onEnrichAll, onAddCompany, onHome, isEnriching }: TopBarProps) {
   const { currentProject, companies, executives } = useAppStore();
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDark]);
 
   return (
     <div className="h-11 border-b border-border bg-background flex items-center px-3 gap-2 shrink-0" data-testid="topbar">
@@ -127,6 +137,23 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Export to Excel</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsDark(!isDark)}
+                className="h-7 w-7 p-0"
+                data-testid="topbar-theme"
+              >
+                {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {isDark ? 'Light mode' : 'Dark mode'}
+            </TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>

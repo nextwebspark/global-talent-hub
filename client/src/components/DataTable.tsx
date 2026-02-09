@@ -82,7 +82,7 @@ function ResizableHeader({ header, density }: {
   return (
     <th
       key={header.id}
-      className={`relative select-none text-left font-medium text-xs whitespace-nowrap border-r border-border/40 bg-muted/50 group
+      className={`relative select-none text-left font-medium text-xs whitespace-nowrap border-r border-border/40 bg-background group
         ${header.column.getCanSort() ? 'cursor-pointer hover:bg-muted/70' : ''}
       `}
       style={{ width: header.getSize(), minWidth: 60 }}
@@ -255,7 +255,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     getSortedRowModel: getSortedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
-    columnResizeMode: 'onChange',
+    columnResizeMode: 'onEnd',
     enableMultiSort: true,
   });
 
@@ -503,14 +503,14 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
       <div
         ref={tableContainerRef}
-        className="flex-1 overflow-x-auto overflow-y-auto"
+        className="flex-1 overflow-auto relative"
         style={{ userSelect: isDragSelecting ? 'none' : 'auto' }}
       >
         <table
           className="text-xs border-collapse"
           style={{ width: Math.max(table.getTotalSize() + 40, 0), minWidth: '100%' }}
         >
-          <thead className="sticky top-0 z-20">
+          <thead className="sticky top-0 z-20 bg-background shadow-[0_1px_3px_rgba(0,0,0,0.2)]">
             {table.getHeaderGroups().map(headerGroup => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map(header => (
@@ -520,7 +520,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                     density={density}
                   />
                 ))}
-                <th className="w-10 bg-muted/50 sticky right-0 z-10 border-l border-border/40" />
+                <th className="w-10 bg-background sticky right-0 z-30 border-l border-border/40" />
               </tr>
             ))}
           </thead>

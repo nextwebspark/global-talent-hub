@@ -180,6 +180,30 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
   const columns = useMemo(() => {
     const cols = [
+      columnHelper.display({
+        id: 'selection',
+        header: ({ table }) => (
+          <div className="px-1">
+            <input
+              type="checkbox"
+              className="rounded border-border bg-background"
+              checked={table.getIsAllPageRowsSelected()}
+              onChange={table.getToggleAllPageRowsSelectedHandler()}
+            />
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="px-1">
+            <input
+              type="checkbox"
+              className="rounded border-border bg-background"
+              checked={row.getIsSelected()}
+              onChange={row.getToggleSelectedHandler()}
+            />
+          </div>
+        ),
+        size: 30,
+      }),
       columnHelper.accessor('country', {
         header: 'Country',
         cell: groupedCell,
@@ -237,6 +261,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     return cols;
   }, [customFieldKeys]);
 
+  const [rowSelection, setRowSelection] = useState({});
+
   const table = useReactTable({
     data,
     columns,
@@ -247,6 +273,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       grouping,
       expanded,
       columnSizing,
+      rowSelection,
     },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
@@ -254,12 +281,14 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     onGroupingChange: setGrouping,
     onExpandedChange: setExpanded,
     onColumnSizingChange: setColumnSizing,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getGroupedRowModel: getGroupedRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     columnResizeMode: 'onChange',
     enableMultiSort: true,
+    enableRowSelection: true,
   });
 
   const handleDragStart = useCallback((e: React.DragEvent, headerId: string) => {
@@ -452,16 +481,44 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           </>
         )}
 
+        {Object.keys(rowSelection).length > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-7 text-xs ml-2"
+            onClick={() => {
+              if (window.confirm(`Are you sure you want to delete ${Object.keys(rowSelection).length} records?`)) {
+                Object.keys(rowSelection).forEach(rowId => {
+                  const row = table.getRowModel().rowsById[rowId];
+                  if (row && row.original) {
+                    if (row.original.isCompanyRow) {
+                      deleteCompany(row.original.companyId);
+                    } else {
+                      deleteExecutive(row.original.id);
+                    }
+                  }
+                });
+                setRowSelection({});
+                toast.success('Records deleted');
+              }
+            }}
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Delete Selected ({Object.keys(rowSelection).length})
+          </Button>
+        )}
+
         <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
           {table.getRowModel().rows.length} rows
         </span>
       </div>
 
-      <div ref={tableContainerRef} className="flex-1 overflow-auto">
-        <table className="w-full text-xs border-collapse" style={{ width: table.getTotalSize() }}>
-          <thead className="sticky top-0 z-10">
-            {table.getHeaderGroups().map(headerGroup => (
-              <tr key={headerGroup.id}>
+      <div ref={tableContainerRef} className="flex-1 overflow-auto border-t border-border/20 shadow-inner">
+        <div style={{ width: table.getTotalSize(), minWidth: '100%' }}>
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0 z-20 bg-background shadow-sm">
+              {table.getHeaderGroups().map(headerGroup => (
+                <tr key={headerGroup.id} className="shadow-sm">
                 {headerGroup.headers.map(header => (
                   <DraggableHeader
                     key={header.id}
@@ -586,31 +643,24 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                             </>
                           )}
                           <DropdownMenuSeparator />
-                          {!original.isCompanyRow && (
-                            <DropdownMenuItem
-                              data-testid={`delete-executive-${original.id}`}
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteExecutive(original.id);
-                                toast.success(`Deleted ${original.name || 'executive'}`);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3 mr-1" />
-                              Delete Executive
-                            </DropdownMenuItem>
-                          )}
                           <DropdownMenuItem
-                            data-testid={`delete-company-${original.id}`}
+                            data-testid={`delete-record-${original.id}`}
                             className="text-destructive focus:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
-                              deleteCompany(original.companyId);
-                              toast.success(`Deleted ${original.companyName}`);
+                              if (window.confirm(`Are you sure you want to delete this ${original.isCompanyRow ? 'company' : 'executive'}?`)) {
+                                if (original.isCompanyRow) {
+                                  deleteCompany(original.companyId);
+                                  toast.success(`Deleted ${original.companyName}`);
+                                } else {
+                                  deleteExecutive(original.id);
+                                  toast.success(`Deleted ${original.name || 'executive'}`);
+                                }
+                              }
                             }}
                           >
                             <Trash2 className="h-3 w-3 mr-1" />
-                            Delete Company
+                            Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -620,7 +670,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               );
             })}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -265,15 +265,24 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       .map(r => r.original!.id);
   }, [table.getRowModel().rows]);
 
+  const rowElementsRef = useRef<Map<string, HTMLTableRowElement>>(new Map());
+
+  const didDragRef = useRef(false);
+
   const handleDragSelectStart = useCallback((rowId: string, e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-trash-btn]')) return;
+    e.preventDefault();
     setIsDragSelecting(true);
+    didDragRef.current = false;
     dragStartRowRef.current = rowId;
     setDragSelectedRows(new Set([rowId]));
   }, []);
 
   const handleDragSelectMove = useCallback((rowId: string) => {
     if (!isDragSelecting || !dragStartRowRef.current) return;
+    if (rowId !== dragStartRowRef.current) {
+      didDragRef.current = true;
+    }
     const startIdx = allRowIds.indexOf(dragStartRowRef.current);
     const currentIdx = allRowIds.indexOf(rowId);
     if (startIdx === -1 || currentIdx === -1) return;
@@ -284,14 +293,34 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   }, [isDragSelecting, allRowIds]);
 
   useEffect(() => {
-    const handleMouseUp = () => {
-      if (isDragSelecting) {
-        setIsDragSelecting(false);
-        dragStartRowRef.current = null;
+    if (!isDragSelecting) return;
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+      const container = tableContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const scrollThreshold = 40;
+      if (e.clientY < rect.top + scrollThreshold) {
+        container.scrollTop -= 8;
+      } else if (e.clientY > rect.bottom - scrollThreshold) {
+        container.scrollTop += 8;
       }
     };
+
+    const handleMouseUp = () => {
+      setIsDragSelecting(false);
+      dragStartRowRef.current = null;
+      if (!didDragRef.current) {
+        setDragSelectedRows(new Set());
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
   }, [isDragSelecting]);
 
   const handleDeleteRow = useCallback((original: TableRowData) => {
@@ -472,7 +501,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       >
         <table
           className="text-xs border-collapse"
-          style={{ width: Math.max(table.getTotalSize(), 0), minWidth: '100%' }}
+          style={{ width: Math.max(table.getTotalSize() + 40, 0), minWidth: '100%' }}
         >
           <thead className="sticky top-0 z-20">
             {table.getHeaderGroups().map(headerGroup => (
@@ -519,7 +548,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                   onClick={() => {
                     if (isGrouped) {
                       row.toggleExpanded();
-                    } else if (original && !isDragSelecting && dragSelectedRows.size <= 1) {
+                    } else if (original && !didDragRef.current) {
+                      setDragSelectedRows(new Set());
                       onRowClick(original);
                     }
                   }}

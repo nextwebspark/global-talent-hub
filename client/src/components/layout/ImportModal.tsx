@@ -101,9 +101,43 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
   ]
 };
 
-function detectColumnMappings(headers: string[]): Record<string, string> {
+function wordSimilarity(a: string, b: string): number {
+  const wordsA = a.split(/\s+/).filter(Boolean);
+  const wordsB = b.split(/\s+/).filter(Boolean);
+  if (wordsA.length === 0 || wordsB.length === 0) return 0;
+  let matches = 0;
+  for (const wa of wordsA) {
+    for (const wb of wordsB) {
+      if (wa === wb || (wa.length > 3 && wb.length > 3 && (wa.startsWith(wb.substring(0, 4)) || wb.startsWith(wa.substring(0, 4))))) {
+        matches++;
+        break;
+      }
+    }
+  }
+  return matches / Math.max(wordsA.length, wordsB.length);
+}
+
+function detectContentType(values: string[]): string | null {
+  const nonEmpty = values.filter(v => v && v.trim());
+  if (nonEmpty.length === 0) return null;
+  const sampleSize = Math.min(nonEmpty.length, 10);
+  const sample = nonEmpty.slice(0, sampleSize);
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (sample.filter(v => emailRegex.test(v.trim())).length >= sampleSize * 0.5) return 'email';
+
+  const phoneRegex = /^[\+]?[\d\s\-\(\)\.]{7,20}$/;
+  if (sample.filter(v => phoneRegex.test(v.trim())).length >= sampleSize * 0.5) return 'phone';
+
+  const linkedinRegex = /linkedin\.com/i;
+  if (sample.filter(v => linkedinRegex.test(v)).length >= sampleSize * 0.3) return 'linkedin';
+
+  return null;
+}
+
+function detectColumnMappings(headers: string[], rows?: string[][]): Record<string, string> {
   const mappings: Record<string, string> = {};
-  const normalizedHeaders = headers.map(h => h.toLowerCase().trim().replace(/[_\-\.]/g, ' '));
+  const normalizedHeaders = headers.map(h => h.toLowerCase().trim().replace(/[_\-\.\/#]/g, ' ').replace(/\s+/g, ' '));
   const usedIndices = new Set<number>();
 
   normalizedHeaders.forEach((header, index) => {
@@ -117,17 +151,47 @@ function detectColumnMappings(headers: string[]): Record<string, string> {
     }
   });
 
-  if (Object.keys(mappings).length < normalizedHeaders.length) {
-    normalizedHeaders.forEach((header, index) => {
-      if (usedIndices.has(index)) return;
-      for (const [field, patterns] of Object.entries(ALL_FIELD_PATTERNS)) {
-        if (mappings[field]) continue;
-        const match = patterns.some(p => header.includes(p) || p.includes(header));
-        if (match) {
-          mappings[field] = headers[index];
-          usedIndices.add(index);
-          break;
+  normalizedHeaders.forEach((header, index) => {
+    if (usedIndices.has(index)) return;
+    for (const [field, patterns] of Object.entries(ALL_FIELD_PATTERNS)) {
+      if (mappings[field]) continue;
+      const match = patterns.some(p => header.includes(p) || p.includes(header));
+      if (match) {
+        mappings[field] = headers[index];
+        usedIndices.add(index);
+        break;
+      }
+    }
+  });
+
+  normalizedHeaders.forEach((header, index) => {
+    if (usedIndices.has(index)) return;
+    let bestField = '';
+    let bestScore = 0;
+    for (const [field, patterns] of Object.entries(ALL_FIELD_PATTERNS)) {
+      if (mappings[field]) continue;
+      for (const p of patterns) {
+        const score = wordSimilarity(header, p);
+        if (score > bestScore && score >= 0.5) {
+          bestScore = score;
+          bestField = field;
         }
+      }
+    }
+    if (bestField) {
+      mappings[bestField] = headers[index];
+      usedIndices.add(index);
+    }
+  });
+
+  if (rows && rows.length > 0) {
+    normalizedHeaders.forEach((_, index) => {
+      if (usedIndices.has(index)) return;
+      const colValues = rows.map(row => row[index] || '');
+      const detectedType = detectContentType(colValues);
+      if (detectedType && !mappings[detectedType]) {
+        mappings[detectedType] = headers[index];
+        usedIndices.add(index);
       }
     });
   }
@@ -190,7 +254,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
           headers.map((_, i) => String((row as any[])[i] || '').trim())
         ).filter(row => row.some(cell => cell));
 
-        const mappings = detectColumnMappings(headers);
+        const mappings = detectColumnMappings(headers, rows);
         setImportPreview({ headers, rows, mappings });
         setActiveTab('file');
       } catch {
@@ -219,7 +283,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
       line.split(delimiter).map(cell => cell.trim().replace(/^"|"$/g, ''))
     );
 
-    const mappings = detectColumnMappings(headers);
+    const mappings = detectColumnMappings(headers, rows);
     setImportPreview({ headers, rows, mappings });
   };
 

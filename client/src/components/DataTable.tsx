@@ -139,6 +139,26 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     remunerationNotes: false,
     availability: false,
   });
+
+  const prevDataCountRef = useRef(0);
+  useEffect(() => {
+    if (data.length === 0) return;
+    const prevCount = prevDataCountRef.current;
+    prevDataCountRef.current = data.length;
+    if (prevCount > 0 && data.length === prevCount) return;
+    const optionalFields = ['email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability'] as const;
+    setColumnVisibility(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const field of optionalFields) {
+        if (!prev[field] && data.some(row => row[field] && String(row[field]).trim() !== '')) {
+          next[field] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [data]);
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);

@@ -32,14 +32,17 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
   Columns3, Group, ChevronRight, ChevronDown,
   Rows3, Maximize2, Minimize2,
-  Minus, Trash2, X,
+  Minus, Trash2, X, Plus, Building2, UserPlus,
 } from 'lucide-react';
-import { useAppStore } from '@/lib/store';
+import { useAppStore, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import { toast } from 'sonner';
 
 export interface TableRowData {
   id: string;
   country: string;
+  sector: string;
+  revenue: number;
+  employees: number;
   name: string;
   title: string;
   notes: string;
@@ -54,6 +57,90 @@ export interface TableRowData {
   companyColor: string;
   isCompanyRow: boolean;
   customFields?: Record<string, string>;
+}
+
+function formatRevenue(value: number): string {
+  if (!value || value === 0) return '-';
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function formatEmployees(value: number): string {
+  if (!value || value === 0) return '-';
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
+  return String(value);
+}
+
+function parseRevenueInput(input: string): number {
+  const cleaned = input.replace(/[$,\s]/g, '').toLowerCase();
+  if (!cleaned) return 0;
+  const multipliers: Record<string, number> = { b: 1e9, bn: 1e9, billion: 1e9, m: 1e6, mn: 1e6, mil: 1e6, million: 1e6, k: 1e3, thousand: 1e3 };
+  for (const [suffix, mult] of Object.entries(multipliers)) {
+    if (cleaned.endsWith(suffix)) {
+      const num = parseFloat(cleaned.slice(0, -suffix.length));
+      return isNaN(num) ? 0 : num * mult;
+    }
+  }
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+function EditableCell({ value, onSave, isNumeric, formatFn }: {
+  value: string;
+  onSave: (val: string) => void;
+  isNumeric?: boolean;
+  formatFn?: (val: string) => string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (editValue !== value) {
+      onSave(editValue);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        className="w-full bg-transparent border border-primary/50 rounded px-1 py-0 text-xs outline-none focus:border-primary"
+        value={editValue}
+        onChange={e => setEditValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') { setEditValue(value); setEditing(false); }
+        }}
+        onClick={e => e.stopPropagation()}
+        data-testid="editable-cell-input"
+      />
+    );
+  }
+
+  const display = formatFn ? formatFn(value) : (value || '-');
+  return (
+    <span
+      className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+      title={value || undefined}
+      onDoubleClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
+      data-testid="editable-cell-display"
+    >
+      {display}
+    </span>
+  );
 }
 
 interface DataTableProps {
@@ -129,9 +216,10 @@ function ResizableHeader({ header, density }: {
 }
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
-  const { deleteCompany, deleteExecutive, executives: allExecutives } = useAppStore();
+  const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, addCompany, addExecutive, executives: allExecutives, currentProject } = useAppStore();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    sector: false,
     email: false,
     phone: false,
     linkedin: false,
@@ -146,7 +234,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     const prevCount = prevDataCountRef.current;
     prevDataCountRef.current = data.length;
     if (prevCount > 0 && data.length === prevCount) return;
-    const optionalFields = ['email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability'] as const;
+    const optionalFields = ['sector', 'email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability'] as const;
     setColumnVisibility(prev => {
       const next = { ...prev };
       let changed = false;
@@ -159,6 +247,82 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       return changed ? next : prev;
     });
   }, [data]);
+
+  const handleCellSave = useCallback((row: TableRowData, field: string, value: string) => {
+    const companyFields = ['companyName', 'country', 'sector', 'revenue', 'employees'];
+    if (companyFields.includes(field)) {
+      if (field === 'companyName') {
+        updateCompany(row.companyId, { name: value });
+      } else if (field === 'country') {
+        updateCompany(row.companyId, { hq_country: value });
+      } else if (field === 'sector') {
+        updateCompany(row.companyId, { industry: value });
+      } else if (field === 'revenue') {
+        updateCompany(row.companyId, { revenue_usd: parseRevenueInput(value) });
+      } else if (field === 'employees') {
+        const num = parseInt(value.replace(/[^0-9]/g, ''), 10);
+        updateCompany(row.companyId, { employees: isNaN(num) ? 0 : num });
+      }
+    } else if (!row.isCompanyRow) {
+      if (field.startsWith('custom_')) {
+        const customKey = field.slice(7);
+        const existingCustom = row.customFields || {};
+        const updatedCustom = { ...existingCustom, [customKey]: value };
+        updateExecutive(row.id, { customFields: updatedCustom });
+      } else {
+        const updates: Record<string, string> = {};
+        updates[field] = value;
+        updateExecutive(row.id, updates);
+      }
+    }
+  }, [updateCompany, updateExecutive]);
+
+  const handleAddCompany = useCallback(async () => {
+    try {
+      const searchQueryId = currentProject?.id ? parseInt(currentProject.id) : null;
+      const res = await fetch('/api/companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'New Company',
+          country: 'Unknown',
+          sector: 'Unknown',
+          ...(searchQueryId ? { searchQueryId } : {}),
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create company');
+      const company = await res.json();
+      addCompany(transformAPICompany(company));
+      toast.success('New company added');
+    } catch {
+      toast.error('Failed to add company');
+    }
+  }, [addCompany, currentProject]);
+
+  const handleAddExecutive = useCallback(async (companyId?: string) => {
+    const targetCompanyId = companyId || (data.length > 0 ? data[0].companyId : null);
+    if (!targetCompanyId) {
+      toast.error('Create a company first');
+      return;
+    }
+    try {
+      const res = await fetch('/api/executives', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyId: parseInt(targetCompanyId),
+          name: 'New Executive',
+          title: 'Title',
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create executive');
+      const exec = await res.json();
+      addExecutive(transformAPIExecutive(exec, targetCompanyId));
+      toast.success('New executive added');
+    } catch {
+      toast.error('Failed to add executive');
+    }
+  }, [addExecutive, data]);
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
@@ -181,31 +345,40 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     return Array.from(keys);
   }, [data]);
 
-  const textCell = (info: any) => <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>;
-
-  const groupedCell = (info: any) => {
-    if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
-      return (
-        <span className="font-semibold flex items-center gap-1">
-          {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {info.getValue()} ({info.row.subRows.length})
-        </span>
-      );
+  const editableCell = useCallback((field: string) => (info: any) => {
+    const row = info.row.original;
+    if (!row) return <span>-</span>;
+    if (info.row.getIsGrouped()) {
+      if (info.column.getIsGrouped()) {
+        return (
+          <span className="font-semibold flex items-center gap-1">
+            {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {info.getValue()} ({info.row.subRows.length})
+          </span>
+        );
+      }
+      return null;
     }
-    return <span className="truncate block" title={info.getValue()}>{info.getValue() || '-'}</span>;
-  };
+    return (
+      <EditableCell
+        value={String(info.getValue() || '')}
+        onSave={(val) => handleCellSave(row, field, val)}
+      />
+    );
+  }, [handleCellSave]);
 
   const columns = useMemo(() => {
     const cols = [
       columnHelper.accessor('country', {
         header: 'Country',
-        cell: groupedCell,
+        cell: editableCell('country'),
         size: 100,
         enableGrouping: true,
       }),
       columnHelper.accessor('companyName', {
         header: 'Company',
         cell: (info) => {
+          const row = info.row.original;
           if (info.row.getIsGrouped() && info.column.getIsGrouped()) {
             return (
               <span className="font-semibold flex items-center gap-1">
@@ -214,26 +387,70 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               </span>
             );
           }
-          const color = info.row.original?.companyColor || '#1e3a8a';
+          if (!row) return null;
+          const color = row.companyColor || '#1e3a8a';
           return (
-            <span className="truncate block" title={info.getValue()}>
+            <span className="flex items-center">
               <span className="inline-block w-2 h-2 rounded-full mr-1.5 shrink-0" style={{ backgroundColor: color }} />
-              {info.getValue()}
+              <EditableCell
+                value={info.getValue() || ''}
+                onSave={(val) => handleCellSave(row, 'companyName', val)}
+              />
             </span>
           );
         },
         size: 140,
         enableGrouping: true,
       }),
-      columnHelper.accessor('name', { header: 'Executive', cell: textCell, size: 130, enableGrouping: false }),
-      columnHelper.accessor('title', { header: 'Title', cell: textCell, size: 140, enableGrouping: false }),
-      columnHelper.accessor('notes', { header: 'Notes', cell: textCell, size: 120, enableGrouping: false }),
-      columnHelper.accessor('email', { header: 'Email', cell: textCell, size: 160, enableGrouping: false }),
-      columnHelper.accessor('phone', { header: 'Phone', cell: textCell, size: 120, enableGrouping: false }),
-      columnHelper.accessor('linkedin', { header: 'LinkedIn', cell: textCell, size: 160, enableGrouping: false }),
-      columnHelper.accessor('careerSummary', { header: 'Career Summary', cell: textCell, size: 180, enableGrouping: false }),
-      columnHelper.accessor('remunerationNotes', { header: 'Remuneration', cell: textCell, size: 140, enableGrouping: false }),
-      columnHelper.accessor('availability', { header: 'Availability', cell: textCell, size: 120, enableGrouping: false }),
+      columnHelper.accessor('sector', {
+        header: 'Sector',
+        cell: editableCell('sector'),
+        size: 120,
+        enableGrouping: true,
+      }),
+      columnHelper.accessor('revenue', {
+        header: 'Revenue',
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row || info.row.getIsGrouped()) return null;
+          return (
+            <EditableCell
+              value={info.getValue() ? String(info.getValue()) : ''}
+              onSave={(val) => handleCellSave(row, 'revenue', val)}
+              formatFn={(v) => formatRevenue(parseFloat(v) || 0)}
+            />
+          );
+        },
+        size: 100,
+        enableGrouping: false,
+        sortingFn: 'basic',
+      }),
+      columnHelper.accessor('employees', {
+        header: 'Employees',
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row || info.row.getIsGrouped()) return null;
+          return (
+            <EditableCell
+              value={info.getValue() ? String(info.getValue()) : ''}
+              onSave={(val) => handleCellSave(row, 'employees', val)}
+              formatFn={(v) => formatEmployees(parseInt(v) || 0)}
+            />
+          );
+        },
+        size: 90,
+        enableGrouping: false,
+        sortingFn: 'basic',
+      }),
+      columnHelper.accessor('name', { header: 'Executive', cell: editableCell('name'), size: 130, enableGrouping: false }),
+      columnHelper.accessor('title', { header: 'Title', cell: editableCell('title'), size: 140, enableGrouping: false }),
+      columnHelper.accessor('notes', { header: 'Notes', cell: editableCell('notes'), size: 120, enableGrouping: false }),
+      columnHelper.accessor('email', { header: 'Email', cell: editableCell('email'), size: 160, enableGrouping: false }),
+      columnHelper.accessor('phone', { header: 'Phone', cell: editableCell('phone'), size: 120, enableGrouping: false }),
+      columnHelper.accessor('linkedin', { header: 'LinkedIn', cell: editableCell('linkedin'), size: 160, enableGrouping: false }),
+      columnHelper.accessor('careerSummary', { header: 'Career Summary', cell: editableCell('careerSummary'), size: 180, enableGrouping: false }),
+      columnHelper.accessor('remunerationNotes', { header: 'Remuneration', cell: editableCell('remunerationNotes'), size: 140, enableGrouping: false }),
+      columnHelper.accessor('availability', { header: 'Availability', cell: editableCell('availability'), size: 120, enableGrouping: false }),
     ];
 
     customFieldKeys.forEach(key => {
@@ -243,7 +460,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           {
             id: `custom_${key}`,
             header: key,
-            cell: textCell,
+            cell: editableCell(`custom_${key}`),
             size: 120,
             enableGrouping: false,
           }
@@ -252,7 +469,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     });
 
     return cols;
-  }, [customFieldKeys]);
+  }, [customFieldKeys, editableCell]);
 
   const table = useReactTable({
     data,
@@ -515,6 +732,41 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
             </Button>
           </>
         )}
+
+        <div className="h-4 w-px bg-border mx-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={handleAddCompany}
+          data-testid="button-add-company"
+        >
+          <Building2 className="h-3 w-3 mr-1" />
+          New Company
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-add-executive">
+              <UserPlus className="h-3 w-3 mr-1" />
+              New Executive
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-60 overflow-auto">
+            <DropdownMenuLabel className="text-xs">Add to Company</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {Array.from(new Set(data.map(r => r.companyId))).map(cid => {
+              const companyName = data.find(r => r.companyId === cid)?.companyName || 'Unknown';
+              return (
+                <DropdownMenuItem key={cid} onClick={() => handleAddExecutive(cid)} data-testid={`add-exec-to-${cid}`}>
+                  {companyName}
+                </DropdownMenuItem>
+              );
+            })}
+            {data.length === 0 && (
+              <DropdownMenuItem disabled>No companies yet</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
           {table.getRowModel().rows.length} rows

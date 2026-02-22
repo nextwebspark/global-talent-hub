@@ -80,23 +80,29 @@ export default function Dashboard() {
     const data: any[] = [];
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
+      const companyFields = {
+        companyId: company.id, companyName: company.name, companyColor: company.color || '#1e3a8a',
+        country: company.hq_country || 'Unknown', sector: company.industry || '',
+        revenue: company.revenue_usd || 0, employees: company.employees || 0,
+      };
       if (companyExecs.length === 0) {
         data.push({
-          id: `company-${company.id}`, country: company.hq_country || 'Unknown',
+          ...companyFields,
+          id: `company-${company.id}`,
           name: '', title: '', notes: '', email: '', phone: '', linkedin: '',
           careerSummary: '', remunerationNotes: '', availability: '',
-          companyId: company.id, companyName: company.name, companyColor: company.color || '#1e3a8a', isCompanyRow: true
+          isCompanyRow: true,
         });
       } else {
         companyExecs.forEach(exec => {
           data.push({
-            id: exec.id, country: company.hq_country || 'Unknown',
+            ...companyFields,
+            id: exec.id,
             name: exec.name, title: exec.title, notes: exec.notes || '',
             email: exec.email || '', phone: exec.phone || '', linkedin: exec.linkedin || '',
             careerSummary: exec.careerSummary || '', remunerationNotes: exec.remunerationNotes || '',
             availability: exec.availability || '',
-            companyId: company.id, companyName: company.name, companyColor: company.color || '#1e3a8a',
-            isCompanyRow: false, customFields: exec.customFields
+            isCompanyRow: false, customFields: exec.customFields,
           });
         });
       }
@@ -107,10 +113,12 @@ export default function Dashboard() {
   const handleExport = useCallback(() => {
     const exportData = tableData.map(row => {
       const base: Record<string, string> = {
-        'Country': row.country || '', 'Company': row.companyName || '', 'Executive': row.name || '',
-        'Title': row.title || '', 'Notes': row.notes || '', 'Email': row.email || '',
-        'Phone': row.phone || '', 'LinkedIn': row.linkedin || '', 'Career Summary': row.careerSummary || '',
-        'Remuneration': row.remunerationNotes || '', 'Availability': row.availability || '',
+        'Country': row.country || '', 'Company': row.companyName || '', 'Sector': row.sector || '',
+        'Revenue': row.revenue ? String(row.revenue) : '', 'Employees': row.employees ? String(row.employees) : '',
+        'Executive': row.name || '', 'Title': row.title || '', 'Notes': row.notes || '',
+        'Email': row.email || '', 'Phone': row.phone || '', 'LinkedIn': row.linkedin || '',
+        'Career Summary': row.careerSummary || '', 'Remuneration': row.remunerationNotes || '',
+        'Availability': row.availability || '',
       };
       if (row.customFields) Object.entries(row.customFields).forEach(([k, v]) => { base[k] = v as string || ''; });
       return base;

@@ -12,6 +12,10 @@ async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<
     if (updates.lng !== undefined) dbUpdates.longitude = String(updates.lng);
     if (updates.color !== undefined) dbUpdates.color = updates.color;
     if (updates.streetAddress !== undefined) dbUpdates.streetAddress = updates.streetAddress;
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.hq_country !== undefined) dbUpdates.country = updates.hq_country;
+    if (updates.industry !== undefined) dbUpdates.sector = updates.industry;
+    if (updates.hq_city !== undefined) dbUpdates.region = updates.hq_city;
     
     if (Object.keys(dbUpdates).length > 0) {
       await fetch(`/api/companies/${id}`, {
@@ -31,6 +35,14 @@ async function persistExecutiveUpdate(id: string, updates: Partial<any>): Promis
     const dbUpdates: Record<string, any> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.email !== undefined) dbUpdates.email = updates.email;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.linkedin !== undefined) dbUpdates.linkedin = updates.linkedin;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    if (updates.careerSummary !== undefined) dbUpdates.careerSummary = updates.careerSummary;
+    if (updates.remunerationNotes !== undefined) dbUpdates.remunerationNotes = updates.remunerationNotes;
+    if (updates.availability !== undefined) dbUpdates.availability = updates.availability;
+    if (updates.customFields !== undefined) dbUpdates.customFields = updates.customFields;
     
     if (Object.keys(dbUpdates).length > 0) {
       await fetch(`/api/executives/${id}`, {

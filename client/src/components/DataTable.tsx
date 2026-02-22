@@ -288,6 +288,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
   const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyCountry, setNewCompanyCountry] = useState('');
   const [newExecName, setNewExecName] = useState('');
   const [newExecTitle, setNewExecTitle] = useState('');
   const [matchedCompany, setMatchedCompany] = useState<any>(null);
@@ -397,7 +398,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: newCompanyName.trim(),
-            country: 'Unknown',
+            country: newCompanyCountry.trim() || 'Unknown',
             sector: 'Unknown',
             ...(searchQueryId ? { searchQueryId } : {}),
           }),
@@ -428,6 +429,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       toast.success(matchedCompany ? `Added executive to "${matchedCompany.name}"` : `Created "${newCompanyName.trim()}"`);
       setAddCompanyDialogOpen(false);
       setNewCompanyName('');
+      setNewCompanyCountry('');
       setNewExecName('');
       setNewExecTitle('');
       setMatchedCompany(null);
@@ -437,7 +439,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     } finally {
       setIsSubmitting(false);
     }
-  }, [newCompanyName, newExecName, newExecTitle, matchedCompany, currentProject, addCompany, addExecutive, companies]);
+  }, [newCompanyName, newCompanyCountry, newExecName, newExecTitle, matchedCompany, currentProject, addCompany, addExecutive, companies]);
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
@@ -856,6 +858,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           onClick={() => {
             setAddCompanyDialogOpen(true);
             setNewCompanyName('');
+            setNewCompanyCountry('');
             setNewExecName('');
             setNewExecTitle('');
             setMatchedCompany(null);
@@ -922,6 +925,19 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                 </div>
               )}
             </div>
+            {!matchedCompany && (
+              <div>
+                <Label htmlFor="company-country" className="text-xs font-medium">Country</Label>
+                <Input
+                  id="company-country"
+                  value={newCompanyCountry}
+                  onChange={(e) => setNewCompanyCountry(e.target.value)}
+                  placeholder="e.g. Turkey, United Arab Emirates"
+                  className="mt-1"
+                  data-testid="input-company-country"
+                />
+              </div>
+            )}
             <div>
               <Label htmlFor="exec-name" className="text-xs font-medium">Executive Name</Label>
               <Input

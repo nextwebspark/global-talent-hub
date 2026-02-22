@@ -174,12 +174,14 @@ export default function MapComponent() {
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newMapExecName, setNewMapExecName] = useState('');
+  const [newMapCountry, setNewMapCountry] = useState('');
   const [newMapExecTitle, setNewMapExecTitle] = useState('');
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
     setNewCompanyName('');
+    setNewMapCountry('');
     setNewMapExecName('');
     setNewMapExecTitle('');
     setTimeout(() => newCompanyInputRef.current?.focus(), 100);
@@ -194,7 +196,7 @@ export default function MapComponent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCompanyName.trim(),
-          country: 'Unknown',
+          country: newMapCountry.trim() || 'Unknown',
           sector: 'Unknown',
           latitude: String(addCompanyDialog.lat),
           longitude: String(addCompanyDialog.lng),
@@ -224,13 +226,14 @@ export default function MapComponent() {
 
       setAddCompanyDialog(null);
       setNewCompanyName('');
+      setNewMapCountry('');
       setNewMapExecName('');
       setNewMapExecTitle('');
       toast.success(`Added "${newCompanyName.trim()}" to the map`);
     } catch {
       toast.error('Failed to add company');
     }
-  }, [addCompanyDialog, newCompanyName, newMapExecName, newMapExecTitle, addCompany, addExecutive, currentProject]);
+  }, [addCompanyDialog, newCompanyName, newMapCountry, newMapExecName, newMapExecTitle, addCompany, addExecutive, currentProject]);
 
   // Filter companies based on revenue/employee range sliders, valid coordinates, and visibility
   const revenueMin = revenueFilterRange[0] * 50000000;
@@ -467,6 +470,13 @@ export default function MapComponent() {
                 if (e.key === 'Escape') setAddCompanyDialog(null);
               }}
               data-testid="input-new-company-map"
+            />
+            <Input
+              className="h-8 text-xs"
+              placeholder="Country (optional)"
+              value={newMapCountry}
+              onChange={e => setNewMapCountry(e.target.value)}
+              data-testid="input-new-country-map"
             />
             <div className="flex gap-2">
               <Input

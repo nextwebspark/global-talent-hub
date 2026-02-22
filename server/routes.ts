@@ -178,7 +178,25 @@ export async function registerRoutes(
   app.patch("/api/companies/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const company = await storage.updateCompanyManual(id, req.body);
+      let patchData = { ...req.body };
+      const existingCompany = await storage.getCompany(id);
+      const hasNoCoords = !existingCompany?.latitude && !existingCompany?.longitude;
+      const countryChanged = patchData.country && patchData.country !== existingCompany?.country;
+      if ((hasNoCoords || countryChanged) && (patchData.country || existingCompany?.country)) {
+        const fallback = applyCoordinateFallback({
+          latitude: patchData.latitude || existingCompany?.latitude || null,
+          longitude: patchData.longitude || existingCompany?.longitude || null,
+          city: patchData.region || existingCompany?.region || undefined,
+          country: patchData.country || existingCompany?.country || undefined,
+        });
+        if (fallback.latitude && fallback.longitude) {
+          if (hasNoCoords || countryChanged) {
+            patchData.latitude = String(fallback.latitude);
+            patchData.longitude = String(fallback.longitude);
+          }
+        }
+      }
+      const company = await storage.updateCompanyManual(id, patchData);
       res.json(company);
     } catch (error) {
       console.error("Error updating company:", error);
@@ -1067,31 +1085,39 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(404).json({ error: "Search results not found" });
       }
       
-      const formattedCompanies = data.companies.map(company => ({
-        id: company.id,
-        name: company.name,
-        sector: company.sector,
-        region: company.region,
-        country: company.country,
-        streetAddress: company.streetAddress,
-        latitude: company.latitude,
-        longitude: company.longitude,
-        revenue: company.revenue,
-        revenueSource: company.revenueSource,
-        employees: company.employees,
-        employeesSource: company.employeesSource,
-        confidence: company.confidence,
-        color: company.color,
-        executives: company.executives.map(exec => ({
-          id: exec.id,
-          name: exec.name,
-          title: exec.title,
-          source: exec.source,
-          profileUrl: exec.profileUrl,
-          imageUrl: exec.imageUrl,
-          confidence: exec.confidence
-        }))
-      }));
+      const formattedCompanies = data.companies.map(company => {
+        const coords = applyCoordinateFallback({
+          latitude: company.latitude,
+          longitude: company.longitude,
+          city: company.region || undefined,
+          country: company.country || undefined,
+        });
+        return {
+          id: company.id,
+          name: company.name,
+          sector: company.sector,
+          region: company.region,
+          country: company.country,
+          streetAddress: company.streetAddress,
+          latitude: coords.latitude ? String(coords.latitude) : company.latitude,
+          longitude: coords.longitude ? String(coords.longitude) : company.longitude,
+          revenue: company.revenue,
+          revenueSource: company.revenueSource,
+          employees: company.employees,
+          employeesSource: company.employeesSource,
+          confidence: company.confidence,
+          color: company.color,
+          executives: company.executives.map(exec => ({
+            id: exec.id,
+            name: exec.name,
+            title: exec.title,
+            source: exec.source,
+            profileUrl: exec.profileUrl,
+            imageUrl: exec.imageUrl,
+            confidence: exec.confidence
+          }))
+        };
+      });
       
       res.json({ results: formattedCompanies, searchQueryId: searchId });
     } catch (error) {
@@ -1112,31 +1138,39 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(404).json({ error: "Search results not found" });
       }
       
-      const formattedCompanies = results.companies.map(company => ({
-        id: company.id,
-        name: company.name,
-        sector: company.sector,
-        region: company.region,
-        country: company.country,
-        streetAddress: company.streetAddress,
-        latitude: company.latitude,
-        longitude: company.longitude,
-        revenue: company.revenue,
-        revenueSource: company.revenueSource,
-        employees: company.employees,
-        employeesSource: company.employeesSource,
-        confidence: company.confidence,
-        color: company.color,
-        executives: company.executives.map(exec => ({
-          id: exec.id,
-          name: exec.name,
-          title: exec.title,
-          source: exec.source,
-          profileUrl: exec.profileUrl,
-          imageUrl: exec.imageUrl,
-          confidence: exec.confidence
-        }))
-      }));
+      const formattedCompanies = results.companies.map(company => {
+        const coords = applyCoordinateFallback({
+          latitude: company.latitude,
+          longitude: company.longitude,
+          city: company.region || undefined,
+          country: company.country || undefined,
+        });
+        return {
+          id: company.id,
+          name: company.name,
+          sector: company.sector,
+          region: company.region,
+          country: company.country,
+          streetAddress: company.streetAddress,
+          latitude: coords.latitude ? String(coords.latitude) : company.latitude,
+          longitude: coords.longitude ? String(coords.longitude) : company.longitude,
+          revenue: company.revenue,
+          revenueSource: company.revenueSource,
+          employees: company.employees,
+          employeesSource: company.employeesSource,
+          confidence: company.confidence,
+          color: company.color,
+          executives: company.executives.map(exec => ({
+            id: exec.id,
+            name: exec.name,
+            title: exec.title,
+            source: exec.source,
+            profileUrl: exec.profileUrl,
+            imageUrl: exec.imageUrl,
+            confidence: exec.confidence
+          }))
+        };
+      });
 
       res.json({
         searchQuery: results.searchQuery,

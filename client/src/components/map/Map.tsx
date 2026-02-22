@@ -185,6 +185,18 @@ export default function MapComponent() {
     setNewMapExecName('');
     setNewMapExecTitle('');
     setTimeout(() => newCompanyInputRef.current?.focus(), 100);
+
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=3&addressdetails=1`, {
+      headers: { 'Accept-Language': 'en' }
+    })
+      .then(res => res.json())
+      .then(data => {
+        const country = data?.address?.country;
+        if (country) {
+          setNewMapCountry(country);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleCreateCompanyOnMap = useCallback(async () => {

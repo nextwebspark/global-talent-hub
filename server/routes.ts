@@ -891,9 +891,11 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         resultCount: 0
       });
 
-      // Step 4: Clear previous results
-      await storage.deleteCompaniesBySearchQuery(searchQuery.id);
-      console.log("[Routes] Cleared previous results for search ID:", searchQuery.id);
+      // Step 4: Clear non-enriched companies but preserve enriched ones
+      const preserved = await storage.deleteNonEnrichedCompaniesBySearchQuery(searchQuery.id);
+      if (preserved > 0) {
+        console.log(`[Routes] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
+      }
 
       // Step 5: Run Tavily Search + LLM extraction (faster than Research API)
       if (!webSearchService.isConfigured()) {
@@ -989,8 +991,11 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         criteria 
       });
 
-      // Step 4: Clear previous results
-      await storage.deleteCompaniesBySearchQuery(searchQuery.id);
+      // Step 4: Clear non-enriched companies but preserve enriched ones
+      const preserved = await storage.deleteNonEnrichedCompaniesBySearchQuery(searchQuery.id);
+      if (preserved > 0) {
+        console.log(`[Routes SSE] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
+      }
 
       // Step 5: Stream companies using Tavily Research API (only option now - no LLM layer)
       let companyCount = 0;

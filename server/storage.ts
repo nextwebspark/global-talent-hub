@@ -31,7 +31,7 @@ import {
   type CompanyNotes,
   type InsertCompanyNotes
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, ilike, or, sql, asc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, ilike, or, sql, asc, inArray } from "drizzle-orm";
 
 /**
  * Data origin types for tracking write permissions per layer
@@ -83,6 +83,7 @@ export interface IStorage {
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
   updateSearchQueryClockworkProject(id: number, clockworkProjectId: string): Promise<SearchQuery>;
   deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void>;
+  deleteNonEnrichedCompaniesBySearchQuery(searchQueryId: number): Promise<number>;
   deleteSearchQuery(id: number): Promise<void>;
   getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
   getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
@@ -617,6 +618,38 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void> {
     await db.delete(companies).where(eq(companies.searchQueryId, searchQueryId));
+  }
+
+  async deleteNonEnrichedCompaniesBySearchQuery(searchQueryId: number): Promise<number> {
+    const allCompanies = await db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
+    const companyIds = allCompanies.map(c => c.id);
+    
+    let companiesWithExecs = new Set<number>();
+    if (companyIds.length > 0) {
+      const execRows = await db.select({ companyId: executives.companyId })
+        .from(executives)
+        .where(inArray(executives.companyId, companyIds));
+      companiesWithExecs = new Set(execRows.map(r => r.companyId));
+    }
+
+    const toDelete: number[] = [];
+    for (const c of allCompanies) {
+      const hasEnrichmentMarkers = c.revenueSourceUrl || c.employeesSourceUrl || c.revenueLastUpdated || c.employeesLastUpdated;
+      const hasExecutives = companiesWithExecs.has(c.id);
+      if (!hasEnrichmentMarkers && !hasExecutives) {
+        toDelete.push(c.id);
+      }
+    }
+    if (toDelete.length > 0) {
+      await db.delete(companies).where(
+        and(
+          eq(companies.searchQueryId, searchQueryId),
+          inArray(companies.id, toDelete)
+        )
+      );
+    }
+    const preserved = allCompanies.length - toDelete.length;
+    return preserved;
   }
 
   async deleteSearchQuery(id: number): Promise<void> {

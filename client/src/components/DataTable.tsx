@@ -18,6 +18,15 @@ import {
 } from '@tanstack/react-table';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -32,7 +41,7 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
   Columns3, Group, ChevronRight, ChevronDown,
   Rows3, Maximize2, Minimize2,
-  Minus, Trash2, X, Plus, Building2, UserPlus,
+  Minus, Trash2, X, Plus, Building2,
 } from 'lucide-react';
 import { useAppStore, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import { toast } from 'sonner';
@@ -216,7 +225,7 @@ function ResizableHeader({ header, density }: {
 }
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
-  const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, addCompany, addExecutive, executives: allExecutives, currentProject } = useAppStore();
+  const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, addCompany, addExecutive, executives: allExecutives, currentProject, companies } = useAppStore();
   const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     sector: false,
@@ -277,52 +286,158 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     }
   }, [updateCompany, updateExecutive]);
 
-  const handleAddCompany = useCallback(async () => {
-    try {
-      const searchQueryId = currentProject?.id ? parseInt(currentProject.id) : null;
-      const res = await fetch('/api/companies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'New Company',
-          country: 'Unknown',
-          sector: 'Unknown',
-          ...(searchQueryId ? { searchQueryId } : {}),
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to create company');
-      const company = await res.json();
-      addCompany(transformAPICompany(company));
-      toast.success('New company added');
-    } catch {
-      toast.error('Failed to add company');
-    }
-  }, [addCompany, currentProject]);
+  const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newExecName, setNewExecName] = useState('');
+  const [newExecTitle, setNewExecTitle] = useState('');
+  const [matchedCompany, setMatchedCompany] = useState<any>(null);
+  const [companySuggestions, setCompanySuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  const handleAddExecutive = useCallback(async (companyId?: string) => {
-    const targetCompanyId = companyId || (data.length > 0 ? data[0].companyId : null);
-    if (!targetCompanyId) {
-      toast.error('Create a company first');
+  const searchCompanies = useCallback(async (name: string) => {
+    if (name.length < 2) {
+      setCompanySuggestions([]);
+      setMatchedCompany(null);
       return;
     }
     try {
-      const res = await fetch('/api/executives', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companyId: parseInt(targetCompanyId),
-          name: 'New Executive',
-          title: 'Title',
-        }),
-      });
-      if (!res.ok) throw new Error('Failed to create executive');
-      const exec = await res.json();
-      addExecutive(transformAPIExecutive(exec, targetCompanyId));
-      toast.success('New executive added');
+      const exactLocalMatch = companies.find(c =>
+        c.name.toLowerCase() === name.toLowerCase().trim()
+      );
+      if (exactLocalMatch) {
+        setMatchedCompany(exactLocalMatch);
+        setCompanySuggestions([]);
+        setShowSuggestions(false);
+        return;
+      }
+      const localMatches = companies.filter(c =>
+        c.name.toLowerCase().includes(name.toLowerCase())
+      );
+      if (localMatches.length > 0) {
+        setCompanySuggestions(localMatches.slice(0, 8));
+        setShowSuggestions(true);
+        return;
+      }
+      const res = await fetch(`/api/companies/search?name=${encodeURIComponent(name)}`);
+      if (res.ok) {
+        const results = await res.json();
+        const transformed = results.map((c: any) => transformAPICompany(c));
+        const exactDbMatch = transformed.find((c: any) =>
+          c.name.toLowerCase() === name.toLowerCase().trim()
+        );
+        if (exactDbMatch) {
+          setMatchedCompany(exactDbMatch);
+          setCompanySuggestions([]);
+          setShowSuggestions(false);
+        } else {
+          setCompanySuggestions(transformed.slice(0, 8));
+          setShowSuggestions(transformed.length > 0);
+        }
+      }
     } catch {
-      toast.error('Failed to add executive');
+      /* ignore */
     }
-  }, [addExecutive, data]);
+  }, [companies]);
+
+  const handleCompanyNameChange = useCallback((val: string) => {
+    setNewCompanyName(val);
+    setMatchedCompany(null);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => searchCompanies(val), 250);
+  }, [searchCompanies]);
+
+  const selectSuggestion = useCallback((company: any) => {
+    setNewCompanyName(company.name);
+    setMatchedCompany(company);
+    setShowSuggestions(false);
+    setCompanySuggestions([]);
+  }, []);
+
+  const handleAddCompanySubmit = useCallback(async () => {
+    if (!newCompanyName.trim()) return;
+    setIsSubmitting(true);
+    try {
+      const searchQueryId = currentProject?.id ? parseInt(currentProject.id) : null;
+      let companyId: string;
+
+      if (matchedCompany) {
+        const existingInProject = companies.find(c =>
+          c.name.toLowerCase() === matchedCompany.name.toLowerCase()
+        );
+        if (existingInProject) {
+          companyId = existingInProject.id;
+        } else {
+          const res = await fetch('/api/companies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: matchedCompany.name,
+              country: matchedCompany.hq_country || 'Unknown',
+              sector: matchedCompany.industry || 'Unknown',
+              region: matchedCompany.hq_city || 'Unknown',
+              latitude: String(matchedCompany.lat || 0),
+              longitude: String(matchedCompany.lng || 0),
+              revenue: String(matchedCompany.revenue_usd || 0),
+              employees: matchedCompany.employees || 0,
+              ...(searchQueryId ? { searchQueryId } : {}),
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to create company');
+          const company = await res.json();
+          const transformed = transformAPICompany(company);
+          addCompany(transformed);
+          companyId = transformed.id;
+        }
+      } else {
+        const res = await fetch('/api/companies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newCompanyName.trim(),
+            country: 'Unknown',
+            sector: 'Unknown',
+            ...(searchQueryId ? { searchQueryId } : {}),
+          }),
+        });
+        if (!res.ok) throw new Error('Failed to create company');
+        const company = await res.json();
+        const transformed = transformAPICompany(company);
+        addCompany(transformed);
+        companyId = transformed.id;
+      }
+
+      if (newExecName.trim()) {
+        const execRes = await fetch('/api/executives', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: parseInt(companyId),
+            name: newExecName.trim(),
+            title: newExecTitle.trim() || 'Unknown',
+          }),
+        });
+        if (execRes.ok) {
+          const exec = await execRes.json();
+          addExecutive(transformAPIExecutive(exec, companyId));
+        }
+      }
+
+      toast.success(matchedCompany ? `Added executive to "${matchedCompany.name}"` : `Created "${newCompanyName.trim()}"`);
+      setAddCompanyDialogOpen(false);
+      setNewCompanyName('');
+      setNewExecName('');
+      setNewExecTitle('');
+      setMatchedCompany(null);
+      setCompanySuggestions([]);
+    } catch {
+      toast.error('Failed to add company');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [newCompanyName, newExecName, newExecTitle, matchedCompany, currentProject, addCompany, addExecutive, companies]);
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
@@ -738,40 +853,112 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           variant="outline"
           size="sm"
           className="h-7 text-xs"
-          onClick={handleAddCompany}
+          onClick={() => {
+            setAddCompanyDialogOpen(true);
+            setNewCompanyName('');
+            setNewExecName('');
+            setNewExecTitle('');
+            setMatchedCompany(null);
+            setCompanySuggestions([]);
+          }}
           data-testid="button-add-company"
         >
           <Building2 className="h-3 w-3 mr-1" />
           New Company
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-add-executive">
-              <UserPlus className="h-3 w-3 mr-1" />
-              New Executive
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-60 overflow-auto">
-            <DropdownMenuLabel className="text-xs">Add to Company</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {Array.from(new Set(data.map(r => r.companyId))).map(cid => {
-              const companyName = data.find(r => r.companyId === cid)?.companyName || 'Unknown';
-              return (
-                <DropdownMenuItem key={cid} onClick={() => handleAddExecutive(cid)} data-testid={`add-exec-to-${cid}`}>
-                  {companyName}
-                </DropdownMenuItem>
-              );
-            })}
-            {data.length === 0 && (
-              <DropdownMenuItem disabled>No companies yet</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
 
         <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
           {table.getRowModel().rows.length} rows
         </span>
       </div>
+
+      <Dialog open={addCompanyDialogOpen} onOpenChange={setAddCompanyDialogOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="dialog-add-company">
+          <DialogHeader>
+            <DialogTitle>Add Company & Executive</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative">
+              <Label htmlFor="company-name" className="text-xs font-medium">Company Name</Label>
+              <Input
+                id="company-name"
+                value={newCompanyName}
+                onChange={(e) => handleCompanyNameChange(e.target.value)}
+                onFocus={() => companySuggestions.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                placeholder="Type to search or create new..."
+                className="mt-1"
+                data-testid="input-company-name"
+                autoFocus
+              />
+              {showSuggestions && companySuggestions.length > 0 && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto"
+                >
+                  {companySuggestions.map((c) => (
+                    <button
+                      key={c.id}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 flex items-center justify-between"
+                      onMouseDown={(e) => { e.preventDefault(); selectSuggestion(c); }}
+                      data-testid={`suggestion-${c.id}`}
+                    >
+                      <span className="font-medium truncate">{c.name}</span>
+                      <span className="text-xs text-muted-foreground ml-2 shrink-0">
+                        {c.hq_country !== 'Unknown' ? c.hq_country : ''}
+                        {c.revenue_usd > 0 ? ` · ${formatRevenue(c.revenue_usd)}` : ''}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {matchedCompany && (
+                <div className="mt-2 p-2 bg-muted/30 rounded-md text-xs space-y-0.5">
+                  <div className="text-muted-foreground">Existing company data will be auto-filled:</div>
+                  <div>Country: <span className="font-medium">{matchedCompany.hq_country || 'Unknown'}</span></div>
+                  <div>Sector: <span className="font-medium">{matchedCompany.industry || 'Unknown'}</span></div>
+                  {matchedCompany.revenue_usd > 0 && <div>Revenue: <span className="font-medium">{formatRevenue(matchedCompany.revenue_usd)}</span></div>}
+                  {matchedCompany.employees > 0 && <div>Employees: <span className="font-medium">{formatEmployees(matchedCompany.employees)}</span></div>}
+                </div>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="exec-name" className="text-xs font-medium">Executive Name</Label>
+              <Input
+                id="exec-name"
+                value={newExecName}
+                onChange={(e) => setNewExecName(e.target.value)}
+                placeholder="e.g. John Smith"
+                className="mt-1"
+                data-testid="input-exec-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="exec-title" className="text-xs font-medium">Executive Title</Label>
+              <Input
+                id="exec-title"
+                value={newExecTitle}
+                onChange={(e) => setNewExecTitle(e.target.value)}
+                placeholder="e.g. CEO, CFO, Managing Director"
+                className="mt-1"
+                data-testid="input-exec-title"
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddCompanySubmit(); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAddCompanyDialogOpen(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              onClick={handleAddCompanySubmit}
+              disabled={!newCompanyName.trim() || isSubmitting}
+              data-testid="button-submit-add-company"
+            >
+              {isSubmitting ? 'Adding...' : matchedCompany ? 'Add Executive' : 'Create Company'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div
         ref={tableContainerRef}

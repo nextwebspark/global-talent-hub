@@ -154,6 +154,10 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
   }
 
+  async searchCompaniesByName(name: string): Promise<Company[]> {
+    return db.select().from(companies).where(ilike(companies.name, `%${name}%`)).limit(20);
+  }
+
   /**
    * @deprecated Use layer-aware methods instead:
    * - Discovery: createCompanyFromDiscovery()

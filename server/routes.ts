@@ -122,6 +122,18 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/companies/search", async (req, res) => {
+    try {
+      const name = String(req.query.name || '').trim();
+      if (name.length < 2) return res.json([]);
+      const results = await storage.searchCompaniesByName(name);
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching companies:", error);
+      res.status(500).json({ error: "Failed to search companies" });
+    }
+  });
+
   app.get("/api/companies/:id", async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
@@ -140,7 +152,20 @@ export async function registerRoutes(
   // UI/MANUAL LAYER: User-initiated company creation
   app.post("/api/companies", async (req, res) => {
     try {
-      const validated = insertCompanySchema.parse(req.body);
+      let data = { ...req.body };
+      if ((!data.latitude || data.latitude === '0') && (!data.longitude || data.longitude === '0')) {
+        const fallback = applyCoordinateFallback({
+          latitude: null,
+          longitude: null,
+          city: data.region || null,
+          country: data.country || null,
+        });
+        if (fallback.latitude && fallback.longitude) {
+          data.latitude = String(fallback.latitude);
+          data.longitude = String(fallback.longitude);
+        }
+      }
+      const validated = insertCompanySchema.parse(data);
       const company = await storage.createCompanyManual(validated);
       res.status(201).json(company);
     } catch (error) {

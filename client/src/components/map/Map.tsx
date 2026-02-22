@@ -1,5 +1,5 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
-import { useAppStore, type Executive, transformAPICompany } from '@/lib/store';
+import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import React, { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -169,15 +169,19 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, addCompany, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
+  const [newMapExecName, setNewMapExecName] = useState('');
+  const [newMapExecTitle, setNewMapExecTitle] = useState('');
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
     setNewCompanyName('');
+    setNewMapExecName('');
+    setNewMapExecTitle('');
     setTimeout(() => newCompanyInputRef.current?.focus(), 100);
   }, []);
 
@@ -199,14 +203,34 @@ export default function MapComponent() {
       });
       if (!res.ok) throw new Error('Failed');
       const company = await res.json();
-      addCompany(transformAPICompany(company));
+      const transformed = transformAPICompany(company);
+      addCompany(transformed);
+
+      if (newMapExecName.trim()) {
+        const execRes = await fetch('/api/executives', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId: company.id,
+            name: newMapExecName.trim(),
+            title: newMapExecTitle.trim() || 'Unknown',
+          }),
+        });
+        if (execRes.ok) {
+          const exec = await execRes.json();
+          addExecutive(transformAPIExecutive(exec, transformed.id));
+        }
+      }
+
       setAddCompanyDialog(null);
       setNewCompanyName('');
+      setNewMapExecName('');
+      setNewMapExecTitle('');
       toast.success(`Added "${newCompanyName.trim()}" to the map`);
     } catch {
       toast.error('Failed to add company');
     }
-  }, [addCompanyDialog, newCompanyName, addCompany, currentProject]);
+  }, [addCompanyDialog, newCompanyName, newMapExecName, newMapExecTitle, addCompany, addExecutive, currentProject]);
 
   // Filter companies based on revenue/employee range sliders, valid coordinates, and visibility
   const revenueMin = revenueFilterRange[0] * 50000000;
@@ -428,29 +452,50 @@ export default function MapComponent() {
 
       {addCompanyDialog && (
         <div
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-background/95 backdrop-blur border border-border p-3 rounded-lg shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 w-72"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-background/95 backdrop-blur border border-border p-3 rounded-lg shadow-xl animate-in fade-in slide-in-from-top-2 duration-200 w-80"
           data-testid="add-company-map-dialog"
         >
           <div className="text-xs text-muted-foreground mb-2">Add company at {addCompanyDialog.lat.toFixed(2)}, {addCompanyDialog.lng.toFixed(2)}</div>
-          <div className="flex gap-2">
+          <div className="space-y-2">
             <Input
               ref={newCompanyInputRef}
-              className="h-8 text-xs flex-1"
+              className="h-8 text-xs"
               placeholder="Company name..."
               value={newCompanyName}
               onChange={e => setNewCompanyName(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter') handleCreateCompanyOnMap();
                 if (e.key === 'Escape') setAddCompanyDialog(null);
               }}
               data-testid="input-new-company-map"
             />
-            <Button size="sm" className="h-8 text-xs" onClick={handleCreateCompanyOnMap} disabled={!newCompanyName.trim()} data-testid="button-confirm-add-company-map">
-              Add
-            </Button>
-            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setAddCompanyDialog(null)}>
-              Cancel
-            </Button>
+            <div className="flex gap-2">
+              <Input
+                className="h-8 text-xs flex-1"
+                placeholder="Executive name (optional)"
+                value={newMapExecName}
+                onChange={e => setNewMapExecName(e.target.value)}
+                data-testid="input-new-exec-name-map"
+              />
+              <Input
+                className="h-8 text-xs flex-1"
+                placeholder="Title (optional)"
+                value={newMapExecTitle}
+                onChange={e => setNewMapExecTitle(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCreateCompanyOnMap();
+                  if (e.key === 'Escape') setAddCompanyDialog(null);
+                }}
+                data-testid="input-new-exec-title-map"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddCompanyDialog(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" className="h-7 text-xs" onClick={handleCreateCompanyOnMap} disabled={!newCompanyName.trim()} data-testid="button-confirm-add-company-map">
+                Add
+              </Button>
+            </div>
           </div>
         </div>
       )}

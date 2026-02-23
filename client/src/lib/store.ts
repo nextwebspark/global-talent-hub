@@ -85,8 +85,14 @@ export interface Company {
   lng: number;
   revenue_usd: number;
   revenueSource?: string;
+  revenueSourceUrl?: string;
+  revenueConfidence?: number;
+  revenueCurrency?: string;
+  revenueFiscalYear?: number;
   employees: number;
   employeesSource?: string;
+  employeesSourceUrl?: string;
+  employeesConfidence?: number;
   geographicFootprint?: number;
   customerModel?: string;
   ownershipType?: string;
@@ -362,8 +368,14 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     lng: isValidCoordinate(lat, lng) ? lng : 0,
     revenue_usd: revenue >= 0 ? revenue : 0,
     revenueSource: String(ext.revenueSource || 'Unknown').trim(),
+    revenueSourceUrl: ext.revenueSourceUrl || undefined,
+    revenueConfidence: ext.revenueConfidence ?? undefined,
+    revenueCurrency: ext.revenueCurrency || undefined,
+    revenueFiscalYear: ext.revenueFiscalYear ?? undefined,
     employees: employees >= 0 ? employees : 0,
     employeesSource: String(ext.employeesSource || 'Unknown').trim(),
+    employeesSourceUrl: ext.employeesSourceUrl || undefined,
+    employeesConfidence: ext.employeesConfidence ?? undefined,
     geographicFootprint: ext.geographicFootprint ?? undefined,
     customerModel: ext.customerModel ? String(ext.customerModel).trim() : undefined,
     ownershipType: ext.ownershipType ? String(ext.ownershipType).trim() : undefined,

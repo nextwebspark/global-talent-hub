@@ -10,7 +10,18 @@ export interface Company {
   latitude: string;
   longitude: string;
   revenue: string | null;
+  revenueSource: string | null;
+  revenueSourceUrl: string | null;
+  revenueConfidence: number | null;
+  revenueCurrency: string | null;
+  revenueFiscalYear: number | null;
   employees: number | null;
+  employeesSource: string | null;
+  employeesSourceUrl: string | null;
+  employeesConfidence: number | null;
+  confidence: number | null;
+  businessType: string | null;
+  relevanceReason: string | null;
   color: string | null;
   searchQueryId: number | null;
   createdAt: string;

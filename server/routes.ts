@@ -1093,29 +1093,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           country: company.country || undefined,
         });
         return {
-          id: company.id,
-          name: company.name,
-          sector: company.sector,
-          region: company.region,
-          country: company.country,
-          streetAddress: company.streetAddress,
+          ...company,
           latitude: coords.latitude ? String(coords.latitude) : company.latitude,
           longitude: coords.longitude ? String(coords.longitude) : company.longitude,
-          revenue: company.revenue,
-          revenueSource: company.revenueSource,
-          employees: company.employees,
-          employeesSource: company.employeesSource,
-          confidence: company.confidence,
-          color: company.color,
-          executives: company.executives.map(exec => ({
-            id: exec.id,
-            name: exec.name,
-            title: exec.title,
-            source: exec.source,
-            profileUrl: exec.profileUrl,
-            imageUrl: exec.imageUrl,
-            confidence: exec.confidence
-          }))
+          executives: company.executives.map(exec => ({ ...exec }))
         };
       });
       
@@ -1146,29 +1127,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           country: company.country || undefined,
         });
         return {
-          id: company.id,
-          name: company.name,
-          sector: company.sector,
-          region: company.region,
-          country: company.country,
-          streetAddress: company.streetAddress,
+          ...company,
           latitude: coords.latitude ? String(coords.latitude) : company.latitude,
           longitude: coords.longitude ? String(coords.longitude) : company.longitude,
-          revenue: company.revenue,
-          revenueSource: company.revenueSource,
-          employees: company.employees,
-          employeesSource: company.employeesSource,
-          confidence: company.confidence,
-          color: company.color,
-          executives: company.executives.map(exec => ({
-            id: exec.id,
-            name: exec.name,
-            title: exec.title,
-            source: exec.source,
-            profileUrl: exec.profileUrl,
-            imageUrl: exec.imageUrl,
-            confidence: exec.confidence
-          }))
+          executives: company.executives.map(exec => ({ ...exec }))
         };
       });
 

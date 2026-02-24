@@ -400,7 +400,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         'LinkedIn': row.linkedin || '',
         'Career Summary': row.careerSummary || '',
         'Remuneration': row.remunerationNotes || '',
-        'Availability': row.availability || '',
+        'Status': row.availability || '',
       };
       if (row.customFields) {
         Object.entries(row.customFields).forEach(([k, v]) => {
@@ -1422,7 +1422,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                                 <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
                                 <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                                 <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
-                                <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Availability</option>
+                                <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
                               </select>
                               {currentMapping && (
                                 <span className="text-green-600 text-xs shrink-0">Mapped</span>

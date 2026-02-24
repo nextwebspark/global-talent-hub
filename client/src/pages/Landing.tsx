@@ -473,7 +473,7 @@ export default function Landing() {
     name: 'Name', company: 'Company', title: 'Title', country: 'Country',
     city: 'City', sector: 'Sector', revenue: 'Revenue', employees: 'Employees',
     email: 'Email', phone: 'Phone', linkedin: 'LinkedIn', notes: 'Notes',
-    careerSummary: 'Career Summary', remunerationNotes: 'Remuneration', availability: 'Availability',
+    careerSummary: 'Career Summary', remunerationNotes: 'Remuneration', availability: 'Status',
   };
 
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));

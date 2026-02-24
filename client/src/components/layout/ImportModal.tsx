@@ -585,7 +585,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                             <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
                             <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                             <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
-                            <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Availability</option>
+                            <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
                           </optgroup>
                           <optgroup label="Company Fields">
                             <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>

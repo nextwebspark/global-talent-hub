@@ -243,7 +243,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         <StatCard icon={Building2} label="Total Companies" value={mappingCompletion.totalCompanies} subtitle="In search universe" />
         <StatCard icon={TrendingUp} label="Mapped" value={mappingCompletion.mappedCount} subtitle={`${mappingCompletion.completionPct}% completion`} />
         <StatCard icon={Users} label="Executives" value={executiveUniverse.totalExecutives} subtitle="Identified across all companies" />
-        <StatCard icon={UserCheck} label="Available" value={`${availability.availabilityPct}%`} subtitle={`${availability.availableCount} of ${availability.totalExecutives}`} />
+        <StatCard icon={UserCheck} label="Interested" value={`${availability.availabilityPct}%`} subtitle={`${availability.availableCount} of ${availability.totalExecutives}`} />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -351,21 +351,21 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         </div>
 
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-availability">
-          <SectionHeader title="Availability" icon={UserCheck} />
+          <SectionHeader title="Status" icon={UserCheck} />
           {!hasAvailData ? (
             <div className="text-xs text-muted-foreground py-8 text-center">
-              No availability data captured yet. Flag executives as available to see rates here.
+              No status data captured yet. Mark executives as Interested or Not Interested to see rates here.
             </div>
           ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-4 pb-2 border-b border-border">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-emerald-400">{availability.availabilityPct}%</p>
-                  <p className="text-[10px] text-muted-foreground uppercase">Overall Rate</p>
+                  <p className="text-[10px] text-muted-foreground uppercase">Interest Rate</p>
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-semibold text-foreground">{availability.availableCount}</p>
-                  <p className="text-[10px] text-muted-foreground uppercase">Available</p>
+                  <p className="text-[10px] text-muted-foreground uppercase">Interested</p>
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-semibold text-foreground">{availability.totalExecutives}</p>

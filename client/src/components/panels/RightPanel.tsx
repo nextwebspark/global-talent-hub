@@ -1313,31 +1313,21 @@ function ExecutiveDetailView({
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Availability</h3>
+                <h3 className="font-semibold">Status</h3>
               </div>
-              {editingField === 'availability' ? (
-                <div className="space-y-2">
-                  <Textarea
-                    autoFocus
-                    value={availability}
-                    onChange={(e) => setAvailability(e.target.value)}
-                    onBlur={() => handleSaveTextField('availability', availability)}
-                    placeholder="Notice period, availability, relocation preferences..."
-                    className="min-h-[100px]"
-                  />
-                  <p className="text-xs text-muted-foreground">Click outside to save</p>
-                </div>
-              ) : (
-                <div 
-                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
-                  onClick={() => setEditingField('availability')}>
-                  {availability ? (
-                    <p className="text-sm whitespace-pre-wrap">{availability}</p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">Click to add availability info...</p>
-                  )}
-                </div>
-              )}
+              <select
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                value={availability}
+                onChange={(e) => {
+                  setAvailability(e.target.value);
+                  handleSaveTextField('availability', e.target.value);
+                }}
+                data-testid="select-status"
+              >
+                <option value="">- Select Status -</option>
+                <option value="Interested">Interested</option>
+                <option value="Not Interested">Not Interested</option>
+              </select>
             </div>
           </div>
         </ScrollArea>

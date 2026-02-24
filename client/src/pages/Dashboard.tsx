@@ -122,7 +122,7 @@ export default function Dashboard() {
         'Executive': row.name || '', 'Title': row.title || '', 'Notes': row.notes || '',
         'Email': row.email || '', 'Phone': row.phone || '', 'LinkedIn': row.linkedin || '',
         'Career Summary': row.careerSummary || '', 'Remuneration': row.remunerationNotes || '',
-        'Availability': row.availability || '',
+        'Status': row.availability || '',
       };
       if (row.customFields) Object.entries(row.customFields).forEach(([k, v]) => { base[k] = v as string || ''; });
       return base;

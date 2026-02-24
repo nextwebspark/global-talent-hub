@@ -97,6 +97,169 @@ function parseRevenueInput(input: string): number {
   return isNaN(num) ? 0 : num;
 }
 
+const STATUS_OPTIONS = ['Interested', 'Not Interested'] as const;
+
+const COUNTRIES = [
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
+  'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan',
+  'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cambodia', 'Cameroon',
+  'Canada', 'Cape Verde', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia', 'Comoros', 'Congo', 'Costa Rica',
+  'Croatia', 'Cuba', 'Cyprus', 'Czech Republic', 'DR Congo', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'East Timor',
+  'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji', 'Finland',
+  'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea',
+  'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hong Kong', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran',
+  'Iraq', 'Ireland', 'Israel', 'Italy', 'Ivory Coast', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan', 'Kenya',
+  'Kiribati', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein',
+  'Lithuania', 'Luxembourg', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Mauritania',
+  'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar',
+  'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia',
+  'Norway', 'Oman', 'Pakistan', 'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines',
+  'Poland', 'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda', 'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa',
+  'San Marino', 'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia', 'Slovenia',
+  'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden',
+  'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia',
+  'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan',
+  'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
+];
+
+function SelectCell({ value, options, onSave, placeholder }: {
+  value: string;
+  options: readonly string[];
+  onSave: (val: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  useEffect(() => {
+    if (open && selectRef.current) {
+      selectRef.current.focus();
+    }
+  }, [open]);
+
+  if (open) {
+    return (
+      <select
+        ref={selectRef}
+        className="w-full bg-background border border-primary/50 rounded px-1 py-0 text-xs outline-none focus:border-primary cursor-pointer"
+        value={value}
+        onChange={e => {
+          onSave(e.target.value);
+          setOpen(false);
+        }}
+        onBlur={() => setOpen(false)}
+        onClick={e => e.stopPropagation()}
+        data-testid="select-cell-input"
+      >
+        <option value="">{placeholder || '- Select -'}</option>
+        {options.map(opt => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <span
+      className="truncate block cursor-pointer hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+      title={value || undefined}
+      onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      data-testid="select-cell-display"
+    >
+      {value || '-'}
+    </span>
+  );
+}
+
+function SearchableSelectCell({ value, options, onSave, placeholder }: {
+  value: string;
+  options: readonly string[];
+  onSave: (val: string) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!search) return options;
+    const lower = search.toLowerCase();
+    return options.filter(o => o.toLowerCase().startsWith(lower));
+  }, [options, search]);
+
+  useEffect(() => {
+    if (open && inputRef.current) {
+      inputRef.current.focus();
+      setSearch(value || '');
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open && listRef.current && filtered.length > 0) {
+      const firstMatch = listRef.current.querySelector('[data-highlighted="true"]');
+      if (firstMatch) firstMatch.scrollIntoView({ block: 'nearest' });
+    }
+  }, [filtered, open]);
+
+  if (open) {
+    return (
+      <div className="relative" onClick={e => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          className="w-full bg-background border border-primary/50 rounded px-1 py-0 text-xs outline-none focus:border-primary"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && filtered.length > 0) {
+              onSave(filtered[0]);
+              setOpen(false);
+            }
+            if (e.key === 'Escape') { setSearch(''); setOpen(false); }
+          }}
+          onBlur={() => {
+            setTimeout(() => setOpen(false), 150);
+          }}
+          placeholder={placeholder || 'Type to search...'}
+          data-testid="searchable-select-input"
+        />
+        {filtered.length > 0 && (
+          <div
+            ref={listRef}
+            className="absolute z-50 top-full left-0 right-0 mt-0.5 max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg"
+          >
+            {filtered.map(opt => (
+              <div
+                key={opt}
+                data-highlighted={opt === filtered[0] ? 'true' : 'false'}
+                className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${opt === value ? 'bg-accent/50 font-medium' : ''} ${opt === filtered[0] ? 'bg-accent/30' : ''}`}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onSave(opt);
+                  setOpen(false);
+                }}
+              >
+                {opt}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <span
+      className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+      title={value || undefined}
+      onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      data-testid="searchable-select-display"
+    >
+      {value || '-'}
+    </span>
+  );
+}
+
 function EditableCell({ value, onSave, isNumeric, formatFn }: {
   value: string;
   onSave: (val: string) => void;
@@ -488,8 +651,30 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     const cols = [
       columnHelper.accessor('country', {
         header: 'Country',
-        cell: editableCell('country'),
-        size: 100,
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row) return <span>-</span>;
+          if (info.row.getIsGrouped()) {
+            if (info.column.getIsGrouped()) {
+              return (
+                <span className="font-semibold flex items-center gap-1">
+                  {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  {info.getValue()} ({info.row.subRows.length})
+                </span>
+              );
+            }
+            return null;
+          }
+          return (
+            <SearchableSelectCell
+              value={String(info.getValue() || '')}
+              options={COUNTRIES}
+              onSave={(val) => handleCellSave(row, 'country', val)}
+              placeholder="Search country..."
+            />
+          );
+        },
+        size: 140,
         enableGrouping: true,
       }),
       columnHelper.accessor('companyName', {
@@ -567,7 +752,23 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       columnHelper.accessor('linkedin', { header: 'LinkedIn', cell: editableCell('linkedin'), size: 160, enableGrouping: false }),
       columnHelper.accessor('careerSummary', { header: 'Career Summary', cell: editableCell('careerSummary'), size: 180, enableGrouping: false }),
       columnHelper.accessor('remunerationNotes', { header: 'Remuneration', cell: editableCell('remunerationNotes'), size: 140, enableGrouping: false }),
-      columnHelper.accessor('availability', { header: 'Availability', cell: editableCell('availability'), size: 120, enableGrouping: false }),
+      columnHelper.accessor('availability', {
+        header: 'Status',
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row || info.row.getIsGrouped()) return null;
+          return (
+            <SelectCell
+              value={String(info.getValue() || '')}
+              options={STATUS_OPTIONS}
+              onSave={(val) => handleCellSave(row, 'availability', val)}
+              placeholder="- Select Status -"
+            />
+          );
+        },
+        size: 120,
+        enableGrouping: false,
+      }),
     ];
 
     customFieldKeys.forEach(key => {

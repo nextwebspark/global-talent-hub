@@ -2056,8 +2056,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         if (!availByGeo[country]) availByGeo[country] = { total: 0, available: 0 };
         availByLevel[level].total++;
         availByGeo[country].total++;
-        const avail = (e.availability || '').toLowerCase();
-        if (avail && avail !== 'unknown' && avail !== 'n/a' && avail !== 'not available' && avail !== 'no') {
+        const avail = (e.availability || '').toLowerCase().trim();
+        if (avail === 'interested') {
           availableCount++;
           availByLevel[level].available++;
           availByGeo[country].available++;

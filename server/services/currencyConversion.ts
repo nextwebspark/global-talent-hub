@@ -149,6 +149,21 @@ export function convertToUSD(amount: number, currency: string): number {
   return Math.round(amount * rate);
 }
 
+export function getUSDRate(currency: string): number {
+  const code = normalizeCurrencyCode(currency);
+  return USD_RATES[code] || 1;
+}
+
+export function convertBetweenCurrencies(amount: number, fromCurrency: string, toCurrency: string): number {
+  const fromCode = normalizeCurrencyCode(fromCurrency);
+  const toCode = normalizeCurrencyCode(toCurrency);
+  if (fromCode === toCode) return amount;
+  const fromRate = USD_RATES[fromCode] || 1;
+  const toRate = USD_RATES[toCode] || 1;
+  if (toRate === 0) return amount;
+  return Math.round((amount * fromRate / toRate) * 100) / 100;
+}
+
 export function getSupportedCurrencies(): string[] {
   return Object.keys(USD_RATES);
 }

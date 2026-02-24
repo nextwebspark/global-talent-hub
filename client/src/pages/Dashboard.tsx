@@ -94,7 +94,7 @@ export default function Dashboard() {
           ...companyFields,
           id: `company-${company.id}`,
           name: '', title: '', notes: '', email: '', phone: '', linkedin: '',
-          careerSummary: '', remunerationNotes: '', availability: '',
+          careerSummary: '', remunerationNotes: '', availability: '', level: '',
           isCompanyRow: true,
         });
       } else {
@@ -105,7 +105,7 @@ export default function Dashboard() {
             name: exec.name, title: exec.title, notes: exec.notes || '',
             email: exec.email || '', phone: exec.phone || '', linkedin: exec.linkedin || '',
             careerSummary: exec.careerSummary || '', remunerationNotes: exec.remunerationNotes || '',
-            availability: exec.availability || '',
+            availability: exec.availability || '', level: exec.level || '',
             isCompanyRow: false, customFields: exec.customFields,
           });
         });
@@ -123,6 +123,7 @@ export default function Dashboard() {
         'Email': row.email || '', 'Phone': row.phone || '', 'LinkedIn': row.linkedin || '',
         'Career Summary': row.careerSummary || '', 'Remuneration': row.remunerationNotes || '',
         'Status': row.availability || '',
+        'Level': row.level || '',
       };
       if (row.customFields) Object.entries(row.customFields).forEach(([k, v]) => { base[k] = v as string || ''; });
       return base;

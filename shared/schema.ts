@@ -68,6 +68,7 @@ export const executives = pgTable("executives", {
   notes: text("notes"),
   remunerationNotes: text("remuneration_notes"),
   availability: text("availability"),
+  level: text("level"),
   sourceText: text("source_text"),
   source: text("source"),
   confidence: integer("confidence").default(5),

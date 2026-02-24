@@ -338,7 +338,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
 
   // Table data for Excel-like view
   const tableData = useMemo(() => {
-    const data: { id: string; country: string; name: string; title: string; notes: string; email: string; phone: string; linkedin: string; careerSummary: string; remunerationNotes: string; availability: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean; customFields?: Record<string, string> }[] = [];
+    const data: { id: string; country: string; name: string; title: string; notes: string; email: string; phone: string; linkedin: string; careerSummary: string; remunerationNotes: string; availability: string; level: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean; customFields?: Record<string, string> }[] = [];
     
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
@@ -355,6 +355,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           careerSummary: '',
           remunerationNotes: '',
           availability: '',
+          level: '',
           companyId: company.id,
           companyName: company.name,
           companyColor: company.color || '#1e3a8a',
@@ -374,6 +375,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
             careerSummary: exec.careerSummary || '',
             remunerationNotes: exec.remunerationNotes || '',
             availability: exec.availability || '',
+            level: exec.level || '',
             companyId: company.id,
             companyName: company.name,
             companyColor: company.color || '#1e3a8a',
@@ -401,6 +403,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         'Career Summary': row.careerSummary || '',
         'Remuneration': row.remunerationNotes || '',
         'Status': row.availability || '',
+        'Level': row.level || '',
       };
       if (row.customFields) {
         Object.entries(row.customFields).forEach(([k, v]) => {
@@ -504,6 +507,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
       'availability', 'available', 'status', 'availability status', 'open to',
       'notice period', 'notice', 'start date', 'available from', 'can start',
       'ready', 'timeline', 'availability date', 'current status', 'employment status'
+    ],
+    level: [
+      'level', 'seniority', 'seniority level', 'executive level', 'management level',
+      'grade', 'band', 'tier', 'rank', 'position level'
     ]
   };
 
@@ -1423,6 +1430,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                                 <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                                 <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
                                 <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
+                                <option value="level" disabled={!!importPreview.mappings.level && importPreview.mappings.level !== header}>Level</option>
                               </select>
                               {currentMapping && (
                                 <span className="text-green-600 text-xs shrink-0">Mapped</span>

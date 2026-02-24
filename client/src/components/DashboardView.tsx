@@ -351,10 +351,10 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         </div>
 
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-availability">
-          <SectionHeader title="Status" icon={UserCheck} />
+          <SectionHeader title="Level" icon={UserCheck} />
           {!hasAvailData ? (
             <div className="text-xs text-muted-foreground py-8 text-center">
-              No status data captured yet. Mark executives as Interested or Not Interested to see rates here.
+              No level data captured yet. Assign levels (Board, C-Suite, N-1, N-2) and mark status to see rates here.
             </div>
           ) : (
             <div className="space-y-4">

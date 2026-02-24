@@ -774,6 +774,7 @@ function ExecutiveDetailView({
   const [notes, setNotes] = useState('');
   const [remunerationNotes, setRemunerationNotes] = useState('');
   const [availability, setAvailability] = useState('');
+  const [level, setLevel] = useState('');
   
   const [editingField, setEditingField] = useState<string | null>(null);
   
@@ -802,6 +803,7 @@ function ExecutiveDetailView({
       setNotes(executiveDetails.executive.notes || '');
       setRemunerationNotes(executiveDetails.executive.remunerationNotes || '');
       setAvailability(executiveDetails.executive.availability || '');
+      setLevel(executiveDetails.executive.level || '');
       setSourceText(executiveDetails.executive.sourceText || '');
       setLinkedInInput(executiveDetails.executive.linkedin || '');
       setStructuredRem(null);
@@ -1327,6 +1329,30 @@ function ExecutiveDetailView({
                 <option value="">- Select Status -</option>
                 <option value="Interested">Interested</option>
                 <option value="Not Interested">Not Interested</option>
+              </select>
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Level</h3>
+              </div>
+              <select
+                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                value={level}
+                onChange={(e) => {
+                  setLevel(e.target.value);
+                  handleSaveTextField('level', e.target.value);
+                }}
+                data-testid="select-level"
+              >
+                <option value="">- Select Level -</option>
+                <option value="Board">Board</option>
+                <option value="C-Suite">C-Suite</option>
+                <option value="N-1">N-1</option>
+                <option value="N-2">N-2</option>
               </select>
             </div>
           </div>

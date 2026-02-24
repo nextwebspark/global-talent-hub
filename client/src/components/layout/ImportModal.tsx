@@ -98,6 +98,10 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'availability', 'available', 'status', 'availability status', 'open to',
     'notice period', 'notice', 'start date', 'available from', 'can start',
     'ready', 'timeline', 'availability date', 'current status', 'employment status'
+  ],
+  level: [
+    'level', 'seniority', 'seniority level', 'executive level', 'management level',
+    'grade', 'band', 'tier', 'rank', 'position level'
   ]
 };
 
@@ -586,6 +590,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                             <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                             <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
                             <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
+                            <option value="level" disabled={!!importPreview.mappings.level && importPreview.mappings.level !== header}>Level</option>
                           </optgroup>
                           <optgroup label="Company Fields">
                             <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>

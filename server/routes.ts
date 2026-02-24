@@ -300,6 +300,7 @@ export async function registerRoutes(
           const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
           const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
           const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
+          const level = safeStr(mappings.level ? record[mappings.level] : null);
 
           if (!name && !companyName && !title) continue;
 
@@ -377,6 +378,7 @@ export async function registerRoutes(
               careerSummary,
               remunerationNotes,
               availability,
+              level,
               customFields: Object.keys(customFields).length > 0 ? customFields : null,
               confidence: 5
             });
@@ -581,6 +583,7 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
           notes: details.executive.notes,
           remunerationNotes: details.executive.remunerationNotes,
           availability: details.executive.availability,
+          level: details.executive.level,
           sourceText: details.executive.sourceText,
           enrichmentSource: details.executive.enrichmentSource,
           enrichmentConfidence: details.executive.enrichmentConfidence,
@@ -1811,6 +1814,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
           const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
           const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
+          const level = safeStr(mappings.level ? record[mappings.level] : null);
 
           if (!execName && !companyName && !title) continue;
 
@@ -1867,6 +1871,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
               careerSummary,
               remunerationNotes,
               availability,
+              level,
               customFields: Object.keys(customFields).length > 0 ? customFields : null,
               confidence: 5
             });
@@ -1962,8 +1967,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       const titleBreakdown: Record<string, number> = {};
       const countryExecBreakdown: Record<string, number> = {};
       for (const e of allExecutives) {
-        const normalizedTitle = normalizeExecutiveLevel(e.title);
-        titleBreakdown[normalizedTitle] = (titleBreakdown[normalizedTitle] || 0) + 1;
+        const execLevel = (e.level || '').trim() || 'Unassigned';
+        titleBreakdown[execLevel] = (titleBreakdown[execLevel] || 0) + 1;
         countryExecBreakdown[e.companyCountry] = (countryExecBreakdown[e.companyCountry] || 0) + 1;
       }
 
@@ -2001,10 +2006,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
           const exec = execMap.get(r.executiveId);
           if (!exec) continue;
-          const level = normalizeExecutiveLevel(exec.title);
+          const remLevel = (exec.level || '').trim() || 'Unassigned';
           const country = exec.companyCountry;
 
-          if (!remunerationByLevel[level]) remunerationByLevel[level] = emptyBreakdown();
+          if (!remunerationByLevel[remLevel]) remunerationByLevel[remLevel] = emptyBreakdown();
           if (!remunerationByGeo[country]) remunerationByGeo[country] = emptyBreakdown();
 
           const addValues = (target: CategoryBreakdown) => {
@@ -2015,7 +2020,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
             target.totalPackage.push(total);
           };
 
-          addValues(remunerationByLevel[level]);
+          addValues(remunerationByLevel[remLevel]);
           addValues(remunerationByGeo[country]);
           addValues(overallCategories);
         }
@@ -2050,16 +2055,16 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
       for (const e of allExecutives) {
-        const level = normalizeExecutiveLevel(e.title);
+        const execLevel = (e.level || '').trim() || 'Unassigned';
         const country = e.companyCountry;
-        if (!availByLevel[level]) availByLevel[level] = { total: 0, available: 0 };
+        if (!availByLevel[execLevel]) availByLevel[execLevel] = { total: 0, available: 0 };
         if (!availByGeo[country]) availByGeo[country] = { total: 0, available: 0 };
-        availByLevel[level].total++;
+        availByLevel[execLevel].total++;
         availByGeo[country].total++;
         const avail = (e.availability || '').toLowerCase().trim();
         if (avail === 'interested') {
           availableCount++;
-          availByLevel[level].available++;
+          availByLevel[execLevel].available++;
           availByGeo[country].available++;
         }
       }

@@ -1,0 +1,22 @@
+I need you to add a Dashboard view to my existing application. This should appear as a new option in the side menu bar, sitting alongside the existing "Map View" and "Table View" options, following the same design patterns and navigation conventions already used in the project.
+Navigation
+Add a "Dashboard" item to the side menu bar. It should use a suitable icon consistent with the existing menu icons and navigate to a new Dashboard page/component when clicked. The active state styling should match the existing selected state behaviour of the other menu items.
+Core Logic — The Universe & Completion
+The universe of talent is defined by the companies currently added to the search. Every company in the system counts as part of the universe. The completion percentage is calculated at the company level — a company is considered "mapped" when at least one executive has been identified and profiled within it at the agreed level. As new companies are added to the search, the universe (denominator) updates automatically and the completion percentage recalculates in real time.
+Dashboard Sections
+Build four clear sections on the Dashboard page:
+Mapping Completion
+Show the total number of companies in the universe, how many have been mapped, and the overall completion percentage. Display this as a progress indicator (ring or bar) alongside a geographic breakdown showing completion by region/country so the client can see where coverage is strong and where gaps remain.
+Executive Universe
+Show the total number of executives identified across all mapped companies. Break this down by executive level (e.g. CFO, direct reports) and by geography. This gives a clear picture of the total talent pool surfaced so far.
+Remuneration Ranges
+Using the compensation data already captured for executives, display the minimum, median, and maximum remuneration for each executive level. If geographic data is available, show ranges by geography as well, since compensation varies significantly by market. Use a range/band chart or similar visual that makes the spread easy to read at a glance.
+Availability
+Show the overall availability rate across the executive universe — the percentage of mapped executives flagged as open to a conversation. Break this down by executive level and by geography where the data supports it. This should feel like an actionable intelligence metric, not just a count.
+General Requirements
+
+Use the existing data already in the system — companies, executive profiles, compensation data, and availability status. Do not create new data models unless strictly necessary; work with what is already there.
+All four sections should update dynamically as new companies are added or executive profiles are updated.
+Follow the existing UI component library, colour scheme, typography and layout conventions precisely so the Dashboard feels native to the application.
+The Dashboard should be responsive and all four sections should be visible on a single page without excessive scrolling where possible.
+Keep the design clean and minimal — this is a client-facing view and should feel professional and easy to read at a glance.

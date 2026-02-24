@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Loader2, Building2, Users, DollarSign, UserCheck, TrendingUp, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 
+interface CategoryStats {
+  min: number;
+  median: number;
+  max: number;
+  count: number;
+}
+
+interface CategoryBreakdownStats {
+  fixedFees: CategoryStats;
+  allowances: CategoryStats;
+  variableBonus: CategoryStats;
+  ltip: CategoryStats;
+  totalPackage: CategoryStats;
+}
+
 interface DashboardData {
   mappingCompletion: {
     totalCompanies: number;
@@ -14,8 +29,10 @@ interface DashboardData {
     byCountry: Record<string, number>;
   };
   remuneration: {
-    byLevel: Record<string, { min: number; median: number; max: number; count: number }>;
-    byGeography: Record<string, { min: number; median: number; max: number; count: number }>;
+    overall: CategoryBreakdownStats;
+    byLevel: Record<string, CategoryBreakdownStats>;
+    byGeography: Record<string, CategoryBreakdownStats>;
+    currency: string;
   };
   availability: {
     totalExecutives: number;
@@ -25,6 +42,14 @@ interface DashboardData {
     byGeography: Record<string, { total: number; available: number }>;
   };
 }
+
+const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
+  fixedFees: { label: 'Fixed Fees', color: 'bg-blue-500/70' },
+  allowances: { label: 'Total Allowances', color: 'bg-emerald-500/70' },
+  variableBonus: { label: 'Variable Bonus', color: 'bg-amber-500/70' },
+  ltip: { label: 'LTIP', color: 'bg-purple-500/70' },
+  totalPackage: { label: 'Total Package', color: 'bg-primary' },
+};
 
 function formatCurrency(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
@@ -189,9 +214,15 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const maxExecByTitle = Math.max(...Object.values(executiveUniverse.byTitle), 1);
   const maxExecByCountry = Math.max(...Object.values(executiveUniverse.byCountry), 1);
 
-  const remLevels = Object.entries(remuneration.byLevel).sort((a, b) => b[1].median - a[1].median);
-  const remGeos = Object.entries(remuneration.byGeography).sort((a, b) => b[1].median - a[1].median);
-  const globalMaxRem = Math.max(...[...Object.values(remuneration.byLevel), ...Object.values(remuneration.byGeography)].map(v => v.max), 1);
+  const hasRemData = remuneration.overall.totalPackage.count > 0;
+  const overallCats = remuneration.overall;
+  const remLevels = Object.entries(remuneration.byLevel).sort((a, b) => b[1].totalPackage.median - a[1].totalPackage.median);
+  const remGeos = Object.entries(remuneration.byGeography).sort((a, b) => b[1].totalPackage.median - a[1].totalPackage.median);
+  const globalMaxRem = Math.max(
+    ...Object.values(remuneration.byLevel).map(v => v.totalPackage.max),
+    ...Object.values(remuneration.byGeography).map(v => v.totalPackage.max),
+    1
+  );
 
   const availLevels = Object.entries(availability.byLevel).filter(([, v]) => v.total > 0).sort((a, b) => {
     const pctA = a[1].total > 0 ? a[1].available / a[1].total : 0;
@@ -204,7 +235,6 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
     return pctB - pctA;
   });
 
-  const hasRemData = remLevels.length > 0;
   const hasAvailData = availability.availableCount > 0 || availLevels.some(([, v]) => v.available > 0);
 
   return (
@@ -265,17 +295,45 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         </div>
 
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-remuneration">
-          <SectionHeader title="Remuneration Ranges" icon={DollarSign} />
+          <SectionHeader title="Remuneration (USD)" icon={DollarSign} />
           {!hasRemData ? (
             <div className="text-xs text-muted-foreground py-8 text-center">
-              No remuneration data captured yet. Add compensation details to executives to see ranges here.
+              No remuneration data captured yet. Add compensation details to executive profiles and click "Parse with AI" to extract structured data.
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
+                {(['fixedFees', 'allowances', 'variableBonus', 'ltip'] as const).map(cat => {
+                  const stats = overallCats[cat];
+                  const info = CATEGORY_LABELS[cat];
+                  return (
+                    <div key={cat} className="p-2.5 rounded-lg bg-muted/20 border border-border/50">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className={`w-2 h-2 rounded-full ${info.color}`} />
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{info.label}</span>
+                      </div>
+                      {stats.count > 0 ? (
+                        <>
+                          <p className="text-sm font-semibold text-foreground">{formatCurrency(stats.median)}</p>
+                          <p className="text-[10px] text-muted-foreground">{formatCurrency(stats.min)} – {formatCurrency(stats.max)} ({stats.count})</p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">No data</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {overallCats.totalPackage.count > 0 && (
+                <div className="flex items-center justify-between text-xs pb-2">
+                  <span className="text-muted-foreground">Total Package (median)</span>
+                  <span className="font-semibold text-primary text-sm">{formatCurrency(overallCats.totalPackage.median)}</span>
+                </div>
+              )}
               <CollapsibleSection title={`By Level (${remLevels.length})`}>
                 <div className="max-h-[180px] overflow-y-auto pr-1 space-y-1">
                   {remLevels.map(([level, stats]) => (
-                    <RangeBar key={level} label={`${level} (${stats.count})`} min={stats.min} median={stats.median} max={stats.max} globalMax={globalMaxRem} />
+                    <RangeBar key={level} label={`${level} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
                   ))}
                 </div>
               </CollapsibleSection>
@@ -283,7 +341,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                 <CollapsibleSection title={`By Geography (${remGeos.length})`} defaultOpen={false}>
                   <div className="max-h-[180px] overflow-y-auto pr-1 space-y-1">
                     {remGeos.map(([geo, stats]) => (
-                      <RangeBar key={geo} label={`${geo} (${stats.count})`} min={stats.min} median={stats.median} max={stats.max} globalMax={globalMaxRem} />
+                      <RangeBar key={geo} label={`${geo} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
                     ))}
                   </div>
                 </CollapsibleSection>

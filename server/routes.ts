@@ -723,6 +723,41 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
     }
   });
 
+  app.post("/api/executives/:id/remuneration/parse", async (req, res) => {
+    try {
+      const executiveId = parseInt(String(req.params.id));
+      const exec = await storage.getExecutive(executiveId);
+      if (!exec) return res.status(404).json({ error: "Executive not found" });
+
+      const text = req.body.text || exec.remunerationNotes;
+      if (!text || text.trim().length < 5) {
+        return res.status(400).json({ error: "No remuneration text to parse" });
+      }
+
+      const { parseRemunerationText } = await import("./services/remunerationParser");
+      const parsed = await parseRemunerationText(text);
+      if (!parsed) {
+        return res.status(422).json({ error: "Could not extract structured remuneration data from the provided text" });
+      }
+
+      const entry = await storage.createRemuneration({
+        executiveId,
+        baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+        totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
+        bonus: parsed.bonus != null ? String(parsed.bonus) : null,
+        longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
+        currency: parsed.currency,
+        year: parsed.year,
+        notes: parsed.notes,
+      });
+
+      res.status(201).json({ parsed, entry });
+    } catch (error) {
+      console.error("Error parsing remuneration:", error);
+      res.status(500).json({ error: "Failed to parse remuneration data" });
+    }
+  });
+
   // Executive Notes endpoint
   app.get("/api/executives/:id/notes", async (req, res) => {
     try {
@@ -1870,27 +1905,56 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       const execIds = allExecutives.map(e => e.id);
-      let remunerationByLevel: Record<string, { values: number[] }> = {};
-      let remunerationByGeo: Record<string, { values: number[] }> = {};
+
+      type CategoryBreakdown = {
+        fixedFees: number[];
+        allowances: number[];
+        variableBonus: number[];
+        ltip: number[];
+        totalPackage: number[];
+      };
+      const emptyBreakdown = (): CategoryBreakdown => ({ fixedFees: [], allowances: [], variableBonus: [], ltip: [], totalPackage: [] });
+
+      let remunerationByLevel: Record<string, CategoryBreakdown> = {};
+      let remunerationByGeo: Record<string, CategoryBreakdown> = {};
+      let overallCategories: CategoryBreakdown = emptyBreakdown();
 
       if (execIds.length > 0) {
         const { remuneration } = await import("@shared/schema");
         const { inArray } = await import("drizzle-orm");
         const { db } = await import("./db");
+        const { convertToUSD, normalizeCurrencyCode } = await import("./services/currencyConversion");
         const allRem = await db.select().from(remuneration).where(inArray(remuneration.executiveId, execIds));
 
         const execMap = new Map(allExecutives.map(e => [e.id, e]));
         for (const r of allRem) {
-          const total = Number(r.baseSalary || 0) + Number(r.bonus || 0) + Number(r.longTermIncentives || 0);
+          const currency = normalizeCurrencyCode(r.currency);
+          const base = r.baseSalary ? convertToUSD(Number(r.baseSalary), currency) : 0;
+          const allow = r.totalAllowances ? convertToUSD(Number(r.totalAllowances), currency) : 0;
+          const bon = r.bonus ? convertToUSD(Number(r.bonus), currency) : 0;
+          const ltip = r.longTermIncentives ? convertToUSD(Number(r.longTermIncentives), currency) : 0;
+          const total = base + allow + bon + ltip;
           if (total <= 0) continue;
+
           const exec = execMap.get(r.executiveId);
           if (!exec) continue;
           const level = normalizeExecutiveLevel(exec.title);
-          if (!remunerationByLevel[level]) remunerationByLevel[level] = { values: [] };
-          remunerationByLevel[level].values.push(total);
           const country = exec.companyCountry;
-          if (!remunerationByGeo[country]) remunerationByGeo[country] = { values: [] };
-          remunerationByGeo[country].values.push(total);
+
+          if (!remunerationByLevel[level]) remunerationByLevel[level] = emptyBreakdown();
+          if (!remunerationByGeo[country]) remunerationByGeo[country] = emptyBreakdown();
+
+          const addValues = (target: CategoryBreakdown) => {
+            if (base > 0) target.fixedFees.push(base);
+            if (allow > 0) target.allowances.push(allow);
+            if (bon > 0) target.variableBonus.push(bon);
+            if (ltip > 0) target.ltip.push(ltip);
+            target.totalPackage.push(total);
+          };
+
+          addValues(remunerationByLevel[level]);
+          addValues(remunerationByGeo[country]);
+          addValues(overallCategories);
         }
       }
 
@@ -1902,13 +1966,21 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return { min: values[0], median: Math.round(median), max: values[values.length - 1], count: values.length };
       };
 
+      const computeCategoryStats = (bd: CategoryBreakdown) => ({
+        fixedFees: computeStats(bd.fixedFees),
+        allowances: computeStats(bd.allowances),
+        variableBonus: computeStats(bd.variableBonus),
+        ltip: computeStats(bd.ltip),
+        totalPackage: computeStats(bd.totalPackage),
+      });
+
       const remLevelStats: Record<string, any> = {};
       for (const [level, data] of Object.entries(remunerationByLevel)) {
-        remLevelStats[level] = computeStats(data.values);
+        remLevelStats[level] = computeCategoryStats(data);
       }
       const remGeoStats: Record<string, any> = {};
       for (const [geo, data] of Object.entries(remunerationByGeo)) {
-        remGeoStats[geo] = computeStats(data.values);
+        remGeoStats[geo] = computeCategoryStats(data);
       }
 
       let availableCount = 0;
@@ -1942,8 +2014,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           byCountry: countryExecBreakdown,
         },
         remuneration: {
+          overall: computeCategoryStats(overallCategories),
           byLevel: remLevelStats,
           byGeography: remGeoStats,
+          currency: 'USD',
         },
         availability: {
           totalExecutives,

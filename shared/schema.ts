@@ -190,6 +190,7 @@ export const remuneration = pgTable("remuneration", {
   id: serial("id").primaryKey(),
   executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),
   baseSalary: numeric("base_salary", { precision: 15, scale: 2 }),
+  totalAllowances: numeric("total_allowances", { precision: 15, scale: 2 }),
   bonus: numeric("bonus", { precision: 15, scale: 2 }),
   longTermIncentives: numeric("long_term_incentives", { precision: 15, scale: 2 }),
   currency: text("currency").default("USD"),

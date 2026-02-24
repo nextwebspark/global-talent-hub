@@ -116,6 +116,9 @@ After initial discovery, a multi-pass enrichment pipeline (`server/services/pipe
 - API endpoints: `POST /api/companies/:id/enrich-multipass` (single company), `POST /api/search/:id/enrich-all` (batch)
 - Field-level source tracking: `revenueSourceUrl`, `revenueConfidence`, `employeesSourceUrl`, `employeesConfidence`
 
+### Remuneration System
+Executive remuneration data supports 4 categories: Fixed Fees (baseSalary), Total Allowances (totalAllowances), Variable Bonus (bonus), and LTIP (longTermIncentives). Data can be entered in any currency and format via the executive profile's remuneration notes field. AI-powered parsing (`server/services/remunerationParser.ts`) uses OpenAI gpt-5.2 to extract structured data from free-text. Currency conversion (`server/services/currencyConversion.ts`) provides static exchange rates for 45+ currencies to normalize to USD on the dashboard. The RightPanel shows remuneration in original currency; the Dashboard shows all values converted to USD.
+
 ### Audio/Voice Integration
 Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
 

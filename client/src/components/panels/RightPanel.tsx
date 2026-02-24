@@ -790,6 +790,8 @@ function ExecutiveDetailView({
     { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
     { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
   ];
+  const [parsingRemuneration, setParsingRemuneration] = useState(false);
+  const [structuredRem, setStructuredRem] = useState<any>(null);
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
   const [linkedInInput, setLinkedInInput] = useState('');
 
@@ -802,6 +804,13 @@ function ExecutiveDetailView({
       setAvailability(executiveDetails.executive.availability || '');
       setSourceText(executiveDetails.executive.sourceText || '');
       setLinkedInInput(executiveDetails.executive.linkedin || '');
+      setStructuredRem(null);
+      fetch(`/api/executives/${executiveDetails.executive.id}/remuneration`)
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) setStructuredRem(data[data.length - 1]);
+        })
+        .catch(() => {});
     }
   }, [executiveDetails]);
 
@@ -1190,9 +1199,44 @@ function ExecutiveDetailView({
             <Separator />
 
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Banknote className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Remuneration</h3>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Banknote className="h-4 w-4 text-primary" />
+                  <h3 className="font-semibold">Remuneration</h3>
+                </div>
+                {remunerationNotes && executive && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    data-testid="button-parse-remuneration"
+                    disabled={parsingRemuneration}
+                    onClick={async () => {
+                      setParsingRemuneration(true);
+                      try {
+                        const res = await fetch(`/api/executives/${executive.id}/remuneration/parse`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ text: remunerationNotes }),
+                        });
+                        if (!res.ok) {
+                          const err = await res.json();
+                          throw new Error(err.error || 'Failed to parse');
+                        }
+                        const data = await res.json();
+                        toast.success('Remuneration data extracted and saved');
+                        setStructuredRem(data.entry);
+                      } catch (e: any) {
+                        toast.error(e.message || 'Failed to parse remuneration');
+                      } finally {
+                        setParsingRemuneration(false);
+                      }
+                    }}
+                  >
+                    {parsingRemuneration ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    Parse with AI
+                  </Button>
+                )}
               </div>
               {editingField === 'remunerationNotes' ? (
                 <div className="space-y-2">
@@ -1201,10 +1245,10 @@ function ExecutiveDetailView({
                     value={remunerationNotes}
                     onChange={(e) => setRemunerationNotes(e.target.value)}
                     onBlur={() => handleSaveTextField('remunerationNotes', remunerationNotes)}
-                    placeholder="Compensation details, salary expectations..."
+                    placeholder="Paste compensation details in any format and currency. AI will extract Fixed fees, Allowances, Variable bonus, and LTIP..."
                     className="min-h-[100px]"
                   />
-                  <p className="text-xs text-muted-foreground">Click outside to save</p>
+                  <p className="text-xs text-muted-foreground">Click outside to save. Then use "Parse with AI" to extract structured data.</p>
                 </div>
               ) : (
                 <div 
@@ -1213,7 +1257,42 @@ function ExecutiveDetailView({
                   {remunerationNotes ? (
                     <p className="text-sm whitespace-pre-wrap">{remunerationNotes}</p>
                   ) : (
-                    <p className="text-sm text-muted-foreground italic">Click to add remuneration details...</p>
+                    <p className="text-sm text-muted-foreground italic">Click to add remuneration details (any format/currency)...</p>
+                  )}
+                </div>
+              )}
+              {structuredRem && (
+                <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-1.5" data-testid="structured-remuneration">
+                  <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted ({structuredRem.currency || 'USD'}){structuredRem.currency && structuredRem.currency !== 'USD' ? ' — converted to USD on dashboard' : ''}</p>
+                  {structuredRem.baseSalary && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Fixed Fees</span>
+                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.baseSalary).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {structuredRem.totalAllowances && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Total Allowances</span>
+                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.totalAllowances).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {structuredRem.bonus && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Variable Bonus</span>
+                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.bonus).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {structuredRem.longTermIncentives && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">LTIP</span>
+                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.longTermIncentives).toLocaleString()}</span>
+                    </div>
+                  )}
+                  {structuredRem.year && (
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-muted-foreground">Year</span>
+                      <span>{structuredRem.year}</span>
+                    </div>
                   )}
                 </div>
               )}

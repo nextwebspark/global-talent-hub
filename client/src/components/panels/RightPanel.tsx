@@ -840,6 +840,25 @@ function ExecutiveDetailView({
     setEditingField(null);
     await handleUpdateExecutiveField(field, value);
     toast.success('Saved');
+
+    if (field === 'remunerationNotes' && value && value.trim().length >= 5 && executive) {
+      setParsingRemuneration(true);
+      try {
+        const res = await fetch(`/api/executives/${executive.id}/remuneration/parse`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: value }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          toast.success('Remuneration data extracted and saved');
+          setStructuredRem(data.entry);
+        }
+      } catch (e: any) {
+      } finally {
+        setParsingRemuneration(false);
+      }
+    }
   };
 
   const handleExtractProfile = async () => {
@@ -877,6 +896,24 @@ function ExecutiveDetailView({
       );
       setExecutives(updatedExecutives);
       
+      if (data.executive.remunerationNotes && data.executive.remunerationNotes.trim().length >= 5) {
+        setParsingRemuneration(true);
+        try {
+          const remRes = await fetch(`/api/executives/${localExecutive.id}/remuneration/parse`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: data.executive.remunerationNotes }),
+          });
+          if (remRes.ok) {
+            const remData = await remRes.json();
+            setStructuredRem(remData.entry);
+          }
+        } catch (e) {
+        } finally {
+          setParsingRemuneration(false);
+        }
+      }
+
       setViewMode('profile');
       toast.success('Profile extracted successfully');
       onRefresh();
@@ -1204,38 +1241,11 @@ function ExecutiveDetailView({
                   <Banknote className="h-4 w-4 text-primary" />
                   <h3 className="font-semibold">Remuneration</h3>
                 </div>
-                {remunerationNotes && executive && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs gap-1"
-                    data-testid="button-parse-remuneration"
-                    disabled={parsingRemuneration}
-                    onClick={async () => {
-                      setParsingRemuneration(true);
-                      try {
-                        const res = await fetch(`/api/executives/${executive.id}/remuneration/parse`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ text: remunerationNotes }),
-                        });
-                        if (!res.ok) {
-                          const err = await res.json();
-                          throw new Error(err.error || 'Failed to parse');
-                        }
-                        const data = await res.json();
-                        toast.success('Remuneration data extracted and saved');
-                        setStructuredRem(data.entry);
-                      } catch (e: any) {
-                        toast.error(e.message || 'Failed to parse remuneration');
-                      } finally {
-                        setParsingRemuneration(false);
-                      }
-                    }}
-                  >
-                    {parsingRemuneration ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    Parse with AI
-                  </Button>
+                {parsingRemuneration && (
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Extracting...</span>
+                  </div>
                 )}
               </div>
               {editingField === 'remunerationNotes' ? (
@@ -1248,7 +1258,7 @@ function ExecutiveDetailView({
                     placeholder="Paste compensation details in any format and currency. AI will extract Fixed fees, Allowances, Variable bonus, and LTIP..."
                     className="min-h-[100px]"
                   />
-                  <p className="text-xs text-muted-foreground">Click outside to save. Then use "Parse with AI" to extract structured data.</p>
+                  <p className="text-xs text-muted-foreground">Click outside to save — AI will automatically extract structured data.</p>
                 </div>
               ) : (
                 <div 

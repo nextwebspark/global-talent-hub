@@ -366,7 +366,7 @@ export async function registerRoutes(
           }
 
           if (companyId) {
-            await storage.createExecutiveManual({
+            const exec = await storage.createExecutiveManual({
               companyId,
               name: name || 'Unknown',
               title,
@@ -381,6 +381,27 @@ export async function registerRoutes(
               confidence: 5
             });
             imported++;
+
+            if (remunerationNotes && remunerationNotes.trim().length >= 5 && exec) {
+              try {
+                const { parseRemunerationText } = await import("./services/remunerationParser");
+                const parsed = await parseRemunerationText(remunerationNotes);
+                if (parsed) {
+                  await storage.createRemuneration({
+                    executiveId: exec.id,
+                    baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+                    totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
+                    bonus: parsed.bonus != null ? String(parsed.bonus) : null,
+                    longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
+                    currency: parsed.currency,
+                    year: parsed.year,
+                    notes: parsed.notes,
+                  });
+                }
+              } catch (parseErr) {
+                console.error('Error auto-parsing remuneration for imported exec:', parseErr);
+              }
+            }
           }
         } catch (recordError) {
           console.error('Error importing record:', recordError);
@@ -491,6 +512,27 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       if (extracted.remunerationNotes) updateData.remunerationNotes = extracted.remunerationNotes;
 
       const updatedExecutive = await storage.updateExecutiveManual(id, updateData);
+
+      if (extracted.remunerationNotes && extracted.remunerationNotes.trim().length >= 5) {
+        try {
+          const { parseRemunerationText } = await import("./services/remunerationParser");
+          const parsed = await parseRemunerationText(extracted.remunerationNotes);
+          if (parsed) {
+            await storage.createRemuneration({
+              executiveId: id,
+              baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+              totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
+              bonus: parsed.bonus != null ? String(parsed.bonus) : null,
+              longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
+              currency: parsed.currency,
+              year: parsed.year,
+              notes: parsed.notes,
+            });
+          }
+        } catch (parseErr) {
+          console.error('Error auto-parsing remuneration from profile extraction:', parseErr);
+        }
+      }
 
       res.json({
         executive: updatedExecutive,
@@ -1814,7 +1856,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           }
 
           if (companyId && (execName || title !== 'Executive')) {
-            await storage.createExecutiveManual({
+            const exec = await storage.createExecutiveManual({
               companyId,
               name: execName || 'Unknown',
               title,
@@ -1828,6 +1870,27 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
               customFields: Object.keys(customFields).length > 0 ? customFields : null,
               confidence: 5
             });
+
+            if (remunerationNotes && remunerationNotes.trim().length >= 5 && exec) {
+              try {
+                const { parseRemunerationText } = await import("./services/remunerationParser");
+                const parsed = await parseRemunerationText(remunerationNotes);
+                if (parsed) {
+                  await storage.createRemuneration({
+                    executiveId: exec.id,
+                    baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+                    totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
+                    bonus: parsed.bonus != null ? String(parsed.bonus) : null,
+                    longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
+                    currency: parsed.currency,
+                    year: parsed.year,
+                    notes: parsed.notes,
+                  });
+                }
+              } catch (parseErr) {
+                console.error('[ImportProject] Error auto-parsing remuneration:', parseErr);
+              }
+            }
           }
           imported++;
         } catch (recordError) {

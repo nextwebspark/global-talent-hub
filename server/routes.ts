@@ -1830,5 +1830,149 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
+  app.get("/api/dashboard/:searchId", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.searchId);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+
+      const results = await storage.getFullSearchResults(searchId);
+      if (!results) {
+        return res.status(404).json({ error: "Search not found" });
+      }
+
+      const allCompanies = results.companies;
+      const totalCompanies = allCompanies.length;
+      const mappedCompanies = allCompanies.filter(c => c.executives.length > 0);
+      const mappedCount = mappedCompanies.length;
+      const completionPct = totalCompanies > 0 ? Math.round((mappedCount / totalCompanies) * 100) : 0;
+
+      const countryCompletion: Record<string, { total: number; mapped: number }> = {};
+      for (const c of allCompanies) {
+        const country = c.country || 'Unknown';
+        if (!countryCompletion[country]) countryCompletion[country] = { total: 0, mapped: 0 };
+        countryCompletion[country].total++;
+        if (c.executives.length > 0) countryCompletion[country].mapped++;
+      }
+
+      const allExecutives = allCompanies.flatMap(c =>
+        c.executives.map(e => ({ ...e, companyCountry: c.country || 'Unknown' }))
+      );
+      const totalExecutives = allExecutives.length;
+
+      const titleBreakdown: Record<string, number> = {};
+      const countryExecBreakdown: Record<string, number> = {};
+      for (const e of allExecutives) {
+        const normalizedTitle = normalizeExecutiveLevel(e.title);
+        titleBreakdown[normalizedTitle] = (titleBreakdown[normalizedTitle] || 0) + 1;
+        countryExecBreakdown[e.companyCountry] = (countryExecBreakdown[e.companyCountry] || 0) + 1;
+      }
+
+      const execIds = allExecutives.map(e => e.id);
+      let remunerationByLevel: Record<string, { values: number[] }> = {};
+      let remunerationByGeo: Record<string, { values: number[] }> = {};
+
+      if (execIds.length > 0) {
+        const { remuneration } = await import("@shared/schema");
+        const { inArray } = await import("drizzle-orm");
+        const { db } = await import("./db");
+        const allRem = await db.select().from(remuneration).where(inArray(remuneration.executiveId, execIds));
+
+        const execMap = new Map(allExecutives.map(e => [e.id, e]));
+        for (const r of allRem) {
+          const total = Number(r.baseSalary || 0) + Number(r.bonus || 0) + Number(r.longTermIncentives || 0);
+          if (total <= 0) continue;
+          const exec = execMap.get(r.executiveId);
+          if (!exec) continue;
+          const level = normalizeExecutiveLevel(exec.title);
+          if (!remunerationByLevel[level]) remunerationByLevel[level] = { values: [] };
+          remunerationByLevel[level].values.push(total);
+          const country = exec.companyCountry;
+          if (!remunerationByGeo[country]) remunerationByGeo[country] = { values: [] };
+          remunerationByGeo[country].values.push(total);
+        }
+      }
+
+      const computeStats = (values: number[]) => {
+        if (values.length === 0) return { min: 0, median: 0, max: 0, count: 0 };
+        values.sort((a, b) => a - b);
+        const mid = Math.floor(values.length / 2);
+        const median = values.length % 2 === 0 ? (values[mid - 1] + values[mid]) / 2 : values[mid];
+        return { min: values[0], median: Math.round(median), max: values[values.length - 1], count: values.length };
+      };
+
+      const remLevelStats: Record<string, any> = {};
+      for (const [level, data] of Object.entries(remunerationByLevel)) {
+        remLevelStats[level] = computeStats(data.values);
+      }
+      const remGeoStats: Record<string, any> = {};
+      for (const [geo, data] of Object.entries(remunerationByGeo)) {
+        remGeoStats[geo] = computeStats(data.values);
+      }
+
+      let availableCount = 0;
+      const availByLevel: Record<string, { total: number; available: number }> = {};
+      const availByGeo: Record<string, { total: number; available: number }> = {};
+      for (const e of allExecutives) {
+        const level = normalizeExecutiveLevel(e.title);
+        const country = e.companyCountry;
+        if (!availByLevel[level]) availByLevel[level] = { total: 0, available: 0 };
+        if (!availByGeo[country]) availByGeo[country] = { total: 0, available: 0 };
+        availByLevel[level].total++;
+        availByGeo[country].total++;
+        const avail = (e.availability || '').toLowerCase();
+        if (avail && avail !== 'unknown' && avail !== 'n/a' && avail !== 'not available' && avail !== 'no') {
+          availableCount++;
+          availByLevel[level].available++;
+          availByGeo[country].available++;
+        }
+      }
+
+      res.json({
+        mappingCompletion: {
+          totalCompanies,
+          mappedCount,
+          completionPct,
+          byCountry: countryCompletion,
+        },
+        executiveUniverse: {
+          totalExecutives,
+          byTitle: titleBreakdown,
+          byCountry: countryExecBreakdown,
+        },
+        remuneration: {
+          byLevel: remLevelStats,
+          byGeography: remGeoStats,
+        },
+        availability: {
+          totalExecutives,
+          availableCount,
+          availabilityPct: totalExecutives > 0 ? Math.round((availableCount / totalExecutives) * 100) : 0,
+          byLevel: availByLevel,
+          byGeography: availByGeo,
+        },
+      });
+    } catch (error) {
+      console.error("Error generating dashboard:", error);
+      res.status(500).json({ error: "Failed to generate dashboard data" });
+    }
+  });
+
   return httpServer;
+}
+
+function normalizeExecutiveLevel(title: string): string {
+  const t = (title || '').toUpperCase().trim();
+  if (t.includes('CEO') || t.includes('CHIEF EXECUTIVE') || t.includes('MANAGING DIRECTOR') || t.includes('PRESIDENT') || t.includes('GENERAL MANAGER')) return 'CEO / MD';
+  if (t.includes('CFO') || t.includes('CHIEF FINANCIAL')) return 'CFO';
+  if (t.includes('COO') || t.includes('CHIEF OPERATING')) return 'COO';
+  if (t.includes('CTO') || t.includes('CHIEF TECHNOLOGY') || t.includes('CHIEF TECHNICAL')) return 'CTO';
+  if (t.includes('CIO') || t.includes('CHIEF INFORMATION') || t.includes('CHIEF INVESTMENT')) return 'CIO';
+  if (t.includes('CHRO') || t.includes('CHIEF HUMAN') || t.includes('CHIEF PEOPLE')) return 'CHRO';
+  if (t.includes('CMO') || t.includes('CHIEF MARKETING') || t.includes('CHIEF COMMERCIAL')) return 'CMO';
+  if (t.includes('CHIEF')) return 'Other C-Suite';
+  if (t.includes('VP') || t.includes('VICE PRESIDENT') || t.includes('SVP') || t.includes('EVP')) return 'VP / SVP';
+  if (t.includes('DIRECTOR') || t.includes('HEAD OF')) return 'Director / Head';
+  return 'Other';
 }

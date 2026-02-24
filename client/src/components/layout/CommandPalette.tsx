@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Command } from 'cmdk';
 import { useAppStore } from '@/lib/store';
-import { Building2, User, Search, Map, Table2, Download, Zap, ArrowRight, Hash } from 'lucide-react';
+import { Building2, User, Search, Map, Table2, LayoutDashboard, Download, Zap, ArrowRight, Hash } from 'lucide-react';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate: (view: 'map' | 'table') => void;
+  onNavigate: (view: 'map' | 'table' | 'dashboard') => void;
   onExport?: () => void;
   onEnrichAll?: () => void;
 }
@@ -76,6 +76,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onExport, 
                 <Command.Group heading="Navigation" className="px-1 pb-1">
                   <PaletteItem icon={Map} label="Map View" shortcut="1" onSelect={() => { onNavigate('map'); onClose(); }} />
                   <PaletteItem icon={Table2} label="Table View" shortcut="2" onSelect={() => { onNavigate('table'); onClose(); }} />
+                  <PaletteItem icon={LayoutDashboard} label="Dashboard" shortcut="3" onSelect={() => { onNavigate('dashboard'); onClose(); }} />
                   {onExport && <PaletteItem icon={Download} label="Export to Excel" onSelect={() => { onExport(); onClose(); }} />}
                   {onEnrichAll && <PaletteItem icon={Zap} label="Enrich All Companies" onSelect={() => { onEnrichAll(); onClose(); }} />}
                 </Command.Group>

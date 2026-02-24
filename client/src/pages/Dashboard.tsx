@@ -9,6 +9,7 @@ import CompanyList from '@/components/layout/CompanyList';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
 import DataTable from '@/components/DataTable';
+import DashboardView from '@/components/DashboardView';
 import ImportModal from '@/components/layout/ImportModal';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
@@ -47,6 +48,9 @@ export default function Dashboard() {
       }
       if (e.key === '2' && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
         setActiveView('table');
+      }
+      if (e.key === '3' && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        setActiveView('dashboard');
       }
     };
     document.addEventListener('keydown', handler);
@@ -269,6 +273,12 @@ export default function Dashboard() {
                 selectedExecutiveId={selectedExecutiveId}
                 onRowClick={handleRowClick}
               />
+            </div>
+          )}
+
+          {activeView === 'dashboard' && (
+            <div className="flex-1 overflow-auto bg-background">
+              <DashboardView searchId={currentProject?.id} />
             </div>
           )}
 

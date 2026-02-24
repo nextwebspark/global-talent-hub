@@ -1,7 +1,7 @@
-import { Map, Table2, Upload, Search, Settings, Home, Zap } from 'lucide-react';
+import { Map, Table2, Upload, Search, Settings, Home, Zap, LayoutDashboard } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-export type ViewMode = 'map' | 'table';
+export type ViewMode = 'map' | 'table' | 'dashboard';
 
 interface SidebarProps {
   activeView: ViewMode;
@@ -15,6 +15,7 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
   const navItems = [
     { id: 'map' as const, icon: Map, label: 'Map View', shortcut: '1' },
     { id: 'table' as const, icon: Table2, label: 'Table View', shortcut: '2' },
+    { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Dashboard', shortcut: '3' },
   ];
 
   return (

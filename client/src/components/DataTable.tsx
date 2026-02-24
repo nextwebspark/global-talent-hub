@@ -148,12 +148,6 @@ function SelectCell({ value, options, onSave, placeholder }: {
     return (
       <div ref={listRef} className="relative" onClick={e => e.stopPropagation()}>
         <div className="absolute z-50 top-0 left-0 right-0 min-w-[120px] max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg">
-          <div
-            className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${!value ? 'bg-accent/50 font-medium' : ''} text-muted-foreground italic`}
-            onMouseDown={e => { e.preventDefault(); onSave(''); setOpen(false); }}
-          >
-            {placeholder || '- Clear -'}
-          </div>
           {options.map(opt => (
             <div
               key={opt}
@@ -163,6 +157,14 @@ function SelectCell({ value, options, onSave, placeholder }: {
               {opt}
             </div>
           ))}
+          {value && (
+            <div
+              className="px-2 py-1 text-xs cursor-pointer hover:bg-destructive/20 text-muted-foreground italic border-t border-border"
+              onMouseDown={e => { e.preventDefault(); onSave(''); setOpen(false); }}
+            >
+              Clear
+            </div>
+          )}
         </div>
       </div>
     );
@@ -200,7 +202,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
   useEffect(() => {
     if (open && inputRef.current) {
       inputRef.current.focus();
-      setSearch(value || '');
+      setSearch('');
     }
   }, [open]);
 

@@ -165,7 +165,7 @@ function SelectCell({ value, options, onSave, placeholder }: {
     <span
       className="truncate block cursor-pointer hover:bg-muted/40 rounded px-0.5 -mx-0.5"
       title={value || undefined}
-      onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       data-testid="select-cell-display"
     >
       {value || '-'}
@@ -254,7 +254,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
     <span
       className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
       title={value || undefined}
-      onDoubleClick={(e) => { e.stopPropagation(); setOpen(true); }}
+      onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       data-testid="searchable-select-display"
     >
       {value || '-'}
@@ -309,7 +309,7 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
     <span
       className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
       title={value || undefined}
-      onDoubleClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
+      onClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
       data-testid="editable-cell-display"
     >
       {display}

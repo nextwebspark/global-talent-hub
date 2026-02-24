@@ -131,33 +131,40 @@ function SelectCell({ value, options, onSave, placeholder }: {
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const selectRef = useRef<HTMLSelectElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (open && selectRef.current) {
-      selectRef.current.focus();
-    }
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (listRef.current && !listRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
   if (open) {
     return (
-      <select
-        ref={selectRef}
-        className="w-full bg-background border border-primary/50 rounded px-1 py-0 text-xs outline-none focus:border-primary cursor-pointer"
-        value={value}
-        onChange={e => {
-          onSave(e.target.value);
-          setOpen(false);
-        }}
-        onBlur={() => setOpen(false)}
-        onClick={e => e.stopPropagation()}
-        data-testid="select-cell-input"
-      >
-        <option value="">{placeholder || '- Select -'}</option>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
+      <div ref={listRef} className="relative" onClick={e => e.stopPropagation()}>
+        <div className="absolute z-50 top-0 left-0 right-0 min-w-[120px] max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg">
+          <div
+            className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${!value ? 'bg-accent/50 font-medium' : ''} text-muted-foreground italic`}
+            onMouseDown={e => { e.preventDefault(); onSave(''); setOpen(false); }}
+          >
+            {placeholder || '- Clear -'}
+          </div>
+          {options.map(opt => (
+            <div
+              key={opt}
+              className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${opt === value ? 'bg-accent/50 font-medium' : ''}`}
+              onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 

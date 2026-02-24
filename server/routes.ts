@@ -771,7 +771,7 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       const exec = await storage.getExecutive(executiveId);
       if (!exec) return res.status(404).json({ error: "Executive not found" });
 
-      const text = req.body.text || exec.remunerationNotes;
+      const text = req.body?.text || exec.remunerationNotes;
       if (!text || text.trim().length < 5) {
         return res.status(400).json({ error: "No remuneration text to parse" });
       }

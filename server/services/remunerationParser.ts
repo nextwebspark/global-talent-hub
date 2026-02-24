@@ -1,10 +1,19 @@
 import OpenAI from "openai";
 import { normalizeCurrencyCode, convertToUSD } from "./currencyConversion";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+function createOpenAIClient(): OpenAI {
+  if (process.env.OPENAI_API_KEY) {
+    return new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return new OpenAI({
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+}
+
+const openai = createOpenAIClient();
 
 export interface ParsedRemuneration {
   baseSalary: number | null;
@@ -50,7 +59,7 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: "gpt-4o",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: `Extract compensation data from this text:\n\n${text}` },

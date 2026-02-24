@@ -1275,29 +1275,29 @@ function ExecutiveDetailView({
               )}
               {structuredRem && (
                 <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-1.5" data-testid="structured-remuneration">
-                  <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted ({structuredRem.currency || 'USD'}){structuredRem.currency && structuredRem.currency !== 'USD' ? ' — converted to USD on dashboard' : ''}</p>
+                  <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted (USD) — all currencies converted to USD</p>
                   {structuredRem.baseSalary && (
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Fixed Fees</span>
-                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.baseSalary).toLocaleString()}</span>
+                      <span className="font-medium">USD {Number(structuredRem.baseSalary).toLocaleString()}</span>
                     </div>
                   )}
                   {structuredRem.totalAllowances && (
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Total Allowances</span>
-                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.totalAllowances).toLocaleString()}</span>
+                      <span className="font-medium">USD {Number(structuredRem.totalAllowances).toLocaleString()}</span>
                     </div>
                   )}
                   {structuredRem.bonus && (
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Variable Bonus</span>
-                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.bonus).toLocaleString()}</span>
+                      <span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span>
                     </div>
                   )}
                   {structuredRem.longTermIncentives && (
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">LTIP</span>
-                      <span className="font-medium">{structuredRem.currency || 'USD'} {Number(structuredRem.longTermIncentives).toLocaleString()}</span>
+                      <span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span>
                     </div>
                   )}
                   {structuredRem.year && (

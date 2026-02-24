@@ -146,12 +146,12 @@ function SelectCell({ value, options, onSave, placeholder }: {
 
   if (open) {
     return (
-      <div ref={listRef} className="relative" onClick={e => e.stopPropagation()}>
-        <div className="absolute z-50 top-0 left-0 right-0 min-w-[120px] max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg">
+      <div ref={listRef} className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
+        <div className="absolute z-50 top-0 left-0 min-w-[140px] w-max max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg" style={{ position: 'absolute' }}>
           {options.map(opt => (
             <div
               key={opt}
-              className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${opt === value ? 'bg-accent/50 font-medium' : ''}`}
+              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'bg-accent/50 font-medium' : ''}`}
               onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
             >
               {opt}
@@ -159,7 +159,7 @@ function SelectCell({ value, options, onSave, placeholder }: {
           ))}
           {value && (
             <div
-              className="px-2 py-1 text-xs cursor-pointer hover:bg-destructive/20 text-muted-foreground italic border-t border-border"
+              className="px-3 py-1.5 text-xs cursor-pointer hover:bg-destructive/20 text-muted-foreground italic border-t border-border whitespace-nowrap"
               onMouseDown={e => { e.preventDefault(); onSave(''); setOpen(false); }}
             >
               Clear
@@ -215,46 +215,48 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
 
   if (open) {
     return (
-      <div className="relative" onClick={e => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="w-full bg-background border border-primary/50 rounded px-1 py-0 text-xs outline-none focus:border-primary"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && filtered.length > 0) {
-              onSave(filtered[0]);
-              setOpen(false);
-            }
-            if (e.key === 'Escape') { setSearch(''); setOpen(false); }
-          }}
-          onBlur={() => {
-            setTimeout(() => setOpen(false), 150);
-          }}
-          placeholder={placeholder || 'Type to search...'}
-          data-testid="searchable-select-input"
-        />
-        {filtered.length > 0 && (
-          <div
-            ref={listRef}
-            className="absolute z-50 top-full left-0 right-0 mt-0.5 max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg"
-          >
-            {filtered.map(opt => (
-              <div
-                key={opt}
-                data-highlighted={opt === filtered[0] ? 'true' : 'false'}
-                className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${opt === value ? 'bg-accent/50 font-medium' : ''} ${opt === filtered[0] ? 'bg-accent/30' : ''}`}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  onSave(opt);
-                  setOpen(false);
-                }}
-              >
-                {opt}
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
+        <div className="absolute z-50 top-0 left-0 min-w-[200px] w-max bg-popover border border-border rounded shadow-lg" style={{ position: 'absolute' }}>
+          <input
+            ref={inputRef}
+            className="w-full bg-background border-b border-border rounded-t px-2 py-1.5 text-xs outline-none focus:bg-muted/30"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && filtered.length > 0) {
+                onSave(filtered[0]);
+                setOpen(false);
+              }
+              if (e.key === 'Escape') { setSearch(''); setOpen(false); }
+            }}
+            onBlur={() => {
+              setTimeout(() => setOpen(false), 150);
+            }}
+            placeholder={placeholder || 'Type to search...'}
+            data-testid="searchable-select-input"
+          />
+          {filtered.length > 0 && (
+            <div
+              ref={listRef}
+              className="max-h-[200px] overflow-y-auto"
+            >
+              {filtered.map(opt => (
+                <div
+                  key={opt}
+                  data-highlighted={opt === filtered[0] ? 'true' : 'false'}
+                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'bg-accent/50 font-medium' : ''} ${opt === filtered[0] ? 'bg-accent/30' : ''}`}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    onSave(opt);
+                    setOpen(false);
+                  }}
+                >
+                  {opt}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -1275,7 +1277,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                     return (
                       <td
                         key={cell.id}
-                        className={`${densityPadding[density]} border-r border-border/20 max-w-0 overflow-hidden`}
+                        className={`${densityPadding[density]} border-r border-border/20 max-w-0 overflow-visible`}
                         style={{ width: cell.column.getSize() }}
                       >
                         {isGroupedCell ? (

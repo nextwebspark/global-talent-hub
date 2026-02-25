@@ -2077,7 +2077,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let remunerationByGeo: Record<string, CategoryBreakdown> = {};
       let overallCategories: CategoryBreakdown = emptyBreakdown();
 
-      type CompRevenueEntry = { total: number; band: string; region: string };
+      type CompRevenueEntry = { fixedFees: number; allowances: number; variableBonus: number; ltip: number; totalPackage: number; band: string; region: string };
       const compRevenueEntries: CompRevenueEntry[] = [];
 
       if (execIds.length > 0) {
@@ -2119,7 +2119,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
           const band = getRevenueBand(exec.companyRevenue);
           const region = getRegionLabel(country);
-          compRevenueEntries.push({ total, band, region });
+          compRevenueEntries.push({ fixedFees: base, allowances: allow, variableBonus: bon, ltip, totalPackage: total, band, region });
         }
       }
 
@@ -2149,54 +2149,74 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       const LEVEL_ORDER = ['Board', 'C-Suite', 'N-1', 'N-2'];
-      const stepUpAnalysis: Array<{ level: string; median: number; count: number; stepUpPct?: number; stepUpFrom?: string }> = [];
-      for (const level of LEVEL_ORDER) {
-        const stats = remLevelStats[level];
-        if (stats && stats.totalPackage.count > 0) {
-          stepUpAnalysis.push({ level, median: stats.totalPackage.median, count: stats.totalPackage.count });
+      const CATEGORY_KEYS = ['fixedFees', 'allowances', 'variableBonus', 'ltip', 'totalPackage'] as const;
+      type CatKey = typeof CATEGORY_KEYS[number];
+
+      const buildStepUp = (catKey: string) => {
+        const entries: Array<{ level: string; median: number; count: number; stepUpPct?: number; stepUpFrom?: string }> = [];
+        for (const level of LEVEL_ORDER) {
+          const stats = remLevelStats[level];
+          if (stats && stats[catKey] && stats[catKey].count > 0) {
+            entries.push({ level, median: stats[catKey].median, count: stats[catKey].count });
+          }
         }
-      }
-      for (let i = 1; i < stepUpAnalysis.length; i++) {
-        const higher = stepUpAnalysis[i - 1];
-        const lower = stepUpAnalysis[i];
-        if (lower.median > 0) {
-          lower.stepUpPct = Math.round(((higher.median - lower.median) / lower.median) * 100);
-          lower.stepUpFrom = higher.level;
+        for (let i = 1; i < entries.length; i++) {
+          const higher = entries[i - 1];
+          const lower = entries[i];
+          if (lower.median > 0) {
+            lower.stepUpPct = Math.round(((higher.median - lower.median) / lower.median) * 100);
+            lower.stepUpFrom = higher.level;
+          }
         }
+        return entries;
+      };
+
+      const stepUpAnalysis: Record<string, Array<{ level: string; median: number; count: number; stepUpPct?: number; stepUpFrom?: string }>> = {};
+      for (const cat of CATEGORY_KEYS) {
+        stepUpAnalysis[cat] = buildStepUp(cat);
       }
 
       const bandLabels = REVENUE_BANDS.map(b => b.label);
-      const compByRevenueBandRegion: Array<{
-        band: string;
-        originMedian: number | null;
-        originCount: number;
-        gccMedian: number | null;
-        gccCount: number;
-        internationalMedian: number | null;
-        internationalCount: number;
-      }> = [];
-      for (const bandLabel of bandLabels) {
-        const byRegion: Record<string, number[]> = { origin: [], gcc: [], international: [] };
-        for (const entry of compRevenueEntries) {
-          if (entry.band === bandLabel) {
-            byRegion[entry.region].push(entry.total);
+      const medianOf = (arr: number[]) => {
+        if (arr.length === 0) return null;
+        arr.sort((a, b) => a - b);
+        const m = Math.floor(arr.length / 2);
+        return arr.length % 2 === 0 ? Math.round((arr[m - 1] + arr[m]) / 2) : arr[m];
+      };
+
+      const buildCompByRevBand = (catKey: CatKey) => {
+        const result: Array<{
+          band: string;
+          originMedian: number | null; originCount: number;
+          gccMedian: number | null; gccCount: number;
+          internationalMedian: number | null; internationalCount: number;
+        }> = [];
+        for (const bandLabel of bandLabels) {
+          const byRegion: Record<string, number[]> = { origin: [], gcc: [], international: [] };
+          for (const entry of compRevenueEntries) {
+            if (entry.band === bandLabel) {
+              const val = entry[catKey];
+              if (val > 0) byRegion[entry.region].push(val);
+            }
           }
+          result.push({
+            band: bandLabel,
+            originMedian: medianOf(byRegion.origin), originCount: byRegion.origin.length,
+            gccMedian: medianOf(byRegion.gcc), gccCount: byRegion.gcc.length,
+            internationalMedian: medianOf(byRegion.international), internationalCount: byRegion.international.length,
+          });
         }
-        const medianOf = (arr: number[]) => {
-          if (arr.length === 0) return null;
-          arr.sort((a, b) => a - b);
-          const m = Math.floor(arr.length / 2);
-          return arr.length % 2 === 0 ? Math.round((arr[m - 1] + arr[m]) / 2) : arr[m];
-        };
-        compByRevenueBandRegion.push({
-          band: bandLabel,
-          originMedian: medianOf(byRegion.origin),
-          originCount: byRegion.origin.length,
-          gccMedian: medianOf(byRegion.gcc),
-          gccCount: byRegion.gcc.length,
-          internationalMedian: medianOf(byRegion.international),
-          internationalCount: byRegion.international.length,
-        });
+        return result;
+      };
+
+      const compByRevenueBandRegion: Record<string, Array<{
+        band: string;
+        originMedian: number | null; originCount: number;
+        gccMedian: number | null; gccCount: number;
+        internationalMedian: number | null; internationalCount: number;
+      }>> = {};
+      for (const cat of CATEGORY_KEYS) {
+        compByRevenueBandRegion[cat] = buildCompByRevBand(cat);
       }
 
       let availableCount = 0;

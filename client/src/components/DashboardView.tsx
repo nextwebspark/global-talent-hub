@@ -61,8 +61,8 @@ interface DashboardData {
     byLevel: Record<string, CategoryBreakdownStats>;
     byGeography: Record<string, CategoryBreakdownStats>;
     currency: string;
-    stepUpAnalysis: StepUpEntry[];
-    compByRevenueBandRegion: CompRevenueBandRegion[];
+    stepUpAnalysis: Record<string, StepUpEntry[]>;
+    compByRevenueBandRegion: Record<string, CompRevenueBandRegion[]>;
   };
   revenueBands: Record<string, number>;
   sectorBreakdown: Record<string, number>;
@@ -207,6 +207,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('totalPackage');
 
   useEffect(() => {
     if (!searchId) return;
@@ -256,11 +257,16 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
 
   const hasRemData = remuneration.overall.totalPackage.count > 0;
   const overallCats = remuneration.overall;
-  const remLevels = Object.entries(remuneration.byLevel).sort((a, b) => b[1].totalPackage.median - a[1].totalPackage.median);
-  const remGeos = Object.entries(remuneration.byGeography).sort((a, b) => b[1].totalPackage.median - a[1].totalPackage.median);
+  const catKey = selectedCategory as keyof CategoryBreakdownStats;
+  const remLevels = Object.entries(remuneration.byLevel)
+    .filter(([, s]) => s[catKey]?.count > 0)
+    .sort((a, b) => b[1][catKey].median - a[1][catKey].median);
+  const remGeos = Object.entries(remuneration.byGeography)
+    .filter(([, s]) => s[catKey]?.count > 0)
+    .sort((a, b) => b[1][catKey].median - a[1][catKey].median);
   const globalMaxRem = Math.max(
-    ...Object.values(remuneration.byLevel).map(v => v.totalPackage.max),
-    ...Object.values(remuneration.byGeography).map(v => v.totalPackage.max),
+    ...Object.values(remuneration.byLevel).map(v => v[catKey]?.max || 0),
+    ...Object.values(remuneration.byGeography).map(v => v[catKey]?.max || 0),
     1
   );
 
@@ -286,11 +292,13 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const sortedOwnership = Object.entries(ownershipBreakdown).sort((a, b) => b[1] - a[1]);
   const maxOwnership = Math.max(...sortedOwnership.map(([, v]) => v), 1);
 
-  const hasLineChartData = remuneration.compByRevenueBandRegion?.some(
+  const activeLineData = remuneration.compByRevenueBandRegion?.[selectedCategory] || [];
+  const activeStepUp = remuneration.stepUpAnalysis?.[selectedCategory] || [];
+  const hasLineChartData = activeLineData.some(
     d => d.originMedian != null || d.gccMedian != null || d.internationalMedian != null
   );
 
-  const hasStepUp = remuneration.stepUpAnalysis?.length >= 2;
+  const hasStepUp = activeStepUp.length >= 2;
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6 overflow-y-auto" data-testid="dashboard-view">
@@ -473,18 +481,31 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         ) : (
           <div className="space-y-6">
             <div className="grid grid-cols-5 gap-3">
-              {(['fixedFees', 'allowances', 'variableBonus', 'ltip'] as const).map(cat => {
+              {(['fixedFees', 'allowances', 'variableBonus', 'ltip', 'totalPackage'] as const).map(cat => {
                 const stats = overallCats[cat];
                 const info = CATEGORY_LABELS[cat];
+                const isSelected = selectedCategory === cat;
+                const isTotal = cat === 'totalPackage';
                 return (
-                  <div key={cat} className="p-3 rounded-lg bg-muted/20 border border-border/50">
+                  <div
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`p-3 rounded-lg cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-primary/15 border-2 border-primary ring-1 ring-primary/30'
+                        : isTotal
+                          ? 'bg-primary/10 border border-primary/30 hover:border-primary/50'
+                          : 'bg-muted/20 border border-border/50 hover:border-border'
+                    }`}
+                    data-testid={`category-card-${cat}`}
+                  >
                     <div className="flex items-center gap-1.5 mb-1">
                       <div className={`w-2 h-2 rounded-full ${info.color}`} />
                       <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{info.label}</span>
                     </div>
                     {stats.count > 0 ? (
                       <>
-                        <p className="text-sm font-semibold text-foreground">{formatCurrency(stats.median)}</p>
+                        <p className={`text-sm font-semibold ${isTotal ? 'text-primary' : 'text-foreground'}`}>{formatCurrency(stats.median)}</p>
                         <p className="text-[10px] text-muted-foreground">{formatCurrency(stats.min)} – {formatCurrency(stats.max)} ({stats.count})</p>
                       </>
                     ) : (
@@ -493,34 +514,24 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                   </div>
                 );
               })}
-              {overallCats.totalPackage.count > 0 && (
-                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Package</span>
-                  </div>
-                  <p className="text-sm font-semibold text-primary">{formatCurrency(overallCats.totalPackage.median)}</p>
-                  <p className="text-[10px] text-muted-foreground">{formatCurrency(overallCats.totalPackage.min)} – {formatCurrency(overallCats.totalPackage.max)} ({overallCats.totalPackage.count})</p>
-                </div>
-              )}
             </div>
 
             {hasStepUp && (
               <div className="border-t border-border pt-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Level-to-Level Step-Up</p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
-                  {remuneration.stepUpAnalysis.map((entry, idx) => (
+                  {activeStepUp.map((entry, idx) => (
                     <div key={entry.level} className="flex items-center gap-2">
                       <div className="text-center px-4 py-2.5 rounded-lg bg-muted/20 border border-border/50">
                         <p className="text-[10px] text-muted-foreground uppercase mb-0.5">{entry.level}</p>
                         <p className="text-sm font-semibold text-foreground">{formatCurrency(entry.median)}</p>
                         <p className="text-[10px] text-muted-foreground">{entry.count} profiles</p>
                       </div>
-                      {idx < remuneration.stepUpAnalysis.length - 1 && (
+                      {idx < activeStepUp.length - 1 && (
                         <div className="flex flex-col items-center px-1">
                           <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-                          {remuneration.stepUpAnalysis[idx + 1]?.stepUpPct != null && (
-                            <span className="text-[10px] font-semibold text-emerald-400">+{remuneration.stepUpAnalysis[idx + 1].stepUpPct}%</span>
+                          {activeStepUp[idx + 1]?.stepUpPct != null && (
+                            <span className="text-[10px] font-semibold text-emerald-400">+{activeStepUp[idx + 1].stepUpPct}%</span>
                           )}
                         </div>
                       )}
@@ -532,10 +543,12 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
 
             {hasLineChartData && (
               <div className="border-t border-border pt-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Median Compensation by Revenue Band & Region</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">
+                  Median {CATEGORY_LABELS[selectedCategory]?.label || 'Compensation'} by Revenue Band & Region
+                </p>
                 <div className="h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={remuneration.compByRevenueBandRegion} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                    <LineChart data={activeLineData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
                       <XAxis
                         dataKey="band"
@@ -596,7 +609,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
               <CollapsibleSection title={`By Level (${remLevels.length})`}>
                 <div className="max-h-[200px] overflow-y-auto pr-1 space-y-1">
                   {remLevels.map(([level, stats]) => (
-                    <RangeBar key={level} label={`${level} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
+                    <RangeBar key={level} label={`${level} (${stats[catKey].count})`} min={stats[catKey].min} median={stats[catKey].median} max={stats[catKey].max} globalMax={globalMaxRem} />
                   ))}
                 </div>
               </CollapsibleSection>
@@ -604,7 +617,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                 <CollapsibleSection title={`By Geography (${remGeos.length})`} defaultOpen={false}>
                   <div className="max-h-[200px] overflow-y-auto pr-1 space-y-1">
                     {remGeos.map(([geo, stats]) => (
-                      <RangeBar key={geo} label={`${geo} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
+                      <RangeBar key={geo} label={`${geo} (${stats[catKey].count})`} min={stats[catKey].min} median={stats[catKey].median} max={stats[catKey].max} globalMax={globalMaxRem} />
                     ))}
                   </div>
                 </CollapsibleSection>

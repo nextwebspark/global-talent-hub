@@ -1945,6 +1945,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(404).json({ error: "Search not found" });
       }
 
+      const searchQuery = results.searchQuery.query || '';
+
       const allCompanies = results.companies;
       const totalCompanies = allCompanies.length;
       const mappedCompanies = allCompanies.filter(c => c.executives.length > 0);
@@ -1952,15 +1954,30 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       const completionPct = totalCompanies > 0 ? Math.round((mappedCount / totalCompanies) * 100) : 0;
 
       const countryCompletion: Record<string, { total: number; mapped: number }> = {};
+      const companiesByCountry: Record<string, number> = {};
       for (const c of allCompanies) {
         const country = c.country || 'Unknown';
         if (!countryCompletion[country]) countryCompletion[country] = { total: 0, mapped: 0 };
         countryCompletion[country].total++;
+        companiesByCountry[country] = (companiesByCountry[country] || 0) + 1;
         if (c.executives.length > 0) countryCompletion[country].mapped++;
       }
 
+      const distinctCountries = Object.keys(companiesByCountry).filter(c => c !== 'Unknown').length;
+      const originCountry = Object.entries(companiesByCountry)
+        .filter(([c]) => c !== 'Unknown')
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown';
+
+      const GCC_COUNTRIES = ['UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman'];
+      const isGCC = (country: string) => GCC_COUNTRIES.some(g => g.toLowerCase() === country.toLowerCase());
+      const getRegionLabel = (country: string) => {
+        if (country.toLowerCase() === originCountry.toLowerCase()) return 'origin';
+        if (isGCC(country)) return 'gcc';
+        return 'international';
+      };
+
       const allExecutives = allCompanies.flatMap(c =>
-        c.executives.map(e => ({ ...e, companyCountry: c.country || 'Unknown' }))
+        c.executives.map(e => ({ ...e, companyCountry: c.country || 'Unknown', companyRevenue: c.revenue ? Number(c.revenue) : null }))
       );
       const totalExecutives = allExecutives.length;
 
@@ -1971,6 +1988,67 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         titleBreakdown[execLevel] = (titleBreakdown[execLevel] || 0) + 1;
         countryExecBreakdown[e.companyCountry] = (countryExecBreakdown[e.companyCountry] || 0) + 1;
       }
+
+      const REVENUE_BANDS = [
+        { label: '<$100M', min: 0, max: 100_000_000 },
+        { label: '$100M–$500M', min: 100_000_000, max: 500_000_000 },
+        { label: '$500M–$1B', min: 500_000_000, max: 1_000_000_000 },
+        { label: '$1B–$5B', min: 1_000_000_000, max: 5_000_000_000 },
+        { label: '$5B+', min: 5_000_000_000, max: Infinity },
+      ];
+      const getRevenueBand = (rev: number | null) => {
+        if (rev == null || rev <= 0) return 'Unknown';
+        for (const band of REVENUE_BANDS) {
+          if (rev >= band.min && rev < band.max) return band.label;
+        }
+        return 'Unknown';
+      };
+
+      const revenueBands: Record<string, number> = { 'Unknown': 0 };
+      REVENUE_BANDS.forEach(b => { revenueBands[b.label] = 0; });
+      for (const c of allCompanies) {
+        const band = getRevenueBand(c.revenue ? Number(c.revenue) : null);
+        revenueBands[band] = (revenueBands[band] || 0) + 1;
+      }
+
+      const sectorBreakdown: Record<string, number> = {};
+      const ownershipBreakdown: Record<string, number> = {};
+      for (const c of allCompanies) {
+        const sector = (c.sector || '').trim() || 'Unknown';
+        sectorBreakdown[sector] = (sectorBreakdown[sector] || 0) + 1;
+        const ownership = (c.ownershipType || '').trim() || 'Unknown';
+        ownershipBreakdown[ownership] = (ownershipBreakdown[ownership] || 0) + 1;
+      }
+
+      const productivityData: Array<{ company: string; revenuePerEmployee: number }> = [];
+      for (const c of allCompanies) {
+        const rev = c.revenue ? Number(c.revenue) : null;
+        const emp = c.employees ? Number(c.employees) : null;
+        if (rev && rev > 0 && emp && emp > 0) {
+          productivityData.push({ company: c.name, revenuePerEmployee: Math.round(rev / emp) });
+        }
+      }
+      productivityData.sort((a, b) => b.revenuePerEmployee - a.revenuePerEmployee);
+      const prodValues = productivityData.map(p => p.revenuePerEmployee);
+      const prodMedian = prodValues.length > 0 ? (() => {
+        const s = [...prodValues].sort((a, b) => a - b);
+        const m = Math.floor(s.length / 2);
+        return s.length % 2 === 0 ? Math.round((s[m - 1] + s[m]) / 2) : s[m];
+      })() : 0;
+
+      const sortedExecCountries = Object.entries(countryExecBreakdown).sort((a, b) => b[1] - a[1]);
+      const top3Share = sortedExecCountries.slice(0, 3).reduce((s, [, c]) => s + c, 0);
+      const top3Pct = totalExecutives > 0 ? Math.round((top3Share / totalExecutives) * 100) : 0;
+      const concentrationLabel = top3Pct >= 80 ? 'Concentrated' : top3Pct >= 50 ? 'Moderate' : 'Diversified';
+      const concentrationIndex = {
+        label: concentrationLabel,
+        top3Pct,
+        topGeographies: sortedExecCountries.slice(0, 3).map(([country, count]) => ({
+          country,
+          count,
+          pct: totalExecutives > 0 ? Math.round((count / totalExecutives) * 100) : 0,
+        })),
+      };
 
       const execIds = allExecutives.map(e => e.id);
 
@@ -1986,6 +2064,9 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let remunerationByLevel: Record<string, CategoryBreakdown> = {};
       let remunerationByGeo: Record<string, CategoryBreakdown> = {};
       let overallCategories: CategoryBreakdown = emptyBreakdown();
+
+      type CompRevenueEntry = { total: number; band: string; region: string };
+      const compRevenueEntries: CompRevenueEntry[] = [];
 
       if (execIds.length > 0) {
         const { remuneration } = await import("@shared/schema");
@@ -2023,6 +2104,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           addValues(remunerationByLevel[remLevel]);
           addValues(remunerationByGeo[country]);
           addValues(overallCategories);
+
+          const band = getRevenueBand(exec.companyRevenue);
+          const region = getRegionLabel(country);
+          compRevenueEntries.push({ total, band, region });
         }
       }
 
@@ -2051,6 +2136,57 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         remGeoStats[geo] = computeCategoryStats(data);
       }
 
+      const LEVEL_ORDER = ['Board', 'C-Suite', 'N-1', 'N-2'];
+      const stepUpAnalysis: Array<{ level: string; median: number; count: number; stepUpPct?: number; stepUpFrom?: string }> = [];
+      for (const level of LEVEL_ORDER) {
+        const stats = remLevelStats[level];
+        if (stats && stats.totalPackage.count > 0) {
+          stepUpAnalysis.push({ level, median: stats.totalPackage.median, count: stats.totalPackage.count });
+        }
+      }
+      for (let i = 1; i < stepUpAnalysis.length; i++) {
+        const higher = stepUpAnalysis[i - 1];
+        const lower = stepUpAnalysis[i];
+        if (lower.median > 0) {
+          lower.stepUpPct = Math.round(((higher.median - lower.median) / lower.median) * 100);
+          lower.stepUpFrom = higher.level;
+        }
+      }
+
+      const bandLabels = REVENUE_BANDS.map(b => b.label);
+      const compByRevenueBandRegion: Array<{
+        band: string;
+        originMedian: number | null;
+        originCount: number;
+        gccMedian: number | null;
+        gccCount: number;
+        internationalMedian: number | null;
+        internationalCount: number;
+      }> = [];
+      for (const bandLabel of bandLabels) {
+        const byRegion: Record<string, number[]> = { origin: [], gcc: [], international: [] };
+        for (const entry of compRevenueEntries) {
+          if (entry.band === bandLabel) {
+            byRegion[entry.region].push(entry.total);
+          }
+        }
+        const medianOf = (arr: number[]) => {
+          if (arr.length === 0) return null;
+          arr.sort((a, b) => a - b);
+          const m = Math.floor(arr.length / 2);
+          return arr.length % 2 === 0 ? Math.round((arr[m - 1] + arr[m]) / 2) : arr[m];
+        };
+        compByRevenueBandRegion.push({
+          band: bandLabel,
+          originMedian: medianOf(byRegion.origin),
+          originCount: byRegion.origin.length,
+          gccMedian: medianOf(byRegion.gcc),
+          gccCount: byRegion.gcc.length,
+          internationalMedian: medianOf(byRegion.international),
+          internationalCount: byRegion.international.length,
+        });
+      }
+
       let availableCount = 0;
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
@@ -2070,6 +2206,9 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       res.json({
+        searchQuery,
+        originCountry,
+        distinctCountries,
         mappingCompletion: {
           totalCompanies,
           mappedCount,
@@ -2086,7 +2225,18 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           byLevel: remLevelStats,
           byGeography: remGeoStats,
           currency: 'USD',
+          stepUpAnalysis,
+          compByRevenueBandRegion,
         },
+        revenueBands,
+        sectorBreakdown,
+        ownershipBreakdown,
+        productivityMetrics: {
+          companies: productivityData.slice(0, 15),
+          median: prodMedian,
+          count: productivityData.length,
+        },
+        concentrationIndex,
         availability: {
           totalExecutives,
           availableCount,

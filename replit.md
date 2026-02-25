@@ -119,6 +119,22 @@ After initial discovery, a multi-pass enrichment pipeline (`server/services/pipe
 ### Remuneration System
 Executive remuneration data supports 4 categories: Fixed Fees (baseSalary), Total Allowances (totalAllowances), Variable Bonus (bonus), and LTIP (longTermIncentives). Data can be entered in any currency and format via the executive profile's remuneration notes field. AI-powered parsing (`server/services/remunerationParser.ts`) uses OpenAI gpt-5.2 to extract structured data from free-text. Currency conversion (`server/services/currencyConversion.ts`) provides static exchange rates for 45+ currencies to normalize to USD on the dashboard. The RightPanel shows remuneration in original currency; the Dashboard shows all values converted to USD.
 
+### Dashboard Analytics Layer
+The Dashboard view (`client/src/components/DashboardView.tsx`) provides a professional Talent Mapping Report format with the following sections:
+- **Executive Summary Banner**: Report header with search query title, company/executive/country counts, mapping completion %, and interest conversion rate
+- **Mapping Completion**: Progress ring + country-level completion bars
+- **Executive Universe**: Level and geography breakdown with talent concentration index (Concentrated/Moderate/Diversified based on top-3 geography share)
+- **Revenue Distribution**: Company count by revenue bands (<$100M, $100M-$500M, $500M-$1B, $1B-$5B, $5B+), with collapsible sector and ownership type breakdowns
+- **Status & Interest**: Interest rate by level and geography
+- **Compensation Analytics** (full-width section):
+  - 5 category cards (Fixed Fees, Allowances, Variable Bonus, LTIP, Total Package) with median/min/max
+  - Level-to-Level Step-Up analysis showing % premium between Board→C-Suite→N-1→N-2
+  - **Median Compensation by Revenue Band & Region** line chart (Recharts): 3 lines for Origin Country (auto-detected), GCC (excl. origin), International; gaps where no data
+  - By Level and By Geography range bars
+- **Revenue per Employee**: Productivity metric ranked by company, with median aggregate
+- All analytics computed server-side in `/api/dashboard/:searchId` endpoint
+- Regional classification: Origin = most frequent country in search; GCC = UAE, Saudi, Qatar, Bahrain, Kuwait, Oman (excl. origin); International = everything else
+
 ### Audio/Voice Integration
 Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
 

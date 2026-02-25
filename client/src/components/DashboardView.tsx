@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Loader2, Building2, Users, DollarSign, UserCheck, TrendingUp, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Loader2, Building2, Users, DollarSign, UserCheck, TrendingUp, MapPin, ChevronDown, ChevronUp, Globe, BarChart3, Briefcase, ArrowUpRight, Target } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface CategoryStats {
   min: number;
@@ -16,7 +17,34 @@ interface CategoryBreakdownStats {
   totalPackage: CategoryStats;
 }
 
+interface StepUpEntry {
+  level: string;
+  median: number;
+  count: number;
+  stepUpPct?: number;
+  stepUpFrom?: string;
+}
+
+interface CompRevenueBandRegion {
+  band: string;
+  originMedian: number | null;
+  originCount: number;
+  gccMedian: number | null;
+  gccCount: number;
+  internationalMedian: number | null;
+  internationalCount: number;
+}
+
+interface ConcentrationIndex {
+  label: string;
+  top3Pct: number;
+  topGeographies: Array<{ country: string; count: number; pct: number }>;
+}
+
 interface DashboardData {
+  searchQuery: string;
+  originCountry: string;
+  distinctCountries: number;
   mappingCompletion: {
     totalCompanies: number;
     mappedCount: number;
@@ -33,7 +61,18 @@ interface DashboardData {
     byLevel: Record<string, CategoryBreakdownStats>;
     byGeography: Record<string, CategoryBreakdownStats>;
     currency: string;
+    stepUpAnalysis: StepUpEntry[];
+    compByRevenueBandRegion: CompRevenueBandRegion[];
   };
+  revenueBands: Record<string, number>;
+  sectorBreakdown: Record<string, number>;
+  ownershipBreakdown: Record<string, number>;
+  productivityMetrics: {
+    companies: Array<{ company: string; revenuePerEmployee: number }>;
+    median: number;
+    count: number;
+  };
+  concentrationIndex: ConcentrationIndex;
   availability: {
     totalExecutives: number;
     availableCount: number;
@@ -52,6 +91,12 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function formatCurrency(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function formatRevPerEmp(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
   return `$${value.toFixed(0)}`;
@@ -76,21 +121,6 @@ function ProgressRing({ percentage, size = 120, strokeWidth = 10 }: { percentage
   );
 }
 
-function StatCard({ icon: Icon, label, value, subtitle }: { icon: any; label: string; value: string | number; subtitle?: string }) {
-  return (
-    <div className="bg-card border border-border rounded-lg p-4 flex items-start gap-3" data-testid={`stat-${label.toLowerCase().replace(/\s+/g, '-')}`}>
-      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-primary" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
-        <p className="text-xl font-semibold text-foreground mt-0.5">{value}</p>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-      </div>
-    </div>
-  );
-}
-
 function SectionHeader({ title, icon: Icon }: { title: string; icon: any }) {
   return (
     <div className="flex items-center gap-2 mb-4">
@@ -100,7 +130,7 @@ function SectionHeader({ title, icon: Icon }: { title: string; icon: any }) {
   );
 }
 
-function BarRow({ label, value, maxValue, color = 'bg-primary' }: { label: string; value: number; maxValue: number; color?: string }) {
+function BarRow({ label, value, maxValue, color = 'bg-primary', suffix = '' }: { label: string; value: number; maxValue: number; color?: string; suffix?: string }) {
   const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
   return (
     <div className="flex items-center gap-3 py-1.5">
@@ -108,7 +138,7 @@ function BarRow({ label, value, maxValue, color = 'bg-primary' }: { label: strin
       <div className="flex-1 h-5 bg-muted/20 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${Math.max(pct, 2)}%` }} />
       </div>
-      <span className="text-xs font-medium text-foreground w-10 text-right">{value}</span>
+      <span className="text-xs font-medium text-foreground w-16 text-right">{typeof value === 'number' && suffix ? `${value}${suffix}` : value}</span>
     </div>
   );
 }
@@ -163,6 +193,27 @@ function CollapsibleSection({ title, children, defaultOpen = true }: { title: st
   );
 }
 
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-xs">
+      <p className="font-medium text-foreground mb-1.5">{label}</p>
+      {payload.map((entry: any) => (
+        entry.value != null && (
+          <div key={entry.name} className="flex items-center gap-2 py-0.5">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+            <span className="text-muted-foreground">{entry.name}:</span>
+            <span className="font-medium text-foreground">{formatCurrency(entry.value)}</span>
+            {entry.payload?.[`${entry.dataKey.replace('Median', 'Count')}`] != null && (
+              <span className="text-muted-foreground">({entry.payload[`${entry.dataKey.replace('Median', 'Count')}`]} profiles)</span>
+            )}
+          </div>
+        )
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardView({ searchId }: { searchId?: string }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -206,7 +257,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
     );
   }
 
-  const { mappingCompletion, executiveUniverse, remuneration, availability } = data;
+  const { mappingCompletion, executiveUniverse, remuneration, availability, revenueBands, sectorBreakdown, ownershipBreakdown, productivityMetrics, concentrationIndex } = data;
 
   const sortedCountries = Object.entries(mappingCompletion.byCountry).sort((a, b) => b[1].total - a[1].total);
   const sortedTitles = Object.entries(executiveUniverse.byTitle).sort((a, b) => b[1] - a[1]);
@@ -237,13 +288,53 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
 
   const hasAvailData = availability.availableCount > 0 || availLevels.some(([, v]) => v.available > 0);
 
+  const sortedRevenueBands = Object.entries(revenueBands).filter(([k]) => k !== 'Unknown');
+  const unknownRevCount = revenueBands['Unknown'] || 0;
+  const maxRevBand = Math.max(...sortedRevenueBands.map(([, v]) => v), 1);
+
+  const sortedSectors = Object.entries(sectorBreakdown).sort((a, b) => b[1] - a[1]);
+  const maxSector = Math.max(...sortedSectors.map(([, v]) => v), 1);
+  const sortedOwnership = Object.entries(ownershipBreakdown).sort((a, b) => b[1] - a[1]);
+  const maxOwnership = Math.max(...sortedOwnership.map(([, v]) => v), 1);
+
+  const hasLineChartData = remuneration.compByRevenueBandRegion?.some(
+    d => d.originMedian != null || d.gccMedian != null || d.internationalMedian != null
+  );
+
+  const hasStepUp = remuneration.stepUpAnalysis?.length >= 2;
+
+  const hasProdData = productivityMetrics.count > 0;
+  const maxProd = hasProdData ? Math.max(...productivityMetrics.companies.map(c => c.revenuePerEmployee)) : 1;
+
   return (
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6" data-testid="dashboard-view">
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard icon={Building2} label="Total Companies" value={mappingCompletion.totalCompanies} subtitle="In search universe" />
-        <StatCard icon={TrendingUp} label="Mapped" value={mappingCompletion.mappedCount} subtitle={`${mappingCompletion.completionPct}% completion`} />
-        <StatCard icon={Users} label="Executives" value={executiveUniverse.totalExecutives} subtitle="Identified across all companies" />
-        <StatCard icon={UserCheck} label="Interested" value={`${availability.availabilityPct}%`} subtitle={`${availability.availableCount} of ${availability.totalExecutives}`} />
+    <div className="p-6 max-w-[1400px] mx-auto space-y-6 overflow-y-auto" data-testid="dashboard-view">
+      <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-border rounded-xl p-6" data-testid="executive-summary-banner">
+        <div className="mb-3">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Talent Mapping Report</p>
+          <h1 className="text-lg font-semibold text-foreground leading-tight">{data.searchQuery || 'Search Results'}</h1>
+        </div>
+        <div className="grid grid-cols-5 gap-4 mt-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-foreground">{mappingCompletion.totalCompanies}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Companies</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-foreground">{executiveUniverse.totalExecutives}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Executives</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-foreground">{data.distinctCountries}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Countries</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-foreground">{mappingCompletion.completionPct}%</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Mapped</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-emerald-400">{availability.availabilityPct}%</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Interested</p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -277,6 +368,24 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-executive-universe">
           <SectionHeader title="Executive Universe" icon={Users} />
           <div className="space-y-4">
+            {concentrationIndex.topGeographies.length > 0 && (
+              <div className="flex items-center gap-3 pb-3 border-b border-border">
+                <div className="flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs text-muted-foreground">Talent Pool:</span>
+                  <span className={`text-xs font-semibold ${concentrationIndex.label === 'Concentrated' ? 'text-amber-400' : concentrationIndex.label === 'Diversified' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                    {concentrationIndex.label}
+                  </span>
+                </div>
+                <div className="flex gap-2 ml-auto">
+                  {concentrationIndex.topGeographies.map(g => (
+                    <span key={g.country} className="text-[10px] text-muted-foreground">
+                      {g.country} <span className="text-foreground font-medium">{g.pct}%</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <CollapsibleSection title={`By Level (${sortedTitles.length} levels)`}>
               <div className="max-h-[120px] overflow-y-auto pr-1">
                 {sortedTitles.map(([title, count]) => (
@@ -294,67 +403,43 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           </div>
         </div>
 
-        <div className="bg-card border border-border rounded-lg p-5" data-testid="section-remuneration">
-          <SectionHeader title="Remuneration (USD)" icon={DollarSign} />
-          {!hasRemData ? (
-            <div className="text-xs text-muted-foreground py-8 text-center">
-              No remuneration data captured yet. Add compensation details to executive profiles and click "Parse with AI" to extract structured data.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
-                {(['fixedFees', 'allowances', 'variableBonus', 'ltip'] as const).map(cat => {
-                  const stats = overallCats[cat];
-                  const info = CATEGORY_LABELS[cat];
-                  return (
-                    <div key={cat} className="p-2.5 rounded-lg bg-muted/20 border border-border/50">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <div className={`w-2 h-2 rounded-full ${info.color}`} />
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{info.label}</span>
-                      </div>
-                      {stats.count > 0 ? (
-                        <>
-                          <p className="text-sm font-semibold text-foreground">{formatCurrency(stats.median)}</p>
-                          <p className="text-[10px] text-muted-foreground">{formatCurrency(stats.min)} – {formatCurrency(stats.max)} ({stats.count})</p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-muted-foreground italic">No data</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {overallCats.totalPackage.count > 0 && (
-                <div className="flex items-center justify-between text-xs pb-2">
-                  <span className="text-muted-foreground">Total Package (median)</span>
-                  <span className="font-semibold text-primary text-sm">{formatCurrency(overallCats.totalPackage.median)}</span>
-                </div>
+        <div className="bg-card border border-border rounded-lg p-5" data-testid="section-revenue-bands">
+          <SectionHeader title="Revenue Distribution" icon={BarChart3} />
+          <div className="space-y-4">
+            <div>
+              {sortedRevenueBands.map(([band, count]) => (
+                <BarRow key={band} label={band} value={count} maxValue={maxRevBand} color="bg-blue-500/70" />
+              ))}
+              {unknownRevCount > 0 && (
+                <BarRow label="Unknown" value={unknownRevCount} maxValue={maxRevBand} color="bg-muted-foreground/30" />
               )}
-              <CollapsibleSection title={`By Level (${remLevels.length})`}>
-                <div className="max-h-[180px] overflow-y-auto pr-1 space-y-1">
-                  {remLevels.map(([level, stats]) => (
-                    <RangeBar key={level} label={`${level} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
+            </div>
+            {sortedSectors.length > 0 && (
+              <CollapsibleSection title={`By Sector (${sortedSectors.length})`} defaultOpen={false}>
+                <div className="max-h-[140px] overflow-y-auto pr-1">
+                  {sortedSectors.map(([sector, count]) => (
+                    <BarRow key={sector} label={sector} value={count} maxValue={maxSector} color="bg-emerald-500/70" />
                   ))}
                 </div>
               </CollapsibleSection>
-              {remGeos.length > 0 && (
-                <CollapsibleSection title={`By Geography (${remGeos.length})`} defaultOpen={false}>
-                  <div className="max-h-[180px] overflow-y-auto pr-1 space-y-1">
-                    {remGeos.map(([geo, stats]) => (
-                      <RangeBar key={geo} label={`${geo} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
-                    ))}
-                  </div>
-                </CollapsibleSection>
-              )}
-            </div>
-          )}
+            )}
+            {sortedOwnership.length > 0 && (
+              <CollapsibleSection title={`By Ownership (${sortedOwnership.length})`} defaultOpen={false}>
+                <div className="max-h-[140px] overflow-y-auto pr-1">
+                  {sortedOwnership.map(([type, count]) => (
+                    <BarRow key={type} label={type} value={count} maxValue={maxOwnership} color="bg-amber-500/70" />
+                  ))}
+                </div>
+              </CollapsibleSection>
+            )}
+          </div>
         </div>
 
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-availability">
-          <SectionHeader title="Level" icon={UserCheck} />
+          <SectionHeader title="Status & Interest" icon={UserCheck} />
           {!hasAvailData ? (
             <div className="text-xs text-muted-foreground py-8 text-center">
-              No level data captured yet. Assign levels (Board, C-Suite, N-1, N-2) and mark status to see rates here.
+              No status data captured yet. Assign levels (Board, C-Suite, N-1, N-2) and mark status to see rates here.
             </div>
           ) : (
             <div className="space-y-4">
@@ -392,6 +477,183 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           )}
         </div>
       </div>
+
+      <div className="bg-card border border-border rounded-lg p-5" data-testid="section-remuneration">
+        <SectionHeader title="Compensation Analytics (USD)" icon={DollarSign} />
+        {!hasRemData ? (
+          <div className="text-xs text-muted-foreground py-8 text-center">
+            No remuneration data captured yet. Add compensation details to executive profiles and click "Parse with AI" to extract structured data.
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-5 gap-3">
+              {(['fixedFees', 'allowances', 'variableBonus', 'ltip'] as const).map(cat => {
+                const stats = overallCats[cat];
+                const info = CATEGORY_LABELS[cat];
+                return (
+                  <div key={cat} className="p-3 rounded-lg bg-muted/20 border border-border/50">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className={`w-2 h-2 rounded-full ${info.color}`} />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{info.label}</span>
+                    </div>
+                    {stats.count > 0 ? (
+                      <>
+                        <p className="text-sm font-semibold text-foreground">{formatCurrency(stats.median)}</p>
+                        <p className="text-[10px] text-muted-foreground">{formatCurrency(stats.min)} – {formatCurrency(stats.max)} ({stats.count})</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No data</p>
+                    )}
+                  </div>
+                );
+              })}
+              {overallCats.totalPackage.count > 0 && (
+                <div className="p-3 rounded-lg bg-primary/10 border border-primary/30">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Package</span>
+                  </div>
+                  <p className="text-sm font-semibold text-primary">{formatCurrency(overallCats.totalPackage.median)}</p>
+                  <p className="text-[10px] text-muted-foreground">{formatCurrency(overallCats.totalPackage.min)} – {formatCurrency(overallCats.totalPackage.max)} ({overallCats.totalPackage.count})</p>
+                </div>
+              )}
+            </div>
+
+            {hasStepUp && (
+              <div className="border-t border-border pt-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Level-to-Level Step-Up</p>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  {remuneration.stepUpAnalysis.map((entry, idx) => (
+                    <div key={entry.level} className="flex items-center gap-2">
+                      <div className="text-center px-4 py-2.5 rounded-lg bg-muted/20 border border-border/50">
+                        <p className="text-[10px] text-muted-foreground uppercase mb-0.5">{entry.level}</p>
+                        <p className="text-sm font-semibold text-foreground">{formatCurrency(entry.median)}</p>
+                        <p className="text-[10px] text-muted-foreground">{entry.count} profiles</p>
+                      </div>
+                      {idx < remuneration.stepUpAnalysis.length - 1 && (
+                        <div className="flex flex-col items-center px-1">
+                          <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
+                          {remuneration.stepUpAnalysis[idx + 1]?.stepUpPct != null && (
+                            <span className="text-[10px] font-semibold text-emerald-400">+{remuneration.stepUpAnalysis[idx + 1].stepUpPct}%</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {hasLineChartData && (
+              <div className="border-t border-border pt-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">Median Compensation by Revenue Band & Region</p>
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={remuneration.compByRevenueBandRegion} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                      <XAxis
+                        dataKey="band"
+                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={{ stroke: 'hsl(var(--border))' }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tickFormatter={(v: number) => formatCurrency(v)}
+                        tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                        axisLine={{ stroke: 'hsl(var(--border))' }}
+                        tickLine={false}
+                        width={65}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend
+                        wrapperStyle={{ fontSize: 11 }}
+                        iconType="circle"
+                        iconSize={8}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="originMedian"
+                        name={data.originCountry}
+                        stroke="hsl(210, 100%, 60%)"
+                        strokeWidth={2.5}
+                        dot={{ fill: 'hsl(210, 100%, 60%)', r: 4 }}
+                        activeDot={{ r: 6 }}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="gccMedian"
+                        name="GCC"
+                        stroke="hsl(160, 80%, 50%)"
+                        strokeWidth={2.5}
+                        dot={{ fill: 'hsl(160, 80%, 50%)', r: 4 }}
+                        activeDot={{ r: 6 }}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="internationalMedian"
+                        name="International"
+                        stroke="hsl(45, 90%, 55%)"
+                        strokeWidth={2.5}
+                        dot={{ fill: 'hsl(45, 90%, 55%)', r: 4 }}
+                        activeDot={{ r: 6 }}
+                        connectNulls={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-6 border-t border-border pt-4">
+              <CollapsibleSection title={`By Level (${remLevels.length})`}>
+                <div className="max-h-[200px] overflow-y-auto pr-1 space-y-1">
+                  {remLevels.map(([level, stats]) => (
+                    <RangeBar key={level} label={`${level} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
+                  ))}
+                </div>
+              </CollapsibleSection>
+              {remGeos.length > 0 && (
+                <CollapsibleSection title={`By Geography (${remGeos.length})`} defaultOpen={false}>
+                  <div className="max-h-[200px] overflow-y-auto pr-1 space-y-1">
+                    {remGeos.map(([geo, stats]) => (
+                      <RangeBar key={geo} label={`${geo} (${stats.totalPackage.count})`} min={stats.totalPackage.min} median={stats.totalPackage.median} max={stats.totalPackage.max} globalMax={globalMaxRem} />
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {hasProdData && (
+        <div className="bg-card border border-border rounded-lg p-5" data-testid="section-productivity">
+          <SectionHeader title="Revenue per Employee" icon={Briefcase} />
+          <div className="flex items-center gap-4 pb-3 border-b border-border mb-3">
+            <div className="text-center">
+              <p className="text-lg font-semibold text-foreground">{formatRevPerEmp(productivityMetrics.median)}</p>
+              <p className="text-[10px] text-muted-foreground uppercase">Median</p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-foreground">{productivityMetrics.count}</p>
+              <p className="text-[10px] text-muted-foreground uppercase">Companies</p>
+            </div>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto pr-1">
+            {productivityMetrics.companies.map(c => (
+              <div key={c.company} className="flex items-center gap-3 py-1.5">
+                <span className="text-xs text-muted-foreground w-40 shrink-0 truncate" title={c.company}>{c.company}</span>
+                <div className="flex-1 h-5 bg-muted/20 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full bg-blue-500/70 transition-all duration-500" style={{ width: `${Math.max((c.revenuePerEmployee / maxProd) * 100, 2)}%` }} />
+                </div>
+                <span className="text-xs font-medium text-foreground w-20 text-right">{formatRevPerEmp(c.revenuePerEmployee)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

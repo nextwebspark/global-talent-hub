@@ -196,7 +196,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
   const filtered = useMemo(() => {
     if (!search) return options;
     const lower = search.toLowerCase();
-    return options.filter(o => o.toLowerCase().startsWith(lower));
+    return options.filter(o => o.toLowerCase().includes(lower));
   }, [options, search]);
 
   useEffect(() => {

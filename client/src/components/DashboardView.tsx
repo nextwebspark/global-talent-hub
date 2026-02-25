@@ -68,6 +68,13 @@ interface DashboardData {
   sectorBreakdown: Record<string, number>;
   ownershipBreakdown: Record<string, number>;
   concentrationIndex: ConcentrationIndex;
+  productivityMetrics: {
+    companies: Array<{ name: string; revenuePerEmployee: number }>;
+    median: number | null;
+    min: number | null;
+    max: number | null;
+    count: number;
+  };
   availability: {
     totalExecutives: number;
     availableCount: number;
@@ -614,6 +621,42 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         )}
       </div>
 
+      {data.productivityMetrics && data.productivityMetrics.count > 0 && (
+        <div className="bg-card border border-border rounded-lg p-5" data-testid="section-productivity">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-semibold uppercase tracking-wider">Revenue per Employee</h3>
+            <span className="text-xs text-muted-foreground ml-auto">
+              Median: {data.productivityMetrics.median ? formatCurrency(data.productivityMetrics.median) : '—'} · {data.productivityMetrics.count} companies
+            </span>
+          </div>
+          <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
+            {data.productivityMetrics.companies.map((c, i) => {
+              const maxVal = data.productivityMetrics.max || 1;
+              const pct = Math.round((c.revenuePerEmployee / maxVal) * 100);
+              return (
+                <div key={i} className="flex items-center gap-2 text-xs" data-testid={`productivity-row-${i}`}>
+                  <span className="w-[160px] truncate text-muted-foreground shrink-0" title={c.name}>{c.name}</span>
+                  <div className="flex-1 bg-muted/20 rounded h-4 overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-500/60 rounded transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="w-[80px] text-right font-medium shrink-0">{formatCurrency(c.revenuePerEmployee)}</span>
+                </div>
+              );
+            })}
+          </div>
+          {data.productivityMetrics.median && (
+            <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs text-muted-foreground">
+              <span>Min: {formatCurrency(data.productivityMetrics.min!)}</span>
+              <span className="font-medium text-foreground">Median: {formatCurrency(data.productivityMetrics.median)}</span>
+              <span>Max: {formatCurrency(data.productivityMetrics.max!)}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

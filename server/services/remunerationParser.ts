@@ -57,6 +57,12 @@ RULES:
 7. If a total package is given without breakdown, put it all in baseSalary
 8. Do not guess - if a component is not mentioned at all, set to null
 9. For bonus percentage, just return the percentage number (e.g., 25 for "25%"), NOT the calculated amount
+10. CRITICAL - "X months salary" or "X x months salary" expressions for bonus/LTIP/allowances:
+    - "2 months salary as bonus" or "2 x months salary as bonus" means bonus = 2/12 of base salary. Return as type="percentage" with value=(2/12)*100 = 16.67
+    - "3 months salary as LTIP" means LTIP = 3/12 of base salary. Return longTermIncentives with type="months_of_salary" and value=3 (the number of months)
+    - General formula: N months salary = N/12 of annual base salary
+    - For bonus: set type="percentage" and value = (N/12) * 100 (e.g., 2 months = 16.67%, 3 months = 25%)
+    - For LTIP/allowances expressed as months of salary: convert to a percentage of base salary the same way
 
 Return ONLY the JSON object.`;
 
@@ -69,9 +75,9 @@ interface RawComponent {
 
 interface RawParsedResult {
   baseSalary: RawComponent | null;
-  totalAllowances: RawComponent | null;
+  totalAllowances: (RawComponent & { type?: string }) | null;
   bonus: (RawComponent & { type: string }) | null;
-  longTermIncentives: RawComponent | null;
+  longTermIncentives: (RawComponent & { type?: string }) | null;
   year: string | null;
   notes: string | null;
 }
@@ -122,11 +128,21 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
     let totalAllowancesUSD: number | null = null;
     if (raw.totalAllowances) {
-      const annualVal = annualize(raw.totalAllowances.value, raw.totalAllowances.period);
-      const fromCurrency = normalizeCurrencyCode(raw.totalAllowances.currency);
-      totalAllowancesUSD = convertCurrency(annualVal, fromCurrency, 'USD');
-      if (fromCurrency !== 'USD') {
-        notesParts.push(`Allowances: ${fromCurrency} ${annualVal.toLocaleString()} → USD ${totalAllowancesUSD.toLocaleString()}`);
+      if ((raw.totalAllowances.type === 'months_of_salary' || raw.totalAllowances.type === 'percentage') && baseSalaryUSD != null) {
+        if (raw.totalAllowances.type === 'months_of_salary') {
+          totalAllowancesUSD = Math.round((raw.totalAllowances.value / 12) * baseSalaryUSD * 100) / 100;
+          notesParts.push(`Allowances: ${raw.totalAllowances.value} months of salary = USD ${totalAllowancesUSD.toLocaleString()}`);
+        } else {
+          totalAllowancesUSD = Math.round((raw.totalAllowances.value / 100) * baseSalaryUSD * 100) / 100;
+          notesParts.push(`Allowances: ${raw.totalAllowances.value}% of base = USD ${totalAllowancesUSD.toLocaleString()}`);
+        }
+      } else {
+        const annualVal = annualize(raw.totalAllowances.value, raw.totalAllowances.period);
+        const fromCurrency = normalizeCurrencyCode(raw.totalAllowances.currency || 'USD');
+        totalAllowancesUSD = convertCurrency(annualVal, fromCurrency, 'USD');
+        if (fromCurrency !== 'USD') {
+          notesParts.push(`Allowances: ${fromCurrency} ${annualVal.toLocaleString()} → USD ${totalAllowancesUSD.toLocaleString()}`);
+        }
       }
     }
 
@@ -146,11 +162,21 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
     let ltipUSD: number | null = null;
     if (raw.longTermIncentives) {
-      const annualVal = annualize(raw.longTermIncentives.value, raw.longTermIncentives.period);
-      const fromCurrency = normalizeCurrencyCode(raw.longTermIncentives.currency);
-      ltipUSD = convertCurrency(annualVal, fromCurrency, 'USD');
-      if (fromCurrency !== 'USD') {
-        notesParts.push(`LTIP: ${fromCurrency} ${annualVal.toLocaleString()} → USD ${ltipUSD.toLocaleString()}`);
+      if ((raw.longTermIncentives.type === 'months_of_salary' || raw.longTermIncentives.type === 'percentage') && baseSalaryUSD != null) {
+        if (raw.longTermIncentives.type === 'months_of_salary') {
+          ltipUSD = Math.round((raw.longTermIncentives.value / 12) * baseSalaryUSD * 100) / 100;
+          notesParts.push(`LTIP: ${raw.longTermIncentives.value} months of salary = USD ${ltipUSD.toLocaleString()}`);
+        } else {
+          ltipUSD = Math.round((raw.longTermIncentives.value / 100) * baseSalaryUSD * 100) / 100;
+          notesParts.push(`LTIP: ${raw.longTermIncentives.value}% of base = USD ${ltipUSD.toLocaleString()}`);
+        }
+      } else {
+        const annualVal = annualize(raw.longTermIncentives.value, raw.longTermIncentives.period);
+        const fromCurrency = normalizeCurrencyCode(raw.longTermIncentives.currency || 'USD');
+        ltipUSD = convertCurrency(annualVal, fromCurrency, 'USD');
+        if (fromCurrency !== 'USD') {
+          notesParts.push(`LTIP: ${fromCurrency} ${annualVal.toLocaleString()} → USD ${ltipUSD.toLocaleString()}`);
+        }
       }
     }
 

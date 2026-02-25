@@ -2044,6 +2044,30 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         ownershipBreakdown[ownership] = (ownershipBreakdown[ownership] || 0) + 1;
       }
 
+      const productivityData: { name: string; revenuePerEmployee: number }[] = [];
+      for (const c of allCompanies) {
+        const rev = c.revenue ? Number(c.revenue) : null;
+        const emp = c.employees ? Number(c.employees) : null;
+        if (rev && rev > 0 && emp && emp > 0) {
+          productivityData.push({
+            name: c.name,
+            revenuePerEmployee: Math.round(rev / emp),
+          });
+        }
+      }
+      productivityData.sort((a, b) => b.revenuePerEmployee - a.revenuePerEmployee);
+      const prodValues = productivityData.map(p => p.revenuePerEmployee);
+      const prodMedian = prodValues.length > 0
+        ? prodValues[Math.floor(prodValues.length / 2)]
+        : null;
+      const productivityMetrics = {
+        companies: productivityData,
+        median: prodMedian,
+        min: prodValues.length > 0 ? prodValues[prodValues.length - 1] : null,
+        max: prodValues.length > 0 ? prodValues[0] : null,
+        count: prodValues.length,
+      };
+
       const sortedExecCountries = Object.entries(countryExecBreakdown).sort((a, b) => b[1] - a[1]);
       const top3Share = sortedExecCountries.slice(0, 3).reduce((s, [, c]) => s + c, 0);
       const top3Pct = totalExecutives > 0 ? Math.round((top3Share / totalExecutives) * 100) : 0;
@@ -2240,6 +2264,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         sectorBreakdown,
         ownershipBreakdown,
         concentrationIndex,
+        productivityMetrics,
         availability: {
           totalExecutives,
           availableCount,

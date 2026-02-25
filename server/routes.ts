@@ -1945,7 +1945,31 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(404).json({ error: "Search not found" });
       }
 
-      const searchQuery = results.searchQuery.query || '';
+      const rawQuery = results.searchQuery.query || '';
+
+      let reportTitle = rawQuery;
+      try {
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI();
+        const titleResponse = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a title generator. Given a search query from an executive search firm, produce a short, clean report title (5-12 words max) that describes what the talent mapping exercise covers. Use title case. Do not include numbers like 'Top 10' or 'Top 20'. Do not include instructional phrases. Just the subject matter. Examples: 'Global Luxury Watch and Jewellery Distributors', 'UAE Banking Sector Leadership', 'Middle East Power Generation Companies', 'GCC Family Conglomerates'. Return ONLY the title, nothing else."
+            },
+            { role: "user", content: rawQuery }
+          ],
+          max_tokens: 50,
+          temperature: 0.3,
+        });
+        const generated = titleResponse.choices[0]?.message?.content?.trim();
+        if (generated && generated.length > 3 && generated.length < 100) {
+          reportTitle = generated;
+        }
+      } catch (e) {
+        console.error("Failed to generate report title, using raw query:", e);
+      }
 
       const allCompanies = results.companies;
       const totalCompanies = allCompanies.length;
@@ -2019,22 +2043,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         const ownership = (c.ownershipType || '').trim() || 'Unknown';
         ownershipBreakdown[ownership] = (ownershipBreakdown[ownership] || 0) + 1;
       }
-
-      const productivityData: Array<{ company: string; revenuePerEmployee: number }> = [];
-      for (const c of allCompanies) {
-        const rev = c.revenue ? Number(c.revenue) : null;
-        const emp = c.employees ? Number(c.employees) : null;
-        if (rev && rev > 0 && emp && emp > 0) {
-          productivityData.push({ company: c.name, revenuePerEmployee: Math.round(rev / emp) });
-        }
-      }
-      productivityData.sort((a, b) => b.revenuePerEmployee - a.revenuePerEmployee);
-      const prodValues = productivityData.map(p => p.revenuePerEmployee);
-      const prodMedian = prodValues.length > 0 ? (() => {
-        const s = [...prodValues].sort((a, b) => a - b);
-        const m = Math.floor(s.length / 2);
-        return s.length % 2 === 0 ? Math.round((s[m - 1] + s[m]) / 2) : s[m];
-      })() : 0;
 
       const sortedExecCountries = Object.entries(countryExecBreakdown).sort((a, b) => b[1] - a[1]);
       const top3Share = sortedExecCountries.slice(0, 3).reduce((s, [, c]) => s + c, 0);
@@ -2206,7 +2214,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       res.json({
-        searchQuery,
+        reportTitle,
         originCountry,
         distinctCountries,
         mappingCompletion: {
@@ -2231,11 +2239,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         revenueBands,
         sectorBreakdown,
         ownershipBreakdown,
-        productivityMetrics: {
-          companies: productivityData.slice(0, 15),
-          median: prodMedian,
-          count: productivityData.length,
-        },
         concentrationIndex,
         availability: {
           totalExecutives,

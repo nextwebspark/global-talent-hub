@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Loader2, Building2, Users, DollarSign, UserCheck, TrendingUp, MapPin, ChevronDown, ChevronUp, Globe, BarChart3, Briefcase, ArrowUpRight, Target } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader2, Building2, Users, DollarSign, UserCheck, ChevronDown, ChevronUp, BarChart3, ArrowUpRight, Target } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface CategoryStats {
@@ -42,7 +42,7 @@ interface ConcentrationIndex {
 }
 
 interface DashboardData {
-  searchQuery: string;
+  reportTitle: string;
   originCountry: string;
   distinctCountries: number;
   mappingCompletion: {
@@ -67,11 +67,6 @@ interface DashboardData {
   revenueBands: Record<string, number>;
   sectorBreakdown: Record<string, number>;
   ownershipBreakdown: Record<string, number>;
-  productivityMetrics: {
-    companies: Array<{ company: string; revenuePerEmployee: number }>;
-    median: number;
-    count: number;
-  };
   concentrationIndex: ConcentrationIndex;
   availability: {
     totalExecutives: number;
@@ -91,12 +86,6 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 function formatCurrency(value: number): string {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
-function formatRevPerEmp(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
   return `$${value.toFixed(0)}`;
@@ -257,7 +246,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
     );
   }
 
-  const { mappingCompletion, executiveUniverse, remuneration, availability, revenueBands, sectorBreakdown, ownershipBreakdown, productivityMetrics, concentrationIndex } = data;
+  const { mappingCompletion, executiveUniverse, remuneration, availability, revenueBands, sectorBreakdown, ownershipBreakdown, concentrationIndex } = data;
 
   const sortedCountries = Object.entries(mappingCompletion.byCountry).sort((a, b) => b[1].total - a[1].total);
   const sortedTitles = Object.entries(executiveUniverse.byTitle).sort((a, b) => b[1] - a[1]);
@@ -303,15 +292,12 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
 
   const hasStepUp = remuneration.stepUpAnalysis?.length >= 2;
 
-  const hasProdData = productivityMetrics.count > 0;
-  const maxProd = hasProdData ? Math.max(...productivityMetrics.companies.map(c => c.revenuePerEmployee)) : 1;
-
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6 overflow-y-auto" data-testid="dashboard-view">
       <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-border rounded-xl p-6" data-testid="executive-summary-banner">
         <div className="mb-3">
           <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Talent Mapping Report</p>
-          <h1 className="text-lg font-semibold text-foreground leading-tight">{data.searchQuery || 'Search Results'}</h1>
+          <h1 className="text-lg font-semibold text-foreground leading-tight">{data.reportTitle || 'Search Results'}</h1>
         </div>
         <div className="grid grid-cols-5 gap-4 mt-4">
           <div className="text-center">
@@ -628,32 +614,6 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         )}
       </div>
 
-      {hasProdData && (
-        <div className="bg-card border border-border rounded-lg p-5" data-testid="section-productivity">
-          <SectionHeader title="Revenue per Employee" icon={Briefcase} />
-          <div className="flex items-center gap-4 pb-3 border-b border-border mb-3">
-            <div className="text-center">
-              <p className="text-lg font-semibold text-foreground">{formatRevPerEmp(productivityMetrics.median)}</p>
-              <p className="text-[10px] text-muted-foreground uppercase">Median</p>
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-semibold text-foreground">{productivityMetrics.count}</p>
-              <p className="text-[10px] text-muted-foreground uppercase">Companies</p>
-            </div>
-          </div>
-          <div className="max-h-[200px] overflow-y-auto pr-1">
-            {productivityMetrics.companies.map(c => (
-              <div key={c.company} className="flex items-center gap-3 py-1.5">
-                <span className="text-xs text-muted-foreground w-40 shrink-0 truncate" title={c.company}>{c.company}</span>
-                <div className="flex-1 h-5 bg-muted/20 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full bg-blue-500/70 transition-all duration-500" style={{ width: `${Math.max((c.revenuePerEmployee / maxProd) * 100, 2)}%` }} />
-                </div>
-                <span className="text-xs font-medium text-foreground w-20 text-right">{formatRevPerEmp(c.revenuePerEmployee)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

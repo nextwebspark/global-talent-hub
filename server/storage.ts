@@ -103,6 +103,7 @@ export interface IStorage {
   createRemuneration(entry: InsertRemuneration): Promise<Remuneration>;
   updateRemuneration(id: number, data: Partial<InsertRemuneration>): Promise<Remuneration>;
   deleteRemuneration(id: number): Promise<void>;
+  deleteRemunerationByExecutive(executiveId: number): Promise<void>;
   
   getExecutiveNotes(executiveId: number): Promise<ExecutiveNotes | undefined>;
   upsertExecutiveNotes(executiveId: number, content: string): Promise<ExecutiveNotes>;
@@ -760,6 +761,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRemuneration(id: number): Promise<void> {
     await db.delete(remuneration).where(eq(remuneration.id, id));
+  }
+
+  async deleteRemunerationByExecutive(executiveId: number): Promise<void> {
+    await db.delete(remuneration).where(eq(remuneration.executiveId, executiveId));
   }
 
   // Executive Notes

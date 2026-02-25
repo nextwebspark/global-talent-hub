@@ -1,7 +1,7 @@
 # Global Talent Map
 
 ## Overview
-Global Talent Map is an AI-driven market research web application designed for executive search firms. It enables users to input natural-language queries (e.g., "Top 10 luxury watch distributors globally") to identify and rank companies by revenue. The application visualizes these companies as interactive bubbles on a global map, with the ability to reveal executive details upon selection. Each search generates a persistent project, allowing users to reopen and continue working on previous results with all edits preserved.
+Global Talent Map is an AI-driven market research web application designed for executive search firms. It allows users to input natural-language queries to identify and rank companies by revenue, visualizing results as interactive bubbles on a global map. The application enables users to discover executive details, and each search generates a persistent project where all edits and results are preserved. The primary goal is to provide a comprehensive and validated talent mapping solution for executive recruitment.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -9,152 +9,70 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Core Architectural Principle
-The system strictly adheres to the principle: "THE LLM PROPOSES. THE APPLICATION DECIDES. THE UI ONLY SHOWS VALIDATED TRUTH." This means LLM outputs are treated as proposals, which the application validates and potentially modifies before displaying to the user.
+The system operates on the principle: "THE LLM PROPOSES. THE APPLICATION DECIDES. THE UI ONLY SHOWS VALIDATED TRUTH." This means all LLM outputs undergo strict validation and potential modification by the application before being presented to the user.
 
 ### Confidence Score Semantics
-Confidence scores follow strict semantic rules (DO NOT CONFLATE THESE CASES):
+Confidence scores (0-10) influence ranking and visuals but never cause outright blocking. Missing confidence is treated as "unknown" (confidence = 3), while explicit low confidence (0 or 1) is preserved. Only `confidence >= 6` influences visual scaling.
 
-**CASE 1: MISSING CONFIDENCE (undefined, null, or not provided)**
-- Meaning: "Unknown confidence due to missing justification"
-- Value: Assign `confidence = 3`
-- Action: Mark as degraded, allow entity to proceed
-- Influence: ZERO influence on ranking and visuals (treated as neutral)
-- This is NOT explicit unreliability - just unknown
-
-**CASE 2: EXPLICIT LOW CONFIDENCE (LLM returned 0 or 1)**
-- Meaning: "Explicitly unreliable as signaled by the model"
-- Value: PRESERVE the returned value (do not upgrade)
-- Action: Allow entity to exist, strip high-risk metrics
-- Influence: ZERO influence on ranking and visuals
-- This IS explicit unreliability - the model signals distrust
-
-**CRITICAL RULES:**
-- Missing confidence must NEVER be treated as explicit unreliability
-- Explicit unreliability must NEVER be auto-upgraded
-- Confidence affects influence only, NEVER existence
-- No confidence value should ever cause wholesale blocking by itself
-- Visual scaling requires `confidence >= 6` to have any influence
-- Ranking includes ALL valid entities; confidence affects ORDER not INCLUSION
-
-### Core Data Principles
-All search results, companies, and executives are persistently stored in a PostgreSQL database with unique IDs and proper relational links. Data modifications immediately update the database. Reloading a previous search restores the most recent data including manual edits. Users can add, edit, and delete companies and executives, with all changes persisting. Data sourcing prioritizes audited reports and official statements, particularly for revenue data, which is strictly defined and validated. Revenue figures must explicitly state "revenue" and include value, currency, financial year, source, and confidence level. Conflicts are resolved by source priority (higher tier wins) or recency.
-
-### Non-Drop Rule (Critical)
-The system must NEVER omit, reject, or drop an entire COMPANY RECORD because one or more fields (e.g., revenue, employee_count, executives) are missing, null, or low-confidence:
-- A company is persisted as soon as a canonical company_name exists
-- Missing or uncertain data applies ONLY at the FIELD LEVEL
-- Schema parsing failures for one field must NOT affect other fields
-- Persistence uses `upsertCompanyNonDestructive` with patch semantics (only update non-null fields)
-- Field-level parsing uses `safeParseField()` and `safeParseNumericField()` to prevent cascading failures
-- Fallback extraction from search results is used when LLM extraction fails
+### Core Data Principles & Non-Drop Rule
+All search results, companies, and executives are persistently stored in a PostgreSQL database. Data modifications immediately update the database, ensuring that reloading a previous search restores the most recent information, including manual edits. The system prioritizes audited reports for data sourcing, especially for revenue figures, which require specific fields (value, currency, financial year, source, confidence). A critical "Non-Drop Rule" dictates that a company record is never omitted due to missing or low-confidence fields; data uncertainty applies only at the field level, and schema parsing failures for one field do not affect others.
 
 ### Frontend Architecture
-The frontend is built with React 18 and TypeScript, using Wouter for routing and Zustand for global state management. Data fetching is handled by TanStack React Query. UI components are from shadcn/ui (based on Radix UI), styled with Tailwind CSS v4. Interactive maps are rendered using Leaflet with React-Leaflet. Vite is used as the build tool.
+The frontend is built with React 18 and TypeScript, utilizing Wouter for routing, Zustand for global state, and TanStack React Query for data fetching. UI components are sourced from shadcn/ui (Radix UI) and styled with Tailwind CSS v4. Interactive maps are rendered using Leaflet with React-Leaflet, and Vite serves as the build tool.
 
 ### Backend Architecture
-The backend uses Node.js with Express.js, written in TypeScript. It provides a RESTful JSON API. AI research is powered by Tavily Research API (no LLM layer required). Session management utilizes Express sessions with a PostgreSQL session store.
+The backend is a Node.js Express.js application written in TypeScript, providing a RESTful JSON API. AI research is powered by Tavily Research API. Session management uses Express sessions with a PostgreSQL store.
 
 ### Data Storage
-PostgreSQL is the primary database, with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`. `companies` store details like geo-coordinates, revenue, and `relevanceReason` (LLM's justification). `executives` are linked to companies and include simple text fields for career summary, notes, remuneration notes, and availability - all editable via text boxes in the UI.
-
-### Project Structure
-The project is divided into `client/` (React frontend), `server/` (Express backend), `shared/` (common code like schema definitions), and `migrations/` (Drizzle migrations).
+PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`.
 
 ### Layered Architecture
 The backend employs a strict layered architecture:
-- **Web Search Layer** (`server/services/webSearch.ts`): Retrieval-first architecture using Tavily API for web search. All searches start with web retrieval to find actual sources. Classifies sources into tiers: Tier 1 (regulatory filings, annual reports), Tier 2 (reputable business news including KPMG, PwC, Deloitte, EY reports), Tier 3 (general web - name discovery only). Stores all search results in `searchResults` table for audit trail.
-- **Tavily Research Layer** (`server/services/webSearch.ts:TavilyResearchService`): NEW - Direct AI research without LLM layer. Uses Tavily Research API with `output_schema` for structured output. Returns companies with nested executives, revenue data, and coordinates. Enabled via `research=true` query parameter. Creates async task, polls for completion (~45-50 seconds), extracts structured JSON. Source tier classification and revenue validation still applied.
-- **Retrieval Discovery Layer** (`server/services/retrievalDiscovery.ts`): Hybrid architecture that retrieves sources first, then uses LLM only for extraction from retrieved content. LLM cannot invent company lists, revenues, or metrics from model memory. Includes per-company verification retrieval step and LLM retry/fallback logic without relaxing validation rules. Also contains `discoverWithTavilyResearch()` for the LLM-free path.
-- **Discovery Layer** (`server/services/discovery.ts`): Legacy LLM-only fallback when web search is not configured. Processes natural language queries via OpenRouter and creates new company/executive records with self-verification (e.g., `relevanceReason`).
-- **Enrichment Layer** (`server/services/enrichment.ts`): Integrates with Clockwork API for fuzzy matching and data enrichment. It runs on user trigger, is read-only, and only enriches empty fields without overwriting existing data. It orchestrates deterministic matching, handles Clockwork API specifics (pagination, rate limiting, position fetching), and can use AI to research company details for newly imported candidates.
-- **Persistence Layer** (`server/storage.ts`): Serves as the single source of truth, enforcing write restrictions based on the calling layer (discovery, enrichment, manual).
-- **UI/Manual Layer**: Allows users to create and edit records directly, with full create/update capabilities that override imported data.
-- **Routes Layer** (`server/routes.ts`): A thin orchestration layer delegating to services without containing business logic.
-
-### Source Tier Classification
-- **Tier 1**: SEC filings, investor relations pages, annual reports, stock exchange filings (DFM, ADX, Tadawul, etc.) - Full metric extraction allowed
-- **Tier 2**: Reuters, Bloomberg, Forbes, WSJ, KPMG, PwC, Deloitte, EY, S&P, Moody's, Fitch, regional business sources (Zawya, Argaam, Gulf Business), industry estimates - Full metric extraction with confidence reduction
-- **Tier 3**: General web pages - Name discovery only, all metrics must be null/Unknown
-
-### Entity Existence Requirements
-Required fields for entity existence are limited to:
-- **company name** (required)
-- **country** (required)
-- **primary activity** (sector OR businessType - required)
-
-Rendering fields (coordinates, map zoom, icons) degrade gracefully:
-- If lat/long missing → derive from city centroid
-- If city unknown → derive from country centroid
-- `location_precision` field tracks: `exact`, `city`, `country`, or `unknown`
-
-Coordinate fallback service (`server/services/coordinateFallback.ts`) provides city/country centroids for major global cities and countries.
+- **Web Search Layer**: Uses Tavily API for web retrieval, classifying sources into tiers (Tier 1: regulatory filings, Tier 2: reputable business news, Tier 3: general web).
+- **Tavily Research Layer**: Direct AI research via Tavily Research API with structured output schemas, enabling LLM-free data extraction.
+- **Retrieval Discovery Layer**: Hybrid approach that first retrieves sources, then uses LLM only for extraction from content, ensuring LLM cannot invent data.
+- **Enrichment Layer**: Integrates with Clockwork API for fuzzy matching and data enrichment, populating empty fields without overwriting existing data.
+- **Persistence Layer**: Enforces write restrictions and serves as the single source of truth.
+- **UI/Manual Layer**: Allows direct user creation and editing of records, overriding imported data.
+- **Routes Layer**: A thin orchestration layer.
 
 ### AI Research Engine
-Server-side AI processing uses Tavily Research API exclusively (no OpenRouter/LLM layer). The Tavily Research API uses `output_schema` for structured output, returning companies with nested executives, revenue data with currency/fiscal year validation, and coordinates. Query parsing uses a simple heuristic (regex-based limit extraction) - no LLM required. Results are ranked by revenue, then employees. Executive filtering by role is supported, with 'all' being the default if no specific role is requested. Revenue, employees, and executives are always displayed.
-
-### Research Flow (No LLM Layer)
-1. User enters natural language query (e.g., "Top 5 banks in UAE")
-2. Simple heuristic extracts limit from query (regex-based, no LLM)
-3. Tavily Research API performs AI-powered web research with structured output schema
-4. Source tier classification validates data quality (Tier 1/2/3)
-5. Companies and executives are persisted to database with proper validation
-6. Results displayed on interactive map with revenue-based bubble sizing
-
-### Discovery Status Tracking
-Discovery results include status tracking for transparency:
-- **complete**: Normal discovery with full results
-- **partial**: Fewer results returned than requested limit
-- **degraded**: Limitations applied (model override, fallback model used, web search unavailable)
-
-Degradation reasons are tracked and propagated to the client. The LeftPanel displays a dismissible banner when status is not 'complete', showing the first degradation reason. This provides transparency without blocking functionality.
+Server-side AI processing exclusively uses Tavily Research API with `output_schema` for structured output, returning companies with nested executives, revenue data (with validation), and coordinates. A simple heuristic (regex) extracts limits from queries. Results are ranked by revenue, then employees, with executive filtering support.
 
 ### Multi-Pass Enrichment Pipeline
-After initial discovery, a multi-pass enrichment pipeline (`server/services/pipeline/enrichment.ts`) can fill in missing data:
-- **Revenue enrichment**: Targeted search for each company's annual revenue with currency and fiscal year
-- **Employee enrichment**: Targeted search for headcount/workforce data
-- **Executive enrichment**: Role-based searches for CEO, CFO, CHRO, CTO, CIO with individual extraction
-- API endpoints: `POST /api/companies/:id/enrich-multipass` (single company), `POST /api/search/:id/enrich-all` (batch)
-- Field-level source tracking: `revenueSourceUrl`, `revenueConfidence`, `employeesSourceUrl`, `employeesConfidence`
+An enrichment pipeline fills missing data post-discovery, including targeted searches for revenue, employees, and specific executives. Field-level source and confidence tracking are maintained.
 
 ### Remuneration System
-Executive remuneration data supports 4 categories: Fixed Fees (baseSalary), Total Allowances (totalAllowances), Variable Bonus (bonus), and LTIP (longTermIncentives). Data can be entered in any currency and format via the executive profile's remuneration notes field. AI-powered parsing (`server/services/remunerationParser.ts`) uses OpenAI gpt-5.2 to extract structured data from free-text. Currency conversion (`server/services/currencyConversion.ts`) provides static exchange rates for 45+ currencies to normalize to USD on the dashboard. The RightPanel shows remuneration in original currency; the Dashboard shows all values converted to USD.
+The system supports executive remuneration data across four categories. An AI-powered parser extracts structured data from free-text remuneration notes, and currency conversion normalizes values to USD for dashboard analytics. A "latest-only" rule ensures only the most recent remuneration record per executive is stored, preventing stale data.
 
 ### Dashboard Analytics Layer
-The Dashboard view (`client/src/components/DashboardView.tsx`) provides a professional Talent Mapping Report format with the following sections:
-- **Executive Summary Banner**: Report header with search query title, company/executive/country counts, mapping completion %, and interest conversion rate
-- **Mapping Completion**: Progress ring + country-level completion bars
-- **Executive Universe**: Level and geography breakdown with talent concentration index (Concentrated/Moderate/Diversified based on top-3 geography share)
-- **Revenue Distribution**: Company count by revenue bands (<$100M, $100M-$500M, $500M-$1B, $1B-$5B, $5B+), with collapsible sector and ownership type breakdowns
-- **Status & Interest**: Interest rate by level and geography
-- **Compensation Analytics** (full-width section):
-  - 5 category cards (Fixed Fees, Allowances, Variable Bonus, LTIP, Total Package) with median/min/max
-  - Level-to-Level Step-Up analysis showing % premium between Board→C-Suite→N-1→N-2
-  - **Median Compensation by Revenue Band & Region** line chart (Recharts): 3 lines for Origin Country (auto-detected), GCC (excl. origin), International; gaps where no data
-  - By Level and By Geography range bars
-- **Revenue per Employee**: Productivity metric ranked by company, with median aggregate
-- All analytics computed server-side in `/api/dashboard/:searchId` endpoint
-- Regional classification: Origin = most frequent country in search; GCC = UAE, Saudi, Qatar, Bahrain, Kuwait, Oman (excl. origin); International = everything else
-
-### Audio/Voice Integration
-Replit AI Integrations provide voice chat, speech-to-text, and text-to-speech functionalities, using AudioWorklet-based streaming and WebM/Opus recording.
+The Dashboard provides a professional Talent Mapping Report with:
+- An Executive Summary Banner.
+- Mapping Completion progress.
+- Executive Universe analysis (level, geography, talent concentration).
+- Revenue Distribution by bands, with sector and ownership breakdowns.
+- Status & Interest analytics.
+- Comprehensive Compensation Analytics (median/min/max, level-to-level step-up, median compensation by revenue band & region).
+All analytics are computed server-side.
 
 ## External Dependencies
 
 ### AI Services
-- **OpenAI API**: For primary AI model access.
-- **OpenRouter**: For multi-model LLM support.
+- **OpenAI API**: Primary AI model access.
+- **OpenRouter**: Multi-model LLM support.
+- **Tavily Research API**: AI-powered web research.
 
 ### Database
-- **PostgreSQL**: Main database.
-- **connect-pg-simple**: For PostgreSQL session storage.
+- **PostgreSQL**: Main relational database.
+- **connect-pg-simple**: PostgreSQL session store.
 
 ### Third-Party Libraries
-- **Leaflet**: For interactive map rendering.
-- **Framer Motion**: For page animations.
-- **Sonner**: For toast notifications.
-- **date-fns**: For date formatting.
+- **Leaflet**: Interactive map rendering.
+- **Framer Motion**: Page animations.
+- **Sonner**: Toast notifications.
+- **date-fns**: Date formatting.
 
 ### Development Tools
-- **Vite**: Development server.
-- **Replit Vite Plugins**: Specific plugins for Replit integration.
-- **drizzle-kit**: For database migrations.
+- **Vite**: Development server and build tool.
+- **Replit Vite Plugins**: Replit integration.
+- **drizzle-kit**: Database migrations.

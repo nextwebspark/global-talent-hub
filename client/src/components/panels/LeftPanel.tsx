@@ -8,7 +8,7 @@ import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plu
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import logoImage from '@/assets/images/logo.png';
-import DataTable from '@/components/DataTable';
+import DataTable, { TableRowData } from '@/components/DataTable';
 import L from 'leaflet';
 import * as XLSX from 'xlsx';
 import { COUNTRIES, getCountryCentroid, normalizeCountryName } from '@/lib/countries';
@@ -338,7 +338,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
 
   // Table data for Excel-like view
   const tableData = useMemo(() => {
-    const data: { id: string; country: string; name: string; title: string; notes: string; email: string; phone: string; linkedin: string; careerSummary: string; remunerationNotes: string; availability: string; level: string; companyId: string; companyName: string; companyColor: string; isCompanyRow: boolean; customFields?: Record<string, string> }[] = [];
+    const data: TableRowData[] = [];
     
     companies.forEach(company => {
       const companyExecs = executives.filter(e => e.company_id === company.id);
@@ -346,6 +346,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         data.push({
           id: `company-${company.id}`,
           country: company.hq_country || 'Unknown',
+          sector: company.industry || '',
+          revenue: company.revenue_usd || 0,
+          employees: company.employees || 0,
           name: '',
           title: '',
           notes: '',
@@ -366,6 +369,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           data.push({
             id: exec.id,
             country: company.hq_country || 'Unknown',
+            sector: company.industry || '',
+            revenue: company.revenue_usd || 0,
+            employees: company.employees || 0,
             name: exec.name,
             title: exec.title,
             notes: exec.notes || '',

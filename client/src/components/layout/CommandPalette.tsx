@@ -110,8 +110,7 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onExport, 
                         label={exec.name}
                         subtitle={`${exec.title}${company ? ` · ${company.name}` : ''}`}
                         onSelect={() => {
-                          selectCompany(exec.company_id);
-                          selectExecutive(exec.id);
+                          selectExecutive(exec.id, exec.company_id);
                           onClose();
                         }}
                       />

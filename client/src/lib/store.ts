@@ -236,7 +236,7 @@ interface AppState {
   deleteCompany: (id: string) => void;
   
   selectCompany: (id: string | null) => void;
-  selectExecutive: (id: string | null) => void;
+  selectExecutive: (id: string | null, companyId?: string) => void;
   setExecutiveDetails: (details: ExecutiveDetails | null) => void;
   setLoadingExecutiveDetails: (loading: boolean) => void;
   setPanelView: (view: 'company' | 'executive') => void;
@@ -486,7 +486,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
 
   selectCompany: (id) => set({ selectedCompanyId: id, panelView: 'company', selectedExecutiveId: null, executiveDetails: null }),
-  selectExecutive: (id) => set({ selectedExecutiveId: id, panelView: 'executive' }),
+  selectExecutive: (id, companyId) => set((state) => ({ selectedExecutiveId: id, panelView: 'executive', selectedCompanyId: companyId || state.selectedCompanyId })),
   setExecutiveDetails: (details) => set({ executiveDetails: details }),
   setLoadingExecutiveDetails: (loading) => set({ isLoadingExecutiveDetails: loading }),
   setPanelView: (view) => set({ panelView: view }),

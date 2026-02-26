@@ -219,8 +219,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   const handleSelectExecutive = (execId: string) => {
     const exec = executives.find(e => e.id === execId);
     if (exec) {
-      selectCompany(exec.company_id);
-      selectExecutive(execId);
+      selectExecutive(execId, exec.company_id);
     }
   };
 

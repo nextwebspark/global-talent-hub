@@ -164,8 +164,11 @@ export default function Dashboard() {
   }, [currentProject, loadFromAPI]);
 
   const handleRowClick = useCallback((row: any) => {
-    selectCompany(row.companyId);
-    if (!row.isCompanyRow) selectExecutive(row.id);
+    if (!row.isCompanyRow) {
+      selectExecutive(row.id, row.companyId);
+    } else {
+      selectCompany(row.companyId);
+    }
   }, [selectCompany, selectExecutive]);
 
   const handleStartEnrichment = async () => {

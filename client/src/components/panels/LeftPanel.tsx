@@ -227,8 +227,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
 
   const handleSelectExecutive = (e: React.MouseEvent, execId: string, companyId: string) => {
     e.stopPropagation();
-    selectCompany(companyId);
-    selectExecutive(execId);
+    selectExecutive(execId, companyId);
   };
 
   const handleAddExecutive = async (e: React.FormEvent, companyId: string) => {
@@ -429,9 +428,10 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
   };
 
   const handleRowClick = (row: typeof tableData[0]) => {
-    selectCompany(row.companyId);
     if (!row.isCompanyRow) {
-      selectExecutive(row.id);
+      selectExecutive(row.id, row.companyId);
+    } else {
+      selectCompany(row.companyId);
     }
   };
 

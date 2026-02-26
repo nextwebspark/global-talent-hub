@@ -677,7 +677,11 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       setIsSubmitting(false);
     }
   }, [newCompanyName, newCompanyCountry, newExecName, newExecTitle, newSector, newRevenue, newEmployees, newNotes, newEmail, newPhone, newLinkedin, newCareerSummary, newRemunerationNotes, newAvailability, newLevel, matchedCompany, currentProject, addCompany, addExecutive, companies, resetDialogFields]);
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([]);
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([
+    'country', 'companyName', 'name', 'title', 'level', 'availability', 'linkedin',
+    'sector', 'revenue', 'employees', 'notes', 'email', 'phone',
+    'careerSummary', 'remunerationNotes',
+  ]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -1551,7 +1555,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                       row.toggleExpanded();
                     } else if (original && !didDragRef.current) {
                       setDragSelectedRows(new Set());
-                      onRowClick(original);
                     }
                   }}
                   data-testid={original ? `table-row-${original.id}` : `table-group-${row.id}`}
@@ -1564,8 +1567,13 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                     return (
                       <td
                         key={cell.id}
-                        className={`${densityPadding[density]} border-r border-border/20 max-w-0 overflow-visible`}
+                        className={`${densityPadding[density]} border-r border-border/20 max-w-0 overflow-visible ${cell.column.id === 'name' && original ? 'cursor-pointer' : ''}`}
                         style={{ width: cell.column.getSize() }}
+                        onDoubleClick={() => {
+                          if (cell.column.id === 'name' && original && !isGroupedCell) {
+                            onRowClick(original);
+                          }
+                        }}
                       >
                         {isGroupedCell ? (
                           flexRender(cell.column.columnDef.cell, cell.getContext())

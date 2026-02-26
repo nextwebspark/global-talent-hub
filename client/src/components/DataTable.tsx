@@ -701,6 +701,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     }
   }, [draggedColumnId]);
 
+  const tableRef = useRef<any>(null);
+
   const handleColumnDrop = useCallback((_e: React.DragEvent, targetColumnId: string) => {
     if (!draggedColumnId || draggedColumnId === targetColumnId) {
       setDraggedColumnId(null);
@@ -708,7 +710,9 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       return;
     }
     setColumnOrder(prev => {
-      const allCols = prev.length > 0 ? prev : columns.map(c => (c as any).accessorKey || (c as any).id);
+      const allCols = prev.length > 0
+        ? prev
+        : (tableRef.current?.getAllLeafColumns().map(c => c.id) ?? []);
       const fromIndex = allCols.indexOf(draggedColumnId);
       const toIndex = allCols.indexOf(targetColumnId);
       if (fromIndex === -1 || toIndex === -1) return prev;
@@ -719,7 +723,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     });
     setDraggedColumnId(null);
     setDragTargetColumnId(null);
-  }, [draggedColumnId, columns]);
+  }, [draggedColumnId]);
 
   const [dragSelectedRows, setDragSelectedRows] = useState<Set<string>>(new Set());
   const [isDragSelecting, setIsDragSelecting] = useState(false);
@@ -942,6 +946,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     columnResizeMode: 'onChange',
     enableMultiSort: true,
   });
+
+  tableRef.current = table;
 
   const allRowIds = useMemo(() => {
     return table.getRowModel().rows

@@ -225,6 +225,7 @@ interface AppState {
   hiddenCompanies: Set<string>;
   
   setProject: (project: Project) => void;
+  renameProject: (name: string) => void;
   setCompanies: (companies: Company[]) => void;
   addCompany: (company: Company) => void;
   updateCompany: (id: string, updates: Partial<Company>) => void;
@@ -454,6 +455,9 @@ export const useAppStore = create<AppState>((set) => ({
   hiddenCompanies: new Set<string>(),
 
   setProject: (project) => set({ currentProject: project }),
+  renameProject: (name) => set((state) => ({
+    currentProject: state.currentProject ? { ...state.currentProject, name } : null
+  })),
   setCompanies: (companies) => set({ companies }),
   addCompany: (company) => set((state) => ({ companies: [...state.companies, company] })),
   updateCompany: (id, updates) => {

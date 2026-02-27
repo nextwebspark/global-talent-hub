@@ -81,6 +81,7 @@ export interface IStorage {
   createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
+  updateSearchQueryName(id: number, name: string): Promise<SearchQuery>;
   updateSearchQueryClockworkProject(id: number, clockworkProjectId: string): Promise<SearchQuery>;
   deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void>;
   deleteNonEnrichedCompaniesBySearchQuery(searchQueryId: number): Promise<number>;
@@ -606,6 +607,15 @@ export class DatabaseStorage implements IStorage {
 
   async updateSearchQueryResultCount(id: number, count: number): Promise<void> {
     await db.update(searchQueries).set({ resultCount: count, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(searchQueries.id, id));
+  }
+
+  async updateSearchQueryName(id: number, name: string): Promise<SearchQuery> {
+    const [updated] = await db
+      .update(searchQueries)
+      .set({ query: name, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(searchQueries.id, id))
+      .returning();
+    return updated;
   }
 
   async updateSearchQueryClockworkProject(id: number, clockworkProjectId: string): Promise<SearchQuery> {

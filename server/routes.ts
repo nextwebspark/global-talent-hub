@@ -1279,6 +1279,27 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   });
 
   // Update the Clockwork project selection for a search
+  app.patch("/api/search/:searchId/name", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.searchId);
+      const { name } = req.body;
+
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid searchId" });
+      }
+
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: "name is required" });
+      }
+
+      const updated = await storage.updateSearchQueryName(searchId, name.trim());
+      res.json(updated);
+    } catch (error) {
+      console.error("Error renaming project:", error);
+      res.status(500).json({ error: "Failed to rename project" });
+    }
+  });
+
   app.patch("/api/search/:searchId/clockwork-project", async (req, res) => {
     try {
       const searchId = parseInt(req.params.searchId);

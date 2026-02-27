@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft, Sun, Moon } from 'lucide-react';
+import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft, Sun, Moon, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { toast } from 'sonner';
 import type { ViewMode } from './Sidebar';
 
 interface TopBarProps {
@@ -17,8 +18,11 @@ interface TopBarProps {
 }
 
 export default function TopBar({ activeView, onCommandPalette, onExport, onImport, onEnrichAll, onAddCompany, onHome, isEnriching }: TopBarProps) {
-  const { currentProject, companies, executives } = useAppStore();
+  const { currentProject, companies, executives, renameProject } = useAppStore();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isDark) {
@@ -27,6 +31,55 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const startEditing = () => {
+    setEditName(currentProject?.name || 'Untitled Project');
+    setIsEditing(true);
+  };
+
+  const saveProjectName = async () => {
+    const trimmed = editName.trim();
+    if (!trimmed || !currentProject?.id) {
+      setIsEditing(false);
+      return;
+    }
+
+    if (trimmed === currentProject.name) {
+      setIsEditing(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/search/${currentProject.id}/name`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+
+      if (!res.ok) throw new Error('Failed to rename');
+
+      renameProject(trimmed);
+      setIsEditing(false);
+    } catch {
+      toast.error('Failed to rename project');
+      setIsEditing(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      saveProjectName();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+    }
+  };
 
   return (
     <div className="h-11 border-b border-border bg-background flex items-center px-3 gap-2 shrink-0" data-testid="topbar">
@@ -46,10 +99,29 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
 
         <div className="h-4 w-px bg-border mx-1" />
 
-        <div className="flex-1 min-w-0 flex items-center gap-3">
-          <h1 className="text-sm font-semibold truncate max-w-[300px]" data-testid="topbar-project-name">
-            {currentProject?.name || 'Untitled Project'}
-          </h1>
+        <div className="flex-1 min-w-0 flex items-center justify-center gap-3">
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onBlur={saveProjectName}
+              onKeyDown={handleKeyDown}
+              className="text-lg font-bold text-center bg-transparent border-b-2 border-primary outline-none max-w-[500px] w-full px-1 py-0"
+              data-testid="topbar-project-name-input"
+            />
+          ) : (
+            <h1
+              className="text-lg font-bold truncate max-w-[500px] cursor-pointer hover:text-primary transition-colors group flex items-center gap-1.5"
+              onClick={startEditing}
+              title="Click to rename project"
+              data-testid="topbar-project-name"
+            >
+              {currentProject?.name || 'Untitled Project'}
+              <Pencil className="w-3.5 h-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+            </h1>
+          )}
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <Building2 className="w-3 h-3" />

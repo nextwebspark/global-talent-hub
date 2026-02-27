@@ -243,7 +243,7 @@ export default function Dashboard() {
   const hasSelection = !!(selectedCompanyId || selectedExecutiveId);
 
   return (
-    <div className="h-screen w-screen flex bg-background overflow-hidden">
+    <div className="h-screen w-screen flex bg-background overflow-hidden relative">
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}

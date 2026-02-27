@@ -1,4 +1,4 @@
-import { Map, Table2, Upload, Search, Settings, Home, Zap, LayoutDashboard } from 'lucide-react';
+import { Map, Table2, Upload, Search, Settings, Home, Zap, LayoutDashboard, FolderOpen } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type ViewMode = 'map' | 'table' | 'dashboard';
@@ -9,9 +9,11 @@ interface SidebarProps {
   onCommandPalette: () => void;
   onHome: () => void;
   onImport?: () => void;
+  onProjects?: () => void;
+  isProjectsOpen?: boolean;
 }
 
-export default function Sidebar({ activeView, onViewChange, onCommandPalette, onHome, onImport }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, onCommandPalette, onHome, onImport, onProjects, isProjectsOpen }: SidebarProps) {
   const navItems = [
     { id: 'map' as const, icon: Map, label: 'Map View', shortcut: '1' },
     { id: 'table' as const, icon: Table2, label: 'Table View', shortcut: '2' },
@@ -38,7 +40,7 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
           <TooltipTrigger asChild>
             <button
               onClick={onCommandPalette}
-              className="w-8 h-8 rounded-lg flex items-center justify-center mb-3 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center mb-1 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
               data-testid="sidebar-search"
             >
               <Search className="w-4 h-4" />
@@ -47,6 +49,23 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
           <TooltipContent side="right" className="text-xs flex items-center gap-2">
             Search <kbd className="px-1.5 py-0.5 text-[10px] bg-muted rounded font-mono">Ctrl+K</kbd>
           </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onProjects}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 transition-colors ${
+                isProjectsOpen
+                  ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm'
+                  : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'
+              }`}
+              data-testid="sidebar-projects"
+            >
+              <FolderOpen className="w-4 h-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">Projects</TooltipContent>
         </Tooltip>
 
         <div className="w-6 h-px bg-sidebar-border mb-3" />

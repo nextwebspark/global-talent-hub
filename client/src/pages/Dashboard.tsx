@@ -11,6 +11,7 @@ import MapComponent from '@/components/map/Map';
 import DataTable from '@/components/DataTable';
 import DashboardView from '@/components/DashboardView';
 import ImportModal from '@/components/layout/ImportModal';
+import ProjectsPanel from '@/components/panels/ProjectsPanel';
 import MatchReviewPanel from '@/components/panels/MatchReviewPanel';
 import ClockworkProjectSelector from '@/components/panels/ClockworkProjectSelector';
 import { useLocation } from 'wouter';
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
 
+  const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [showMatchReview, setShowMatchReview] = useState(false);
   const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
@@ -247,7 +249,13 @@ export default function Dashboard() {
         onViewChange={setActiveView}
         onCommandPalette={() => setShowCommandPalette(true)}
         onHome={() => setLocation('/')}
+        onProjects={() => setShowProjectsPanel(prev => !prev)}
+        isProjectsOpen={showProjectsPanel}
       />
+
+      {showProjectsPanel && (
+        <ProjectsPanel onClose={() => setShowProjectsPanel(false)} />
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar

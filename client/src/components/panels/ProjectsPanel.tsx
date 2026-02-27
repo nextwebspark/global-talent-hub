@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useSearchHistory } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Building2, Clock, X, Loader2, FolderOpen } from 'lucide-react';
+import { Building2, Clock, X, Loader2, FolderOpen, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
+import { useLocation } from 'wouter';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ProjectsPanelProps {
   onClose: () => void;
@@ -12,6 +15,10 @@ interface ProjectsPanelProps {
 export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
   const { data: history, isLoading } = useSearchHistory();
   const { currentProject, setProject, loadFromAPI } = useAppStore();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleLoadProject = async (item: { id: number; query: string; createdAt: string; companyCount: number }) => {
     if (String(item.id) === currentProject?.id) {
@@ -43,6 +50,29 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
     } catch {
       toast.dismiss('load-project');
       toast.error('Failed to load project');
+    }
+  };
+
+  const handleDeleteProject = async (id: number) => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/search-queries/${id}/results`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete');
+
+      queryClient.invalidateQueries({ queryKey: ['search-history'] });
+
+      if (String(id) === currentProject?.id) {
+        loadFromAPI([]);
+        setLocation('/');
+        onClose();
+      }
+
+      toast.success('Project deleted');
+      setConfirmDeleteId(null);
+    } catch {
+      toast.error('Failed to delete project');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -81,31 +111,81 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
           <div className="p-1.5">
             {history.map((item) => {
               const isActive = String(item.id) === currentProject?.id;
+              const isConfirming = confirmDeleteId === item.id;
+
+              if (isConfirming) {
+                return (
+                  <div
+                    key={item.id}
+                    className="w-full px-3 py-2.5 rounded-md mb-0.5 border border-destructive/30 bg-destructive/5"
+                    data-testid={`project-delete-confirm-${item.id}`}
+                  >
+                    <p className="text-xs text-destructive font-medium mb-2">
+                      Delete this project? All companies and executives will be permanently removed.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleDeleteProject(item.id)}
+                        disabled={isDeleting}
+                        className="flex-1 text-xs px-2 py-1.5 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
+                        data-testid={`button-confirm-delete-${item.id}`}
+                      >
+                        {isDeleting ? 'Deleting...' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={isDeleting}
+                        className="flex-1 text-xs px-2 py-1.5 rounded border border-border hover:bg-muted transition-colors"
+                        data-testid={`button-cancel-delete-${item.id}`}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <button
+                <div
                   key={item.id}
-                  onClick={() => handleLoadProject(item)}
-                  className={`w-full text-left px-3 py-2.5 rounded-md mb-0.5 transition-colors ${
+                  className={`w-full text-left px-3 py-2.5 rounded-md mb-0.5 transition-colors group relative ${
                     isActive
                       ? 'bg-primary/10 text-primary border border-primary/20'
                       : 'hover:bg-muted border border-transparent'
                   }`}
                   data-testid={`project-item-${item.id}`}
                 >
-                  <p className={`text-sm font-medium truncate ${isActive ? 'text-primary' : ''}`}>
-                    {item.query}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Building2 className="w-3 h-3" />
-                      {item.companyCount || 0}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    onClick={() => handleLoadProject(item)}
+                    className="w-full text-left"
+                    data-testid={`project-load-${item.id}`}
+                  >
+                    <p className={`text-sm font-medium truncate pr-6 ${isActive ? 'text-primary' : ''}`}>
+                      {item.query}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <Building2 className="w-3 h-3" />
+                        {item.companyCount || 0}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDeleteId(item.id);
+                    }}
+                    className="absolute top-2.5 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all text-muted-foreground"
+                    title="Delete project"
+                    data-testid={`button-delete-project-${item.id}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>

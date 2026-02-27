@@ -99,7 +99,7 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
 
         <div className="h-4 w-px bg-border mx-1" />
 
-        <div className="flex-1 min-w-0 flex items-center justify-center gap-3">
+        <div className="flex-1 min-w-0 flex items-center gap-3">
           {isEditing ? (
             <input
               ref={inputRef}
@@ -108,7 +108,7 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
               onChange={(e) => setEditName(e.target.value)}
               onBlur={saveProjectName}
               onKeyDown={handleKeyDown}
-              className="text-lg font-bold text-center bg-transparent border-b-2 border-primary outline-none max-w-[500px] w-full px-1 py-0"
+              className="text-lg font-bold bg-transparent border-b-2 border-primary outline-none max-w-[500px] w-full px-1 py-0"
               data-testid="topbar-project-name-input"
             />
           ) : (

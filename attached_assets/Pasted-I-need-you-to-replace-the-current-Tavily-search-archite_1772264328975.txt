@@ -1,0 +1,15 @@
+I need you to replace the current Tavily search architecture with a new Serper + web fetch approach. Here is exactly what I want:
+1. Add a new search provider using Serper API
+Create a new file called serperAdapter.ts in the same folder as tavilyAdapter.ts. It should implement the same ISearchProvider interface that TavilyAdapter implements so it is a drop-in replacement.
+The new adapter should work in three stages:
+Stage 1 — Search: Call the Serper API (https://google.serper.dev/search) with the user's query, setting gl to the detected country code and num to 10. Use the SERPER_API_KEY environment variable for authentication.
+Stage 2 — Score results: For each result returned by Serper, score it as follows. If the URL domain is LinkedIn, Facebook, Instagram, Twitter, YouTube, Glassdoor, or Indeed, score it 0 (noise, skip it). If the title contains words like "top", "best", "largest", "leading", or contains a number (like "Top 15"), score it 2 (list article, high priority). Otherwise score it 1 (company page).
+Stage 3 — Extract company names: For results scored 2, fetch the full page content and extract all company names from numbered or bulleted lists. For results scored 1, the domain name or title is likely the company name itself. Combine all extracted names, deduplicate, and return them as DiscoveredCompany objects matching the existing interface.
+2. Replace Tavily with Serper everywhere
+Find every file that imports or instantiates TavilyAdapter or calls createTavilyAdapter(). Replace those references to use the new SerperAdapter instead. The function creating it should be called createSerperAdapter() and should read from SERPER_API_KEY.
+3. Add the Serper API key to environment
+Add SERPER_API_KEY as the expected environment variable. The old TAVILY_API_KEY can remain but will no longer be used.
+4. Keep everything else identical
+Do not change the database schema, the frontend, the streaming logic, the normalization pipeline, or any other part of the application. Only the search provider is changing.
+5. After making changes
+Show me the new serperAdapter.ts file in full so I can verify it before running.

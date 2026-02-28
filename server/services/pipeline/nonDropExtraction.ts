@@ -1,8 +1,6 @@
 import OpenAI from "openai";
 import type { DiscoveredCompany, EnrichedCompany, ExtractedExecutive, FieldValue } from './types';
 
-const openai = new OpenAI();
-
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
@@ -12,40 +10,30 @@ const FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen3-235b-a22b:free",
   "deepseek/deepseek-r1-0528:free",
+  "google/gemma-3-27b-it:free",
 ];
 
 async function callLLM(
   messages: Array<{ role: string; content: string }>,
   options: { temperature?: number; max_tokens?: number } = {}
 ): Promise<string> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: messages as any,
-      temperature: options.temperature ?? 0.1,
-      max_tokens: options.max_tokens ?? 8000,
-    });
-    return response.choices[0]?.message?.content || '';
-  } catch (primaryError: any) {
-    console.warn(`[NonDropExtraction] OpenAI failed (${primaryError.message}), trying OpenRouter fallbacks...`);
-  }
-
   for (const model of FREE_MODELS) {
     try {
+      console.log(`[NonDropExtraction] Trying ${model}...`);
       const response = await openrouter.chat.completions.create({
         model,
         messages: messages as any,
         temperature: options.temperature ?? 0.1,
         max_tokens: options.max_tokens ?? 8000,
       });
-      console.log(`[NonDropExtraction] Succeeded with fallback model: ${model}`);
+      console.log(`[NonDropExtraction] Succeeded with ${model}`);
       return response.choices[0]?.message?.content || '';
     } catch (error: any) {
       console.warn(`[NonDropExtraction] ${model} failed: ${error.message}`);
     }
   }
 
-  throw new Error('All LLM providers failed');
+  throw new Error('All free LLM models are currently rate-limited. Please try again in a minute.');
 }
 
 function createEmptyFieldValue<T>(): FieldValue<T> {

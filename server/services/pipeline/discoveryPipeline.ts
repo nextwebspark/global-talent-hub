@@ -1,12 +1,42 @@
 import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
 import { SerperAdapter, createSerperAdapter } from './serperAdapter';
-import { extractCompaniesNonDestructive, extractExecutivesForCompany } from './nonDropExtraction';
+import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany } from './nonDropExtraction';
 import { applyCoordinateFallback } from '../coordinateFallback';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
 
 export interface DiscoveryPipelineConfig {
   searchProvider: ISearchProvider;
+}
+
+function mergeLlmIntoHeuristic(
+  heuristic: EnrichedCompany[],
+  llm: EnrichedCompany[],
+  limit: number
+): EnrichedCompany[] {
+  const merged = new Map<string, EnrichedCompany>();
+
+  for (const company of llm) {
+    const key = company.canonicalName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    merged.set(key, company);
+  }
+
+  for (const company of heuristic) {
+    const key = company.canonicalName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!merged.has(key)) {
+      merged.set(key, company);
+    } else {
+      const existing = merged.get(key)!;
+      if (!existing.country.value && company.country.value) existing.country = company.country;
+      if (!existing.sector.value && company.sector.value) existing.sector = company.sector;
+      if (!existing.revenue.value && company.revenue.value) existing.revenue = company.revenue;
+      if (!existing.employees.value && company.employees.value) existing.employees = company.employees;
+      if (!existing.website.value && company.website.value) existing.website = company.website;
+      if (existing.sourceUrls.length === 0 && company.sourceUrls.length > 0) existing.sourceUrls = company.sourceUrls;
+    }
+  }
+
+  return Array.from(merged.values()).slice(0, limit);
 }
 
 export class DiscoveryPipeline {
@@ -58,6 +88,10 @@ export class DiscoveryPipeline {
 
     yield { type: 'status', data: { message: 'Extracting company information...', progress: 30 } };
 
+    const heuristicCompanies = extractCompaniesFromSearchResults(
+      searchResponse.results, query, limit, searchResponse.answer
+    );
+
     let searchContext = '';
     if (searchResponse.answer) {
       searchContext += `=== AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
@@ -71,14 +105,26 @@ export class DiscoveryPipeline {
       return content;
     }).join('\n\n');
 
-    const enrichedCompanies = await extractCompaniesNonDestructive(searchContext, query, limit);
-    
+    let enrichedCompanies: EnrichedCompany[] = heuristicCompanies;
+    let llmAvailable = true;
+
+    try {
+      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, limit);
+      if (llmCompanies.length > 0) {
+        console.log(`[Pipeline] LLM enriched ${llmCompanies.length} companies, merging with ${heuristicCompanies.length} heuristic results`);
+        enrichedCompanies = mergeLlmIntoHeuristic(heuristicCompanies, llmCompanies, limit);
+      }
+    } catch (llmError: any) {
+      llmAvailable = false;
+      console.warn(`[Pipeline] LLM extraction unavailable (${llmError.message}), using heuristic results only`);
+    }
+
     if (enrichedCompanies.length === 0) {
       yield { type: 'error', data: { message: 'Could not extract company information', code: 'EXTRACTION_FAILED' } };
       return;
     }
 
-    console.log(`[Pipeline] Extracted ${enrichedCompanies.length} companies (non-drop)`);
+    console.log(`[Pipeline] Final: ${enrichedCompanies.length} companies (LLM ${llmAvailable ? 'available' : 'unavailable'})`);
 
     yield { type: 'status', data: { message: 'Persisting companies...', progress: 60 } };
 
@@ -121,21 +167,26 @@ export class DiscoveryPipeline {
           } 
         };
 
-        if (enriched.summary.value) {
-          const executives = await this.extractAndPersistExecutives(
-            company.id, 
-            enriched.canonicalName, 
-            searchContext
-          );
-          
-          if (executives.length > 0) {
-            yield { 
-              type: 'executives', 
-              data: { 
-                companyId: company.id,
-                count: executives.length,
-              } 
-            };
+        if (llmAvailable) {
+          try {
+            const executives = await this.extractAndPersistExecutives(
+              company.id, 
+              enriched.canonicalName, 
+              searchContext
+            );
+            
+            if (executives.length > 0) {
+              yield { 
+                type: 'executives', 
+                data: { 
+                  companyId: company.id,
+                  count: executives.length,
+                } 
+              };
+            }
+          } catch (execError: any) {
+            llmAvailable = false;
+            console.warn(`[Pipeline] Executive extraction failed, skipping remaining: ${execError.message}`);
           }
         }
 

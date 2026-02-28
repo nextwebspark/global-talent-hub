@@ -50,8 +50,8 @@ async function callLLM(
   const result = await tryAllModels(messages, options);
   if (result) return result;
 
-  console.log(`[NonDropExtraction] All models failed on first pass. Waiting 5s before retry...`);
-  await sleep(5000);
+  console.log(`[NonDropExtraction] All models failed on first pass. Waiting 2s before retry...`);
+  await sleep(2000);
 
   const retryResult = await tryAllModels(messages, options);
   if (retryResult) return retryResult;
@@ -190,9 +190,9 @@ Return JSON only.`;
     console.log(`[NonDropExtraction] Extracted ${companies.length} companies (no drops)`);
     return companies;
 
-  } catch (error) {
-    console.error('[NonDropExtraction] LLM extraction failed:', error);
-    return [];
+  } catch (error: any) {
+    console.warn('[NonDropExtraction] LLM extraction failed:', error.message);
+    throw error;
   }
 }
 
@@ -294,6 +294,281 @@ function transformPartialCompany(raw: any): EnrichedCompany | null {
     searchProvider: 'tavily',
     overallConfidence: 3,
   };
+}
+
+const COUNTRY_KEYWORDS: Record<string, string> = {
+  'united arab emirates': 'United Arab Emirates', 'uae': 'United Arab Emirates', 'dubai': 'United Arab Emirates', 'abu dhabi': 'United Arab Emirates',
+  'saudi arabia': 'Saudi Arabia', 'ksa': 'Saudi Arabia', 'riyadh': 'Saudi Arabia', 'jeddah': 'Saudi Arabia',
+  'qatar': 'Qatar', 'doha': 'Qatar',
+  'kuwait': 'Kuwait',
+  'bahrain': 'Bahrain',
+  'oman': 'Oman', 'muscat': 'Oman',
+  'jordan': 'Jordan', 'amman': 'Jordan',
+  'egypt': 'Egypt', 'cairo': 'Egypt',
+  'united kingdom': 'United Kingdom', 'uk': 'United Kingdom', 'london': 'United Kingdom', 'britain': 'United Kingdom',
+  'united states': 'United States', 'usa': 'United States', 'america': 'United States',
+  'germany': 'Germany', 'france': 'France', 'india': 'India', 'china': 'China',
+  'japan': 'Japan', 'singapore': 'Singapore', 'south korea': 'South Korea',
+  'australia': 'Australia', 'canada': 'Canada', 'switzerland': 'Switzerland',
+  'hong kong': 'Hong Kong', 'italy': 'Italy', 'spain': 'Spain', 'brazil': 'Brazil',
+  'mexico': 'Mexico', 'south africa': 'South Africa', 'nigeria': 'Nigeria',
+  'turkey': 'Turkey', 'indonesia': 'Indonesia', 'malaysia': 'Malaysia',
+  'middle east': 'Middle East', 'gcc': 'Middle East',
+};
+
+function detectCountryFromText(text: string, query: string): string | null {
+  const lower = (text + ' ' + query).toLowerCase();
+  const sorted = Object.entries(COUNTRY_KEYWORDS).sort((a, b) => b[0].length - a[0].length);
+  for (const [keyword, country] of sorted) {
+    if (lower.includes(keyword)) return country;
+  }
+  return null;
+}
+
+function extractRevenueFromSnippet(snippet: string): { value: number; currency: string } | null {
+  const patterns = [
+    /(?:revenue|sales|turnover)[^\d]*?(?:of\s+)?(?:(?:USD|US\$|\$)\s*)(\d[\d,.]*)\s*(billion|million|bn|mn|m|b)/i,
+    /(?:USD|US\$|\$)\s*(\d[\d,.]*)\s*(billion|million|bn|mn|m|b)(?:\s+(?:in\s+)?revenue)?/i,
+    /(\d[\d,.]*)\s*(billion|million|bn|mn|m|b)\s*(?:USD|US\$|\$|dollars)/i,
+    /(?:AED|SAR|QAR|KWD|BHD|OMR|EGP|GBP|EUR|€|£)\s*(\d[\d,.]*)\s*(billion|million|bn|mn|m|b)/i,
+    /revenue[^\d]*?(\d[\d,.]*)\s*(billion|million|bn|mn|m|b)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = snippet.match(pattern);
+    if (match) {
+      const numStr = match[1].replace(/,/g, '');
+      const num = parseFloat(numStr);
+      if (isNaN(num)) continue;
+
+      const unit = match[2].toLowerCase();
+      let multiplier = 1;
+      if (unit === 'billion' || unit === 'bn' || unit === 'b') multiplier = 1e9;
+      else if (unit === 'million' || unit === 'mn' || unit === 'm') multiplier = 1e6;
+
+      const currencyMatch = snippet.match(/(USD|AED|SAR|QAR|KWD|BHD|OMR|EGP|GBP|EUR|US\$|\$|€|£)/i);
+      let currency = 'USD';
+      if (currencyMatch) {
+        const c = currencyMatch[1].toUpperCase();
+        if (c === '$' || c === 'US$') currency = 'USD';
+        else if (c === '€') currency = 'EUR';
+        else if (c === '£') currency = 'GBP';
+        else currency = c;
+      }
+
+      return { value: num * multiplier, currency };
+    }
+  }
+  return null;
+}
+
+function extractEmployeesFromSnippet(snippet: string): number | null {
+  const patterns = [
+    /(\d[\d,]*)\s*(?:\+\s*)?employees/i,
+    /(?:employs?|workforce|staff|headcount)[^\d]*?(\d[\d,]*)/i,
+    /(\d[\d,]*)\s*(?:\+\s*)?(?:workers|people|team\s*members)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = snippet.match(pattern);
+    if (match) {
+      const num = parseInt(match[1].replace(/,/g, ''));
+      if (!isNaN(num) && num > 10 && num < 10000000) return num;
+    }
+  }
+  return null;
+}
+
+function extractCompanyNameFromTitle(title: string): string {
+  let name = title
+    .replace(/\s*[-–—|:]\s*(?:Wikipedia|Forbes|Bloomberg|Reuters|Company Profile|Overview|About|Review|Careers|Jobs|News|Home|Official).*$/i, '')
+    .replace(/\s*\|\s*.*$/, '')
+    .replace(/^(?:About|Profile|Company)\s*[-–—:]\s*/i, '')
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (name.length < 2 || name.length > 100) return title.split(/[-–—|]/)[0].trim();
+  return name;
+}
+
+function extractSectorFromSnippet(snippet: string, query: string): string | null {
+  const sectorPatterns: [RegExp, string][] = [
+    [/\b(?:power\s*generation|electricity|energy|utilities?)\b/i, 'Energy & Utilities'],
+    [/\b(?:oil\s*(?:and|&)\s*gas|petroleum|hydrocarbon)\b/i, 'Oil & Gas'],
+    [/\b(?:fashion|apparel|clothing|retail(?:er|ing)?)\b/i, 'Retail & Fashion'],
+    [/\b(?:fmcg|consumer\s*goods|fast\s*moving)\b/i, 'FMCG'],
+    [/\b(?:bank(?:ing)?|financ(?:e|ial)|insurance)\b/i, 'Financial Services'],
+    [/\b(?:technolog|software|digital|IT\b|SaaS)\b/i, 'Technology'],
+    [/\b(?:telecom|communications)\b/i, 'Telecommunications'],
+    [/\b(?:real\s*estate|property|construction)\b/i, 'Real Estate & Construction'],
+    [/\b(?:healthcare|pharma|medical|hospital)\b/i, 'Healthcare'],
+    [/\b(?:luxury|watch|jewel)/i, 'Luxury Goods'],
+    [/\b(?:distribut(?:or|ion)|logistics|supply\s*chain)\b/i, 'Distribution & Logistics'],
+    [/\b(?:manufacturing|industrial)\b/i, 'Manufacturing'],
+    [/\b(?:food|beverage|restaurant|hospitality)\b/i, 'Food & Beverage'],
+    [/\b(?:mining|metals|steel)\b/i, 'Mining & Metals'],
+    [/\b(?:transport|aviation|airline|shipping)\b/i, 'Transportation'],
+    [/\b(?:education|university|school)\b/i, 'Education'],
+    [/\b(?:media|entertainment|broadcasting)\b/i, 'Media & Entertainment'],
+  ];
+
+  const combined = (snippet + ' ' + query).toLowerCase();
+  for (const [pattern, sector] of sectorPatterns) {
+    if (pattern.test(combined)) return sector;
+  }
+  return null;
+}
+
+interface SearchResult {
+  url: string;
+  title: string;
+  snippet: string;
+  rawContent?: string;
+  domain: string;
+  rank: number;
+  provider: string;
+}
+
+function isGenericTitle(name: string): boolean {
+  return /^(?:top\s+\d+|best\s+\d+|largest|leading|list\s+of|companies?\s+in|highlights?\s+of|here\s+are|the\s+power|key\s+(?:companies|players)|driving|redefining|market)/i.test(name.trim());
+}
+
+function extractNamesFromDotSeparatedList(text: string): string[] {
+  const names: string[] = [];
+  const segments = text.split(/\s*[·•]\s*/);
+  for (const seg of segments) {
+    const cleaned = seg.replace(/^\d+[\.\)]\s*/, '').replace(/\s*\(.*?\)\s*/g, ' ').trim();
+    if (cleaned.length > 2 && cleaned.length < 80 && /[A-Z]/.test(cleaned) && !isGenericTitle(cleaned)) {
+      const name = cleaned.replace(/\s+/g, ' ').replace(/[,.]$/, '').trim();
+      if (name.length > 2) names.push(name);
+    }
+  }
+  return names;
+}
+
+function extractNamesFromNumberedList(text: string): string[] {
+  const names: string[] = [];
+  const patterns = [
+    /\d+[\.\)]\s*([A-Z][A-Za-z0-9\s&\-'\.,:()]+?)(?=\s*(?:\d+[\.\)]|$|\n|·|•))/gm,
+    /(?:^|\n)\s*\d+[\.\)]\s*\*?\*?([A-Z][A-Za-z0-9\s&\-'\.,:()]+?)(?:\*?\*?)\s*(?:[\-–—:|]|\n|$)/gm,
+    /(?:^|\n)\s*[-•*]\s*\*?\*?([A-Z][A-Za-z0-9\s&\-'\.]+?)(?:\*?\*?)\s*(?:[\-–—:|]|\n|$)/gm,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      let name = match[1].trim().replace(/\*+/g, '').replace(/\s+/g, ' ').replace(/[,:]$/, '').trim();
+      if (name.length > 2 && name.length < 100 && !isGenericTitle(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+export function extractCompaniesFromSearchResults(
+  results: SearchResult[],
+  query: string,
+  limit: number,
+  answer?: string
+): EnrichedCompany[] {
+  const now = new Date();
+  const queryCountry = detectCountryFromText('', query);
+
+  const companiesFromLists: Array<{ name: string; sourceUrl: string; snippet: string }> = [];
+
+  for (const result of results) {
+    const snippet = result.snippet || '';
+
+    if (snippet.includes('·') || snippet.includes('•')) {
+      const dotNames = extractNamesFromDotSeparatedList(snippet);
+      for (const name of dotNames) {
+        companiesFromLists.push({ name, sourceUrl: result.url, snippet });
+      }
+    }
+
+    const numberedNames = extractNamesFromNumberedList(result.title + '\n' + snippet);
+    for (const name of numberedNames) {
+      companiesFromLists.push({ name, sourceUrl: result.url, snippet });
+    }
+  }
+
+  if (answer) {
+    if (answer.includes('·') || answer.includes('•')) {
+      for (const name of extractNamesFromDotSeparatedList(answer)) {
+        companiesFromLists.push({ name, sourceUrl: '', snippet: answer });
+      }
+    }
+    for (const name of extractNamesFromNumberedList(answer)) {
+      companiesFromLists.push({ name, sourceUrl: '', snippet: answer });
+    }
+  }
+
+  const seen = new Set<string>();
+  const companies: EnrichedCompany[] = [];
+
+  const addCompany = (name: string, sourceUrl: string, snippetText: string) => {
+    let cleanName = name.replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    if (isGenericTitle(cleanName)) return;
+    if (/(?:top\s+companies|power\s+companies|key\s+players|market\s+(?:takeaway|overview))/i.test(cleanName)) return;
+
+    const key = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (seen.has(key) || key.length < 3) return;
+    seen.add(key);
+
+    const country = detectCountryFromText(snippetText, query);
+    const revenue = extractRevenueFromSnippet(snippetText);
+    const employees = extractEmployeesFromSnippet(snippetText);
+    const sector = extractSectorFromSnippet(snippetText, query);
+
+    const makeField = <T>(value: T | null, confidence: number = value ? 5 : 0): FieldValue<T> => ({
+      value,
+      sourceUrl: sourceUrl || null,
+      confidence,
+      lastUpdated: now,
+    });
+
+    companies.push({
+      canonicalName: cleanName,
+      aliases: [],
+      sector: makeField(sector),
+      businessType: makeField<string>(null),
+      country: makeField(country),
+      city: makeField<string>(null),
+      streetAddress: makeField<string>(null),
+      latitude: makeField<number>(null),
+      longitude: makeField<number>(null),
+      revenue: {
+        ...makeField(revenue?.value || null),
+        currency: revenue?.currency || null,
+        fiscalYear: null,
+      },
+      employees: makeField(employees),
+      website: makeField(sourceUrl || null),
+      summary: makeField(snippetText.substring(0, 200)),
+      sourceUrls: sourceUrl ? [sourceUrl] : [],
+      searchProvider: 'serper',
+      overallConfidence: 4,
+    });
+  };
+
+  for (const item of companiesFromLists) {
+    if (companies.length >= limit) break;
+    addCompany(item.name, item.sourceUrl, item.snippet);
+  }
+
+  if (companies.length < limit) {
+    for (const result of results) {
+      if (companies.length >= limit) break;
+      const name = extractCompanyNameFromTitle(result.title);
+      const isGeneric = /top\s+\d+|best\s+\d+|largest|leading|list\s+of|companies?\s+in|highlights|here\s+are|key\s+players|top\s+companies|market|redefining|power\s+50/i.test(name);
+      if (!isGeneric && !isGenericTitle(name)) {
+        addCompany(name, result.url, result.snippet);
+      }
+    }
+  }
+
+  console.log(`[HeuristicExtraction] Extracted ${companies.length} companies from search results`);
+  return companies;
 }
 
 export async function extractExecutivesForCompany(

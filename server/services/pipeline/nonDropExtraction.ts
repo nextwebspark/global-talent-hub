@@ -6,7 +6,7 @@ const openrouter = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-const DEFAULT_MODEL = "google/gemini-2.5-flash-preview";
+const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 function createEmptyFieldValue<T>(): FieldValue<T> {
   return {

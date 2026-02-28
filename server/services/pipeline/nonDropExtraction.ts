@@ -297,14 +297,17 @@ function transformPartialCompany(raw: any): EnrichedCompany | null {
 }
 
 const COUNTRY_KEYWORDS: Record<string, string> = {
-  'united arab emirates': 'United Arab Emirates', 'uae': 'United Arab Emirates', 'dubai': 'United Arab Emirates', 'abu dhabi': 'United Arab Emirates',
-  'saudi arabia': 'Saudi Arabia', 'ksa': 'Saudi Arabia', 'riyadh': 'Saudi Arabia', 'jeddah': 'Saudi Arabia',
-  'qatar': 'Qatar', 'doha': 'Qatar',
-  'kuwait': 'Kuwait',
-  'bahrain': 'Bahrain',
-  'oman': 'Oman', 'muscat': 'Oman',
+  'united arab emirates': 'United Arab Emirates', 'uae': 'United Arab Emirates', 'emirates': 'United Arab Emirates', 'dubai': 'United Arab Emirates', 'abu dhabi': 'United Arab Emirates', 'sharjah': 'United Arab Emirates',
+  'saudi arabia': 'Saudi Arabia', 'saudi': 'Saudi Arabia', 'ksa': 'Saudi Arabia', 'riyadh': 'Saudi Arabia', 'jeddah': 'Saudi Arabia', 'dammam': 'Saudi Arabia',
+  'qatar': 'Qatar', 'qatari': 'Qatar', 'doha': 'Qatar',
+  'kuwait': 'Kuwait', 'kuwaiti': 'Kuwait',
+  'bahrain': 'Bahrain', 'bahraini': 'Bahrain', 'manama': 'Bahrain',
+  'oman': 'Oman', 'omani': 'Oman', 'muscat': 'Oman',
   'jordan': 'Jordan', 'amman': 'Jordan',
   'egypt': 'Egypt', 'cairo': 'Egypt',
+  'iraq': 'Iraq', 'baghdad': 'Iraq',
+  'iran': 'Iran', 'tehran': 'Iran',
+  'lebanon': 'Lebanon', 'beirut': 'Lebanon',
   'united kingdom': 'United Kingdom', 'uk': 'United Kingdom', 'london': 'United Kingdom', 'britain': 'United Kingdom',
   'united states': 'United States', 'usa': 'United States', 'america': 'United States',
   'germany': 'Germany', 'france': 'France', 'india': 'India', 'china': 'China',
@@ -313,14 +316,18 @@ const COUNTRY_KEYWORDS: Record<string, string> = {
   'hong kong': 'Hong Kong', 'italy': 'Italy', 'spain': 'Spain', 'brazil': 'Brazil',
   'mexico': 'Mexico', 'south africa': 'South Africa', 'nigeria': 'Nigeria',
   'turkey': 'Turkey', 'indonesia': 'Indonesia', 'malaysia': 'Malaysia',
-  'middle east': 'Middle East', 'gcc': 'Middle East',
+  'kenya': 'Kenya', 'algeria': 'Algeria', 'morocco': 'Morocco',
 };
 
 function detectCountryFromText(text: string, query: string): string | null {
-  const lower = (text + ' ' + query).toLowerCase();
+  const snippetLower = text.toLowerCase();
   const sorted = Object.entries(COUNTRY_KEYWORDS).sort((a, b) => b[0].length - a[0].length);
   for (const [keyword, country] of sorted) {
-    if (lower.includes(keyword)) return country;
+    if (snippetLower.includes(keyword)) return country;
+  }
+  const queryLower = query.toLowerCase();
+  for (const [keyword, country] of sorted) {
+    if (queryLower.includes(keyword)) return country;
   }
   return null;
 }
@@ -430,7 +437,13 @@ interface SearchResult {
 }
 
 function isGenericTitle(name: string): boolean {
-  return /^(?:top\s+\d+|best\s+\d+|largest|leading|list\s+of|companies?\s+in|highlights?\s+of|here\s+are|the\s+power|key\s+(?:companies|players)|driving|redefining|market)/i.test(name.trim());
+  const n = name.trim();
+  if (/^(?:top\s+\d+|best\s+\d+|largest|leading|list\s+of|companies?\s+in|highlights?\s+of|here\s+are|the\s+power|key\s+(?:companies|players)|driving|redefining|market)/i.test(n)) return true;
+  if (/(?:deep\s+dive|major\s+(?:energy|power|companies)|arab\s+world|power\s+50|energy\s+frontier|utilities?\s+sector|redefining\s+the)/i.test(n)) return true;
+  if (/(?:top\s+(?:companies|players|firms)|key\s+companies|power\s+(?:companies|market)|energy\s+(?:companies|startups?)\s+(?:of|in))/i.test(n)) return true;
+  if (/\.{2,}$/.test(n)) return true;
+  if (n.split(/\s+/).length > 8) return true;
+  return false;
 }
 
 function extractNamesFromDotSeparatedList(text: string): string[] {
@@ -507,15 +520,18 @@ export function extractCompaniesFromSearchResults(
   const companies: EnrichedCompany[] = [];
 
   const addCompany = (name: string, sourceUrl: string, snippetText: string) => {
-    let cleanName = name.replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    let cleanName = name.replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').replace(/\.{2,}$/, '').trim();
     if (isGenericTitle(cleanName)) return;
-    if (/(?:top\s+companies|power\s+companies|key\s+players|market\s+(?:takeaway|overview))/i.test(cleanName)) return;
 
     const key = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '');
     if (seen.has(key) || key.length < 3) return;
     seen.add(key);
 
-    const country = detectCountryFromText(snippetText, query);
+    const countryFromName = detectCountryFromText(cleanName, '');
+    const countryFromUrl = sourceUrl ? detectCountryFromText(sourceUrl.replace(/https?:\/\//g, '').replace(/[.\-\/]/g, ' '), '') : null;
+    const countryFromSnippet = detectCountryFromText(snippetText, '');
+    const countryFromQuery = detectCountryFromText('', query);
+    const country = countryFromName || countryFromUrl || countryFromSnippet || countryFromQuery;
     const revenue = extractRevenueFromSnippet(snippetText);
     const employees = extractEmployeesFromSnippet(snippetText);
     const sector = extractSectorFromSnippet(snippetText, query);

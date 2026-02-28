@@ -87,6 +87,10 @@ const COUNTRY_CENTROIDS: Record<string, { lat: number; lng: number }> = {
   'chile': { lat: -35.6751, lng: -71.5430 },
   'colombia': { lat: 4.5709, lng: -74.2973 },
   'peru': { lat: -9.1900, lng: -75.0152 },
+
+  'middle east': { lat: 25.0, lng: 45.0 },
+  'gcc': { lat: 25.0, lng: 50.0 },
+  'algeria': { lat: 28.0339, lng: 1.6596 },
 };
 
 // Major city centroids (for common business centers)

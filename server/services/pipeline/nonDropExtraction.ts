@@ -8,15 +8,20 @@ const openrouter = new OpenAI({
 
 const FREE_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-235b-a22b:free",
-  "deepseek/deepseek-r1-0528:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-3-27b-it:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
 ];
 
-async function callLLM(
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function tryAllModels(
   messages: Array<{ role: string; content: string }>,
-  options: { temperature?: number; max_tokens?: number } = {}
-): Promise<string> {
+  options: { temperature?: number; max_tokens?: number }
+): Promise<string | null> {
   for (const model of FREE_MODELS) {
     try {
       console.log(`[NonDropExtraction] Trying ${model}...`);
@@ -26,14 +31,32 @@ async function callLLM(
         temperature: options.temperature ?? 0.1,
         max_tokens: options.max_tokens ?? 8000,
       });
-      console.log(`[NonDropExtraction] Succeeded with ${model}`);
-      return response.choices[0]?.message?.content || '';
+      const content = response.choices[0]?.message?.content || '';
+      if (content) {
+        console.log(`[NonDropExtraction] Succeeded with ${model}`);
+        return content;
+      }
     } catch (error: any) {
       console.warn(`[NonDropExtraction] ${model} failed: ${error.message}`);
     }
   }
+  return null;
+}
 
-  throw new Error('All free LLM models are currently rate-limited. Please try again in a minute.');
+async function callLLM(
+  messages: Array<{ role: string; content: string }>,
+  options: { temperature?: number; max_tokens?: number } = {}
+): Promise<string> {
+  const result = await tryAllModels(messages, options);
+  if (result) return result;
+
+  console.log(`[NonDropExtraction] All models failed on first pass. Waiting 5s before retry...`);
+  await sleep(5000);
+
+  const retryResult = await tryAllModels(messages, options);
+  if (retryResult) return retryResult;
+
+  throw new Error('All free LLM models are currently unavailable. Please try again in a minute.');
 }
 
 function createEmptyFieldValue<T>(): FieldValue<T> {

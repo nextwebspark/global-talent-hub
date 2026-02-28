@@ -4,36 +4,11 @@ import { useAppStore } from '@/lib/store';
 import { useSearch, useSearchHistory } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, Loader2, ChevronDown, ChevronUp, History, Sparkles, Bot, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon } from 'lucide-react';
+import { Search, Loader2, ChevronDown, ChevronUp, History, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
-const LLM_MODELS = [
-  { id: 'openrouter/free', name: 'Auto (Best Free)', provider: 'OpenRouter', free: true },
-  { id: 'arcee-ai/trinity-large-preview:free', name: 'Arcee Trinity Large 400B', provider: 'Arcee', free: true },
-  { id: 'tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1T2 Chimera 671B', provider: 'TNG', free: true },
-  { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air', provider: 'Z.AI', free: true },
-  { id: 'tngtech/deepseek-r1t-chimera:free', name: 'DeepSeek R1T Chimera', provider: 'TNG', free: true },
-  { id: 'stepfun/step-3.5-flash:free', name: 'Step 3.5 Flash 196B', provider: 'StepFun', free: true },
-  { id: 'nvidia/nemotron-3-nano-30b-a3b:free', name: 'Nemotron 3 Nano 30B', provider: 'NVIDIA', free: true },
-  { id: 'deepseek/deepseek-r1-0528:free', name: 'DeepSeek R1 0528', provider: 'DeepSeek', free: true },
-  { id: 'tngtech/tng-r1t-chimera:free', name: 'TNG R1T Chimera', provider: 'TNG', free: true },
-  { id: 'openai/gpt-oss-120b:free', name: 'GPT OSS 120B', provider: 'OpenAI', free: true },
-  { id: 'qwen/qwen3-coder:free', name: 'Qwen3 Coder 480B', provider: 'Qwen', free: true },
-  { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B', provider: 'Meta', free: true },
-  { id: 'upstage/solar-pro-3:free', name: 'Solar Pro 3 102B', provider: 'Upstage', free: true },
-  { id: 'arcee-ai/trinity-mini:free', name: 'Arcee Trinity Mini 26B', provider: 'Arcee', free: true },
-  { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', provider: 'Google', free: true },
-  { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen3 Next 80B', provider: 'Qwen', free: true },
-  { id: 'openai/gpt-oss-20b:free', name: 'GPT OSS 20B', provider: 'OpenAI', free: true },
-  { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'DeepSeek', free: false },
-  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', free: false },
-  { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', provider: 'Anthropic', free: false },
-  { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'OpenAI', free: false },
-  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'OpenAI', free: false },
-];
 
 const ALL_FIELD_PATTERNS: Record<string, string[]> = {
   name: [
@@ -177,7 +152,6 @@ export default function Landing() {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('openrouter/free');
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -265,9 +239,8 @@ export default function Landing() {
     loadFromAPI([]);
     
     try {
-      const modelName = LLM_MODELS.find(m => m.id === selectedModel)?.name || selectedModel;
-      toast.loading(`Searching with ${modelName}...`, { id: 'search' });
-      const result = await searchMutation.mutateAsync({ query: input, model: selectedModel });
+      toast.loading('Searching...', { id: 'search' });
+      const result = await searchMutation.mutateAsync({ query: input });
       toast.dismiss('search');
       
       if (!result.results || result.results.length === 0) {
@@ -547,30 +520,9 @@ export default function Landing() {
               <div className="relative" ref={historyRef}>
                 <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
                   <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
-                        <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-                        <span className="text-xs font-medium text-primary">AI Research</span>
-                      </div>
-                      <Select value={selectedModel} onValueChange={setSelectedModel}>
-                        <SelectTrigger className="w-[180px] h-8 text-xs bg-background" data-testid="select-model">
-                          <Bot className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
-                          {LLM_MODELS.map((model) => (
-                            <SelectItem key={model.id} value={model.id} className="text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">{model.name}</span>
-                                {model.free && (
-                                  <span className="px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[9px] font-semibold rounded">FREE</span>
-                                )}
-                                <span className="text-muted-foreground">({model.provider})</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
+                      <Search className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="text-xs font-medium text-primary">AI Search</span>
                     </div>
                     <div className="flex-1" />
                     <div className="flex items-center gap-1">
@@ -675,9 +627,9 @@ export default function Landing() {
                   {searchMutation.isPending ? (
                     <Loader2 className="animate-spin h-5 w-5 mr-2" />
                   ) : (
-                    <Sparkles className="h-5 w-5 mr-2" />
+                    <Search className="h-5 w-5 mr-2" />
                   )}
-                  {searchMutation.isPending ? 'Researching...' : 'Start Research'}
+                  {searchMutation.isPending ? 'Searching...' : 'Search'}
                 </Button>
               </div>
             </div>

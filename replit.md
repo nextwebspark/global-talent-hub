@@ -21,23 +21,23 @@ All search results, companies, and executives are persistently stored in a Postg
 The frontend is built with React 18 and TypeScript, utilizing Wouter for routing, Zustand for global state, and TanStack React Query for data fetching. UI components are sourced from shadcn/ui (Radix UI) and styled with Tailwind CSS v4. Interactive maps are rendered using Leaflet with React-Leaflet, and Vite serves as the build tool.
 
 ### Backend Architecture
-The backend is a Node.js Express.js application written in TypeScript, providing a RESTful JSON API. AI research is powered by Tavily Research API. Session management uses Express sessions with a PostgreSQL store.
+The backend is a Node.js Express.js application written in TypeScript, providing a RESTful JSON API. Primary search discovery uses Serper API (Google search) with LLM-based extraction via the discovery pipeline. Enrichment also uses Serper for targeted data lookups. Session management uses Express sessions with a PostgreSQL store.
 
 ### Data Storage
 PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, and `messages`.
 
 ### Layered Architecture
 The backend employs a strict layered architecture:
-- **Web Search Layer**: Uses Tavily API for web retrieval, classifying sources into tiers (Tier 1: regulatory filings, Tier 2: reputable business news, Tier 3: general web).
-- **Tavily Research Layer**: Direct AI research via Tavily Research API with structured output schemas, enabling LLM-free data extraction.
-- **Retrieval Discovery Layer**: Hybrid approach that first retrieves sources, then uses LLM only for extraction from content, ensuring LLM cannot invent data.
+- **Serper Search Layer**: Uses Serper API (Google search) for web retrieval with noise filtering, list-article parsing, and country-aware geo-targeting (`gl` parameter).
+- **Discovery Pipeline**: Serper search → LLM extraction of structured company data (non-destructive) → persistence to DB. No LLM model selection needed — uses OpenAI integration.
+- **Enrichment Pipeline**: Targeted Serper searches for revenue, employees, and executives with LLM extraction from search results.
 - **Enrichment Layer**: Integrates with Clockwork API for fuzzy matching and data enrichment, populating empty fields without overwriting existing data.
 - **Persistence Layer**: Enforces write restrictions and serves as the single source of truth.
 - **UI/Manual Layer**: Allows direct user creation and editing of records, overriding imported data.
 - **Routes Layer**: A thin orchestration layer.
 
 ### AI Research Engine
-Server-side AI processing exclusively uses Tavily Research API with `output_schema` for structured output, returning companies with nested executives, revenue data (with validation), and coordinates. A simple heuristic (regex) extracts limits from queries. Results are ranked by revenue, then employees, with executive filtering support.
+Server-side search uses Serper API for web discovery, followed by LLM extraction for structured company data. A simple heuristic (regex) extracts limits from queries. Results are ranked by revenue, then employees, with executive filtering support. The landing page provides a simple search box without LLM model selection.
 
 ### Multi-Pass Enrichment Pipeline
 An enrichment pipeline fills missing data post-discovery, including targeted searches for revenue, employees, and specific executives. Field-level source and confidence tracking are maintained.
@@ -58,9 +58,9 @@ All analytics are computed server-side.
 ## External Dependencies
 
 ### AI Services
-- **OpenAI API**: Primary AI model access.
-- **OpenRouter**: Multi-model LLM support.
-- **Tavily Research API**: AI-powered web research.
+- **OpenAI API**: Primary AI model access for data extraction.
+- **OpenRouter**: Multi-model LLM support for enrichment extraction.
+- **Serper API**: Google search API for company discovery and enrichment searches.
 
 ### Database
 - **PostgreSQL**: Main relational database.

@@ -84,8 +84,7 @@ import {
   generateSearchUniqueKey
 } from "./services/discovery";
 import { 
-  discoverWithTavilyResearch,
-  discoverWithTavilySearch
+  discoverWithTavilyResearch
 } from "./services/retrievalDiscovery";
 import { webSearchService } from "./services/webSearch";
 import { 
@@ -965,17 +964,16 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
-  // Discovery Layer: Search endpoint using Tavily Research API (no LLM layer)
+  // Discovery Layer: Search endpoint using Serper discovery pipeline
   app.post("/api/search", async (req, res) => {
     try {
-      const { query, model } = req.body;
+      const { query } = req.body;
       
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      const selectedModel = model || 'anthropic/claude-sonnet-4';
-      console.log(`[Routes] Processing search with Tavily Research: "${query}" (model: ${selectedModel})`);
+      console.log(`[Routes] Processing search: "${query}"`);
 
       // Step 1: Parse query to get limit and criteria (simple heuristic, no LLM)
       const { criteria, interpretation } = await parseSearchQuery(query);
@@ -998,20 +996,21 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         console.log(`[Routes] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
       }
 
-      // Step 5: Run Tavily Search + LLM extraction (faster than Research API)
-      if (!webSearchService.isConfigured()) {
-        return res.status(503).json({ error: "Tavily Search is not configured. Please add TAVILY_API_KEY to your secrets." });
+      // Step 5: Run Serper discovery pipeline
+      if (!process.env.SERPER_API_KEY) {
+        return res.status(503).json({ error: "Search is not configured. Please add SERPER_API_KEY to your secrets." });
       }
 
-      console.log("[Routes] Running Tavily Search discovery for:", query);
-      const companies: any[] = [];
+      const { runDiscoveryPipeline } = await import("./services/pipeline/discoveryPipeline");
+
+      console.log("[Routes] Running Serper discovery for:", query);
+      let companyCount = 0;
       let discoveryError: string | null = null;
-      
       let discoveryErrorCode: string | null = null;
       
-      for await (const event of discoverWithTavilySearch(criteria, searchQuery.id, query, selectedModel)) {
-        if (event.type === 'company' && event.data?.company) {
-          companies.push(event.data.company);
+      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id)) {
+        if (event.type === 'company') {
+          companyCount++;
         } else if (event.type === 'error' && event.data?.message) {
           discoveryError = event.data.message;
           discoveryErrorCode = event.data.code || null;
@@ -1020,23 +1019,37 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
       
       // If we got an error and no companies, return the error
-      if (discoveryError && companies.length === 0) {
+      if (discoveryError && companyCount === 0) {
         const isRateLimit = discoveryErrorCode === 'RATE_LIMIT';
         const statusCode = isRateLimit ? 429 : 500;
         return res.status(statusCode).json({ error: discoveryError });
       }
       
-      console.log(`[Routes] Tavily Search complete: ${companies.length} companies found`);
+      console.log(`[Routes] Serper discovery complete: ${companyCount} companies found`);
 
-      // Step 6: Update result count
-      await storage.updateSearchQueryResultCount(searchQuery.id, companies.length);
+      // Step 6: Load full company data with executives from DB (pipeline already persisted)
+      const fullResults = await storage.getFullSearchResults(searchQuery.id);
+      const results = fullResults?.companies.map(company => {
+        const coords = applyCoordinateFallback({
+          latitude: company.latitude,
+          longitude: company.longitude,
+          city: company.region || undefined,
+          country: company.country || undefined,
+        });
+        return {
+          ...company,
+          latitude: coords.latitude ? String(coords.latitude) : company.latitude,
+          longitude: coords.longitude ? String(coords.longitude) : company.longitude,
+          executives: company.executives.map(exec => ({ ...exec }))
+        };
+      }) || [];
 
       res.json({
         searchQueryId: searchQuery.id,
         query,
         interpretation,
         criteria,
-        results: companies
+        results
       });
     } catch (error: any) {
       console.error("[Routes] Error processing search:", error);

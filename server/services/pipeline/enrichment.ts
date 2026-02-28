@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { storage } from "../../storage";
 import type { Company } from "@shared/schema";
-import { TavilyAdapter, createTavilyAdapter } from './tavilyAdapter';
+import { SerperAdapter, createSerperAdapter } from './serperAdapter';
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -77,7 +77,7 @@ export async function enrichRevenue(
   companyName: string,
   country: string | null
 ): Promise<RevenueEnrichment> {
-  const searchProvider = createTavilyAdapter();
+  const searchProvider = createSerperAdapter();
   if (!searchProvider) {
     return { value: null, sourceUrl: null, sourceDescription: null, confidence: 0, found: false, currency: null, fiscalYear: null };
   }
@@ -129,7 +129,7 @@ export async function enrichEmployees(
   companyName: string,
   country: string | null
 ): Promise<EnrichmentResult<number>> {
-  const searchProvider = createTavilyAdapter();
+  const searchProvider = createSerperAdapter();
   if (!searchProvider) {
     return { value: null, sourceUrl: null, sourceDescription: null, confidence: 0, found: false };
   }
@@ -180,7 +180,7 @@ async function enrichSingleExecutive(
   country: string | null,
   role: 'CEO' | 'CFO'
 ): Promise<ExecutiveEnrichment | null> {
-  const searchProvider = createTavilyAdapter();
+  const searchProvider = createSerperAdapter();
   if (!searchProvider) return null;
 
   const query = `"${companyName}" ${role} ${country || ''} 2024`;

@@ -1,6 +1,6 @@
 import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
-import { TavilyAdapter, createTavilyAdapter } from './tavilyAdapter';
+import { SerperAdapter, createSerperAdapter } from './serperAdapter';
 import { extractCompaniesNonDestructive, extractExecutivesForCompany } from './nonDropExtraction';
 import { applyCoordinateFallback } from '../coordinateFallback';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
@@ -233,7 +233,7 @@ export class DiscoveryPipeline {
 }
 
 export function createDiscoveryPipeline(): DiscoveryPipeline | null {
-  const searchProvider = createTavilyAdapter();
+  const searchProvider = createSerperAdapter();
   if (!searchProvider) {
     return null;
   }

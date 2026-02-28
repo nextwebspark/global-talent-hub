@@ -1,12 +1,52 @@
 import OpenAI from "openai";
 import type { DiscoveredCompany, EnrichedCompany, ExtractedExecutive, FieldValue } from './types';
 
+const openai = new OpenAI();
+
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-const DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+const FREE_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-235b-a22b:free",
+  "deepseek/deepseek-r1-0528:free",
+];
+
+async function callLLM(
+  messages: Array<{ role: string; content: string }>,
+  options: { temperature?: number; max_tokens?: number } = {}
+): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: messages as any,
+      temperature: options.temperature ?? 0.1,
+      max_tokens: options.max_tokens ?? 8000,
+    });
+    return response.choices[0]?.message?.content || '';
+  } catch (primaryError: any) {
+    console.warn(`[NonDropExtraction] OpenAI failed (${primaryError.message}), trying OpenRouter fallbacks...`);
+  }
+
+  for (const model of FREE_MODELS) {
+    try {
+      const response = await openrouter.chat.completions.create({
+        model,
+        messages: messages as any,
+        temperature: options.temperature ?? 0.1,
+        max_tokens: options.max_tokens ?? 8000,
+      });
+      console.log(`[NonDropExtraction] Succeeded with fallback model: ${model}`);
+      return response.choices[0]?.message?.content || '';
+    } catch (error: any) {
+      console.warn(`[NonDropExtraction] ${model} failed: ${error.message}`);
+    }
+  }
+
+  throw new Error('All LLM providers failed');
+}
 
 function createEmptyFieldValue<T>(): FieldValue<T> {
   return {
@@ -104,17 +144,14 @@ Extract up to ${limit} companies. Include ALL companies found - missing fields a
 Return JSON only.`;
 
   try {
-    const response = await openrouter.chat.completions.create({
-      model: DEFAULT_MODEL,
-      messages: [
+    const content = await callLLM(
+      [
         { role: "system", content: EXTRACTION_PROMPT },
         { role: "user", content: userPrompt }
       ],
-      temperature: 0.1,
-      max_tokens: 8000,
-    });
+      { temperature: 0.1, max_tokens: 8000 }
+    );
 
-    const content = response.choices[0]?.message?.content || '';
     const parsed = parseJsonResponse(content);
     
     if (!parsed || !Array.isArray(parsed.companies)) {
@@ -268,14 +305,11 @@ Roles must be one of: CEO, CFO, CHRO, CIO, CTO, OTHER
 If no executives found, return {"executives": []}`;
 
   try {
-    const response = await openrouter.chat.completions.create({
-      model: DEFAULT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.1,
-      max_tokens: 2000,
-    });
+    const content = await callLLM(
+      [{ role: "user", content: prompt }],
+      { temperature: 0.1, max_tokens: 2000 }
+    );
 
-    const content = response.choices[0]?.message?.content || '';
     const parsed = parseJsonResponse(content);
     
     if (!parsed || !Array.isArray(parsed.executives)) {

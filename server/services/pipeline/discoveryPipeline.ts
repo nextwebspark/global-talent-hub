@@ -7,6 +7,49 @@ import type { QueryIntent } from './queryIntent';
 import { applyCoordinateFallback } from '../coordinateFallback';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
 
+function extractCountriesFromRawQuery(query: string): string[] {
+  const lower = query.toLowerCase();
+  const found: string[] = [];
+  const countryNames: Array<[string, string]> = [
+    ['saudi arabia', 'Saudi Arabia'], ['saudi', 'Saudi Arabia'],
+    ['united arab emirates', 'United Arab Emirates'], ['uae', 'United Arab Emirates'],
+    ['qatar', 'Qatar'], ['kuwait', 'Kuwait'], ['bahrain', 'Bahrain'],
+    ['oman', 'Oman'], ['egypt', 'Egypt'], ['jordan', 'Jordan'],
+    ['lebanon', 'Lebanon'], ['iraq', 'Iraq'], ['turkey', 'Turkey'],
+    ['united kingdom', 'United Kingdom'], ['uk', 'United Kingdom'],
+    ['united states', 'United States'], ['usa', 'United States'],
+    ['germany', 'Germany'], ['france', 'France'], ['india', 'India'],
+    ['china', 'China'], ['japan', 'Japan'], ['singapore', 'Singapore'],
+    ['australia', 'Australia'], ['canada', 'Canada'],
+    ['south africa', 'South Africa'], ['nigeria', 'Nigeria'],
+    ['brazil', 'Brazil'], ['mexico', 'Mexico'],
+  ];
+  const seen = new Set<string>();
+  for (const [kw, name] of countryNames) {
+    if (lower.includes(kw) && !seen.has(name)) {
+      seen.add(name);
+      found.push(name);
+    }
+  }
+  return found;
+}
+
+function extractSectorFromRawQuery(query: string): string {
+  const lower = query.toLowerCase();
+  if (lower.includes('fashion') || lower.includes('luxury retail')) return 'luxury fashion';
+  if (lower.includes('luxury') && (lower.includes('watch') || lower.includes('jewel'))) return 'luxury goods';
+  if (lower.includes('luxury')) return 'luxury';
+  if (lower.includes('fmcg') || lower.includes('consumer goods')) return 'FMCG';
+  if (lower.includes('pharma')) return 'pharmaceutical';
+  if (lower.includes('power generation') || lower.includes('energy')) return 'energy';
+  if (lower.includes('technology') || lower.includes('tech')) return 'technology';
+  if (lower.includes('automotive')) return 'automotive';
+  if (lower.includes('real estate')) return 'real estate';
+  if (lower.includes('food') || lower.includes('beverage')) return 'food and beverage';
+  if (lower.includes('healthcare')) return 'healthcare';
+  return 'general';
+}
+
 export interface DiscoveryPipelineConfig {
   searchProvider: ISearchProvider;
 }
@@ -67,13 +110,14 @@ export class DiscoveryPipeline {
       console.log(`[Pipeline] Include: ${intent.includeTypes.join('; ')}`);
       console.log(`[Pipeline] Exclude: ${intent.excludeTypes.join('; ')}`);
     } catch (intentError: any) {
-      console.warn(`[Pipeline] Intent extraction failed, using defaults: ${intentError.message}`);
-      // Minimal fallback — won't over-filter anything
+      console.warn(`[Pipeline] Intent extraction failed, using heuristic defaults: ${intentError.message}`);
+      const heuristicCountries = extractCountriesFromRawQuery(query);
+      const heuristicSector = extractSectorFromRawQuery(query);
       intent = {
         entityType: 'company',
         commercialRole: 'any',
-        sector: 'general',
-        countries: [],
+        sector: heuristicSector,
+        countries: heuristicCountries,
         includeTypes: [],
         excludeTypes: [],
         exampleInclusions: [],

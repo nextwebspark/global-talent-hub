@@ -14,6 +14,7 @@ const openrouter = new OpenAI({
 });
 
 const FREE_MODELS = [
+  "google/gemini-2.5-flash",
   "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",
   "google/gemma-3-27b-it:free",
@@ -137,27 +138,50 @@ function extractCountriesFromQuery(query: string): string[] {
   return found;
 }
 
+function extractSectorFromQuery(query: string): string {
+  const lower = query.toLowerCase();
+  if (lower.includes('fashion') || lower.includes('luxury retail') || lower.includes('luxury brand')) return 'luxury fashion';
+  if (lower.includes('luxury') && (lower.includes('watch') || lower.includes('jewel'))) return 'luxury watches and jewellery';
+  if (lower.includes('luxury')) return 'luxury';
+  if (lower.includes('fmcg') || lower.includes('consumer goods')) return 'FMCG';
+  if (lower.includes('pharma') || lower.includes('pharmaceutical')) return 'pharmaceutical';
+  if (lower.includes('power generation') || lower.includes('energy')) return 'power generation';
+  if (lower.includes('technology') || lower.includes('tech')) return 'technology';
+  if (lower.includes('automotive') || lower.includes('car')) return 'automotive';
+  if (lower.includes('real estate') || lower.includes('property')) return 'real estate';
+  if (lower.includes('food') || lower.includes('beverage')) return 'food and beverage';
+  if (lower.includes('healthcare') || lower.includes('medical')) return 'healthcare';
+  return '';
+}
+
 function buildHeuristicQueries(originalQuery: string, intent: QueryIntent): string[] {
   const lower = originalQuery.toLowerCase();
   const countries = intent.countries.length > 0 ? intent.countries : extractCountriesFromQuery(originalQuery);
   const countryStr = countries.join(' and ');
+  const sector = (intent.sector && intent.sector !== 'general') ? intent.sector : extractSectorFromQuery(originalQuery);
 
   let entityType = '';
-  for (const [keyword, synonyms] of Object.entries(BUSINESS_TYPE_KEYWORDS)) {
-    if (lower.includes(keyword)) {
-      entityType = synonyms[0];
-      break;
-    }
-  }
 
-  if (lower.includes('fashion') || lower.includes('luxury')) {
-    if (lower.includes('retail') || lower.includes('distributor') || lower.includes('franchise')) {
-      entityType = entityType || 'luxury retail group';
-    }
+  if ((lower.includes('fashion') || lower.includes('luxury')) &&
+      (lower.includes('retail') || lower.includes('distributor') || lower.includes('franchise'))) {
+    entityType = 'luxury retail group';
   }
   if (lower.includes('fmcg') && !entityType) entityType = 'FMCG distributor';
   if (lower.includes('power generation') && !entityType) entityType = 'power generation company';
   if (lower.includes('pharma') && !entityType) entityType = 'pharmaceutical distributor';
+
+  if (!entityType) {
+    for (const [keyword, synonyms] of Object.entries(BUSINESS_TYPE_KEYWORDS)) {
+      if (lower.includes(keyword)) {
+        entityType = sector ? `${sector} ${synonyms[0]}` : synonyms[0];
+        break;
+      }
+    }
+  }
+
+  if (!entityType && sector) {
+    entityType = `${sector} company`;
+  }
 
   const queries: string[] = [];
 
@@ -173,7 +197,7 @@ function buildHeuristicQueries(originalQuery: string, intent: QueryIntent): stri
     const truncated = originalQuery.substring(0, 70);
     queries.push(truncated + businessSuffix);
     if (countryStr) {
-      queries.push(`top companies ${countryStr} ${intent.sector || ''}`);
+      queries.push(`top companies ${countryStr}`);
     }
   }
 

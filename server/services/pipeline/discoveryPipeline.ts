@@ -1,7 +1,9 @@
 import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
 import { SerperAdapter, createSerperAdapter } from './serperAdapter';
-import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany } from './nonDropExtraction';
+import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany, preProcessListArticles } from './nonDropExtraction';
+import { extractQueryIntent, checkCompanyAgainstIntent } from './queryIntent';
+import type { QueryIntent } from './queryIntent';
 import { applyCoordinateFallback } from '../coordinateFallback';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
 
@@ -51,28 +53,48 @@ export class DiscoveryPipeline {
     limit: number,
     searchQueryId: number
   ): AsyncGenerator<any> {
-    const intent: SearchIntent = {
-      originalQuery: query,
-      limit,
-      entityType: 'company',
-      rankingCriteria: ['revenue', 'relevance'],
-    };
 
-    yield { type: 'status', data: { message: 'Starting search...', progress: 5 } };
+    yield { type: 'status', data: { message: 'Understanding your search...', progress: 5 } };
 
+    // ── Step 0: Extract query intent ─────────────────────────────────────────
+    // This runs first, before any search. Every downstream step uses this
+    // intent object to make filtering decisions — nothing is hardcoded.
+    let intent: QueryIntent;
+    try {
+      intent = await extractQueryIntent(query);
+      console.log(`[Pipeline] Intent: ${intent.validResultDescription}`);
+      console.log(`[Pipeline] Sector: ${intent.sector} | Role: ${intent.commercialRole}`);
+      console.log(`[Pipeline] Include: ${intent.includeTypes.join('; ')}`);
+      console.log(`[Pipeline] Exclude: ${intent.excludeTypes.join('; ')}`);
+    } catch (intentError: any) {
+      console.warn(`[Pipeline] Intent extraction failed, using defaults: ${intentError.message}`);
+      // Minimal fallback — won't over-filter anything
+      intent = {
+        entityType: 'company',
+        commercialRole: 'any',
+        sector: 'general',
+        countries: [],
+        includeTypes: [],
+        excludeTypes: [],
+        exampleInclusions: [],
+        exampleExclusions: [],
+        executiveRole: null,
+        validResultDescription: 'A company relevant to the query',
+        invalidResultDescription: 'A company not relevant to the query',
+      };
+    }
+
+    yield { type: 'status', data: { message: 'Searching...', progress: 10 } };
+
+    // ── Step 1: Search — pass intent so queries are optimised before hitting Serper
     let searchResponse;
     try {
-      searchResponse = await this.searchProvider.searchWithAnswer?.(query, 15);
-      if (!searchResponse) {
-        throw new Error('Search provider does not support searchWithAnswer');
-      }
+      searchResponse = await (this.searchProvider as any).searchWithAnswer?.(query, 15, intent);
+      if (!searchResponse) throw new Error('Search provider does not support searchWithAnswer');
       console.log(`[Pipeline] Search returned ${searchResponse.results.length} results`);
     } catch (error: any) {
       console.error('[Pipeline] Search failed:', error);
-      yield { 
-        type: 'error', 
-        data: { message: error.message || 'Search failed', code: 'SEARCH_FAILED' } 
-      };
+      yield { type: 'error', data: { message: error.message || 'Search failed', code: 'SEARCH_FAILED' } };
       return;
     }
 
@@ -81,18 +103,39 @@ export class DiscoveryPipeline {
       return;
     }
 
-    yield { 
-      type: 'source', 
-      data: { count: searchResponse.results.length } 
-    };
+    yield { type: 'source', data: { count: searchResponse.results.length } };
 
-    yield { type: 'status', data: { message: 'Extracting company information...', progress: 30 } };
+    // ── Step 2: Pre-process list articles using intent ───────────────────────
+    yield { type: 'status', data: { message: 'Scanning articles for company names...', progress: 20 } };
+
+    let preExtractedNames: string[] = [];
+    try {
+      preExtractedNames = await preProcessListArticles(searchResponse.results, query, intent);
+      if (preExtractedNames.length > 0) {
+        console.log(`[Pipeline] Pre-extracted: ${preExtractedNames.join(', ')}`);
+      }
+    } catch (preError: any) {
+      console.warn(`[Pipeline] Pre-processing failed, continuing: ${preError.message}`);
+    }
+
+    // ── Step 3: Heuristic extraction with intent ─────────────────────────────
+    yield { type: 'status', data: { message: 'Extracting company information...', progress: 35 } };
 
     const heuristicCompanies = extractCompaniesFromSearchResults(
-      searchResponse.results, query, limit, searchResponse.answer
+      searchResponse.results,
+      query,
+      intent,
+      limit,
+      searchResponse.answer,
+      preExtractedNames
     );
 
+    // ── Step 4: Build search context for LLM enrichment ─────────────────────
     let searchContext = '';
+
+    if (preExtractedNames.length > 0) {
+      searchContext += `=== KNOWN COMPANIES FROM ARTICLES ===\n${preExtractedNames.join('\n')}\n\n`;
+    }
     if (searchResponse.answer) {
       searchContext += `=== AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
     }
@@ -105,18 +148,48 @@ export class DiscoveryPipeline {
       return content;
     }).join('\n\n');
 
+    // ── Step 5: LLM enrichment using intent ─────────────────────────────────
     let enrichedCompanies: EnrichedCompany[] = heuristicCompanies;
     let llmAvailable = true;
 
     try {
-      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, limit);
+      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, intent, limit);
       if (llmCompanies.length > 0) {
-        console.log(`[Pipeline] LLM enriched ${llmCompanies.length} companies, merging with ${heuristicCompanies.length} heuristic results`);
+        console.log(`[Pipeline] LLM found ${llmCompanies.length}, merging with ${heuristicCompanies.length} heuristic`);
         enrichedCompanies = mergeLlmIntoHeuristic(heuristicCompanies, llmCompanies, limit);
       }
     } catch (llmError: any) {
       llmAvailable = false;
-      console.warn(`[Pipeline] LLM extraction unavailable (${llmError.message}), using heuristic results only`);
+      console.warn(`[Pipeline] LLM unavailable: ${llmError.message}`);
+    }
+
+    // ── Step 6: Final intent validation pass ────────────────────────────────
+    // For any company that made it through but looks ambiguous, run a final
+    // LLM check against the intent. This catches edge cases that structural
+    // filters can't handle.
+    if (intent.excludeTypes.length > 0 && llmAvailable) {
+      yield { type: 'status', data: { message: 'Validating results...', progress: 55 } };
+
+      const validated: EnrichedCompany[] = [];
+      for (const company of enrichedCompanies) {
+        // Only run the expensive LLM check on companies that look potentially
+        // ambiguous — skip if it already has a high confidence score
+        if (company.overallConfidence >= 7) {
+          validated.push(company);
+          continue;
+        }
+        try {
+          const isValid = await checkCompanyAgainstIntent(company.canonicalName, intent);
+          if (isValid) {
+            validated.push(company);
+          } else {
+            console.log(`[Pipeline] Final validation rejected: ${company.canonicalName}`);
+          }
+        } catch {
+          validated.push(company); // Fail open on error
+        }
+      }
+      enrichedCompanies = validated;
     }
 
     if (enrichedCompanies.length === 0) {
@@ -124,17 +197,18 @@ export class DiscoveryPipeline {
       return;
     }
 
-    console.log(`[Pipeline] Final: ${enrichedCompanies.length} companies (LLM ${llmAvailable ? 'available' : 'unavailable'})`);
+    console.log(`[Pipeline] Final: ${enrichedCompanies.length} companies`);
 
-    yield { type: 'status', data: { message: 'Persisting companies...', progress: 60 } };
+    yield { type: 'status', data: { message: 'Saving results...', progress: 60 } };
 
+    // ── Step 7: Persist ──────────────────────────────────────────────────────
     const persistedCompanies: CompanyPersistResult[] = [];
     let newCount = 0;
 
     for (const enriched of enrichedCompanies) {
       try {
         const companyData = await this.transformToInsertCompany(enriched);
-        
+
         const { company, isNew } = await storage.upsertCompanyNonDestructive(
           companyData,
           searchQueryId
@@ -145,69 +219,54 @@ export class DiscoveryPipeline {
         persistedCompanies.push({
           id: company.id,
           isNew,
-          company: {
-            name: company.name,
-            country: company.country,
-            sector: company.sector,
-          }
+          company: { name: company.name, country: company.country, sector: company.sector }
         });
 
-        yield { 
-          type: 'company', 
-          data: { 
-            id: company.id,
-            name: company.name,
-            country: company.country,
-            sector: company.sector,
-            revenue: company.revenue,
-            employees: company.employees,
-            latitude: company.latitude,
-            longitude: company.longitude,
-            isNew,
-          } 
+        yield {
+          type: 'company',
+          data: {
+            id: company.id, name: company.name, country: company.country,
+            sector: company.sector, revenue: company.revenue, employees: company.employees,
+            latitude: company.latitude, longitude: company.longitude, isNew,
+          }
         };
 
+        // Extract executives scoped by intent and country
         if (llmAvailable) {
           try {
             const executives = await this.extractAndPersistExecutives(
-              company.id, 
-              enriched.canonicalName, 
-              searchContext
+              company.id,
+              enriched.canonicalName,
+              searchContext,
+              intent,
+              enriched.country.value || undefined
             );
-            
             if (executives.length > 0) {
-              yield { 
-                type: 'executives', 
-                data: { 
-                  companyId: company.id,
-                  count: executives.length,
-                } 
-              };
+              yield { type: 'executives', data: { companyId: company.id, count: executives.length } };
             }
           } catch (execError: any) {
             llmAvailable = false;
-            console.warn(`[Pipeline] Executive extraction failed, skipping remaining: ${execError.message}`);
+            console.warn(`[Pipeline] Executive extraction failed: ${execError.message}`);
           }
         }
 
       } catch (error) {
-        console.error(`[Pipeline] Failed to persist company "${enriched.canonicalName}":`, error);
+        console.error(`[Pipeline] Failed to persist "${enriched.canonicalName}":`, error);
       }
     }
 
     await storage.updateSearchQueryResultCount(searchQueryId, persistedCompanies.length);
 
     yield { type: 'status', data: { message: 'Search complete', progress: 100 } };
-
-    yield { 
-      type: 'complete', 
-      data: { 
+    yield {
+      type: 'complete',
+      data: {
         status: 'complete',
         companiesFound: enrichedCompanies.length,
         companiesPersisted: persistedCompanies.length,
         newCompanies: newCount,
         searchQueryId,
-      } 
+      }
     };
   }
 
@@ -250,15 +309,16 @@ export class DiscoveryPipeline {
   private async extractAndPersistExecutives(
     companyId: number,
     companyName: string,
-    searchContext: string
+    searchContext: string,
+    intent: QueryIntent,
+    country?: string
   ): Promise<any[]> {
     try {
-      const executives = await extractExecutivesForCompany(companyName, searchContext);
+      const executives = await extractExecutivesForCompany(companyName, searchContext, intent, country);
       const persisted = [];
 
       for (const exec of executives) {
         if (!exec.name || exec.name.length < 2) continue;
-
         const executiveData: InsertExecutive = {
           companyId,
           name: exec.name,
@@ -266,7 +326,6 @@ export class DiscoveryPipeline {
           source: exec.sourceUrl || 'discovery',
           confidence: exec.confidence,
         };
-
         try {
           const newExec = await storage.createExecutiveFromDiscovery(executiveData);
           persisted.push(newExec);
@@ -285,9 +344,7 @@ export class DiscoveryPipeline {
 
 export function createDiscoveryPipeline(): DiscoveryPipeline | null {
   const searchProvider = createSerperAdapter();
-  if (!searchProvider) {
-    return null;
-  }
+  if (!searchProvider) return null;
   return new DiscoveryPipeline({ searchProvider });
 }
 
@@ -301,6 +358,5 @@ export async function* runDiscoveryPipeline(
     yield { type: 'error', data: { message: 'Search not configured', code: 'NOT_CONFIGURED' } };
     return;
   }
-
   yield* pipeline.execute(query, limit, searchQueryId);
 }

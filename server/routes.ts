@@ -83,9 +83,6 @@ import {
   parseSearchQuery, 
   generateSearchUniqueKey
 } from "./services/discovery";
-import { 
-  discoverWithTavilyResearch
-} from "./services/retrievalDiscovery";
 import { webSearchService } from "./services/webSearch";
 import { 
   enrichExecutive, 
@@ -104,7 +101,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
   app.get("/api/companies", async (req, res) => {
     try {
       const companies = await storage.getAllCompanies();
@@ -253,7 +250,7 @@ export async function registerRoutes(
   app.post("/api/executives/bulk-import", async (req, res) => {
     try {
       const { searchQueryId, mappings, records } = req.body;
-      
+
       if (!searchQueryId || !mappings || !records || !Array.isArray(records)) {
         return res.status(400).json({ error: "Missing required fields: searchQueryId, mappings, records" });
       }
@@ -312,7 +309,7 @@ export async function registerRoutes(
           }
 
           let companyId: number | null = null;
-          
+
           if (companyName) {
             const lowerName = companyName.toLowerCase();
             if (companyMap.has(lowerName)) {
@@ -430,10 +427,10 @@ export async function registerRoutes(
       if (!req.file) {
         return res.status(400).json({ error: "No image file provided" });
       }
-      
+
       const imageUrl = `/uploads/${req.file.filename}`;
       await storage.updateExecutiveManual(id, { imageUrl });
-      
+
       res.json({ imageUrl });
     } catch (error) {
       console.error("Error uploading executive image:", error);
@@ -446,7 +443,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(String(req.params.id));
       const { sourceText, model = 'meta-llama/llama-3.3-70b-instruct:free' } = req.body;
-      
+
       if (!sourceText || typeof sourceText !== 'string' || sourceText.trim().length === 0) {
         return res.status(400).json({ error: "Source text is required" });
       }
@@ -566,7 +563,7 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       if (!details) {
         return res.status(404).json({ error: "Executive not found" });
       }
-      
+
       const isEnriched = Boolean(details.executive.enrichmentSource || details.executive.clockworkId);
       res.json({
         executive: {
@@ -863,7 +860,7 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
     try {
       const id = parseInt(String(req.params.id));
       const { companyName, country, model } = req.body;
-      
+
       if (!companyName) {
         return res.status(400).json({ error: "Company name is required" });
       }
@@ -922,7 +919,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       const aiData = await aiResponse.json();
-      
+
       let enrichedInfo;
       try {
         let content = aiData.choices[0].message.content;
@@ -933,7 +930,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         console.error('[AI Enrich] Failed to parse response:', aiData.choices[0].message.content);
         return res.status(500).json({ error: "Failed to parse AI response - model may not support structured output" });
       }
-      
+
       await storage.updateCompanyManual(id, {
         summary: enrichedInfo.summary || null,
         coreActivity: enrichedInfo.coreActivity || null,
@@ -968,7 +965,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.post("/api/search", async (req, res) => {
     try {
       const { query } = req.body;
-      
+
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
@@ -1007,7 +1004,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let companyCount = 0;
       let discoveryError: string | null = null;
       let discoveryErrorCode: string | null = null;
-      
+
       for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id)) {
         if (event.type === 'company') {
           companyCount++;
@@ -1017,14 +1014,14 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           console.error(`[Routes] Discovery error (${discoveryErrorCode}): ${discoveryError}`);
         }
       }
-      
+
       // If we got an error and no companies, return the error
       if (discoveryError && companyCount === 0) {
         const isRateLimit = discoveryErrorCode === 'RATE_LIMIT';
         const statusCode = isRateLimit ? 429 : 500;
         return res.status(statusCode).json({ error: discoveryError });
       }
-      
+
       console.log(`[Routes] Serper discovery complete: ${companyCount} companies found`);
 
       // Step 6: Load full company data with executives from DB (pipeline already persisted)
@@ -1060,7 +1057,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   // Streaming search endpoint using Server-Sent Events
   app.get("/api/search/stream", async (req, res) => {
     const query = req.query.query as string;
-    
+
     if (!query) {
       res.status(400).json({ error: "Search query is required" });
       return;
@@ -1080,9 +1077,9 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
     try {
       console.log(`[Routes SSE] Starting streaming search: "${query}"`);
-      
+
       sendEvent('status', { message: 'Starting search...', progress: 0 });
-      
+
       // Step 1: Parse the search query (simple heuristic, no LLM)
       const { criteria, interpretation } = await parseSearchQuery(query);
       sendEvent('status', { message: 'Criteria parsed', progress: 10, interpretation });
@@ -1097,7 +1094,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         parsedCriteria: JSON.stringify(criteria),
         resultCount: 0
       });
-      
+
       sendEvent('search_created', { 
         searchQueryId: searchQuery.id, 
         query, 
@@ -1111,47 +1108,46 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         console.log(`[Routes SSE] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
       }
 
-      // Step 5: Stream companies using Tavily Research API (only option now - no LLM layer)
+      // ---------------------------------------------------------------
+      // Step 5: Run Serper discovery pipeline (streaming progress via SSE)
+      // ---------------------------------------------------------------
       let companyCount = 0;
-      
-      // Check if Tavily Research is configured
-      if (!webSearchService.isResearchConfigured()) {
-        sendEvent('error', { message: 'Tavily Research API is not configured. Please add TAVILY_API_KEY to your secrets.' });
+
+      if (!process.env.SERPER_API_KEY) {
+        sendEvent('error', { message: 'Search is not configured. Please add SERPER_API_KEY to your secrets.' });
         res.end();
         return;
       }
-      
-      console.log(`[Routes SSE] Using Tavily Research API for: "${query}"`);
-      
-      // Process the discovery stream
-      const researchStream = discoverWithTavilyResearch(criteria, searchQuery.id, query);
-      
-      for await (const event of researchStream) {
+
+      console.log(`[Routes SSE] Using Serper discovery pipeline for: "${query}"`);
+
+      const { runDiscoveryPipeline } = await import("./services/pipeline/discoveryPipeline");
+
+      sendEvent('status', { message: 'Searching...', progress: 20 });
+
+      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id)) {
         if (event.type === 'company') {
           companyCount++;
           sendEvent('company', event.data);
-        } else if (event.type === 'executive') {
-          sendEvent('executive', event.data);
-        } else if (event.type === 'source') {
-          sendEvent('source', event.data);
-        } else if (event.type === 'verification') {
-          sendEvent('verification', event.data);
-        } else if (event.type === 'status') {
-          sendEvent('status', event.data);
-        } else if (event.type === 'error') {
-          sendEvent('error', event.data);
-        } else if (event.type === 'complete') {
-          await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
-          sendEvent('complete', { 
-            ...event.data,
-            searchQueryId: searchQuery.id 
+          sendEvent('status', { 
+            message: `Found ${companyCount} companies...`, 
+            progress: Math.min(20 + companyCount * 5, 90) 
           });
+        } else if (event.type === 'error' && event.data?.message) {
+          sendEvent('error', event.data);
         }
       }
 
+      await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
+      sendEvent('complete', {
+        totalCompanies: companyCount,
+        searchQueryId: searchQuery.id
+      });
+      // ---------------------------------------------------------------
+
       console.log(`[Routes SSE] Streaming complete: ${companyCount} companies`);
       res.end();
-      
+
     } catch (error: any) {
       console.error("[Routes SSE] Error:", error);
       sendEvent('error', { message: error.message || 'Search failed' });
@@ -1175,12 +1171,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
-      
+
       const data = await storage.getFullSearchResults(searchId);
       if (!data) {
         return res.status(404).json({ error: "Search results not found" });
       }
-      
+
       const formattedCompanies = data.companies.map(company => {
         const coords = applyCoordinateFallback({
           latitude: company.latitude,
@@ -1195,7 +1191,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           executives: company.executives.map(exec => ({ ...exec }))
         };
       });
-      
+
       res.json({ results: formattedCompanies, searchQueryId: searchId });
     } catch (error) {
       console.error("Error loading search history:", error);
@@ -1209,12 +1205,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       if (isNaN(searchQueryId)) {
         return res.status(400).json({ error: "Invalid search query ID" });
       }
-      
+
       const results = await storage.getFullSearchResults(searchQueryId);
       if (!results) {
         return res.status(404).json({ error: "Search results not found" });
       }
-      
+
       const formattedCompanies = results.companies.map(company => {
         const coords = applyCoordinateFallback({
           latitude: company.latitude,
@@ -1278,7 +1274,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       if (!projectId) {
         return res.status(400).json({ error: "projectId is required" });
       }
-      
+
       const { fetchClockworkProjectPeople } = await import("./services/enrichment");
       const result = await fetchClockworkProjectPeople(projectId);
       res.json(result);
@@ -1317,15 +1313,15 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     try {
       const searchId = parseInt(req.params.searchId);
       const { clockworkProjectId } = req.body;
-      
+
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid searchId" });
       }
-      
+
       if (!clockworkProjectId) {
         return res.status(400).json({ error: "clockworkProjectId is required" });
       }
-      
+
       const updated = await storage.updateSearchQueryClockworkProject(searchId, clockworkProjectId);
       console.log(`[Clockwork] Updated search ${searchId} to use project ${clockworkProjectId}`);
       res.json(updated);
@@ -1340,14 +1336,14 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.get("/api/clockwork/diagnostics/project/:clockworkProjectId", async (req, res) => {
     try {
       const { clockworkProjectId } = req.params;
-      
+
       if (!clockworkProjectId) {
         return res.status(400).json({ error: "clockworkProjectId is required" });
       }
-      
+
       // Run orchestration with a dummy search ID to test fetch
       const matchResult = await orchestrateEnrichmentMatching(0, clockworkProjectId);
-      
+
       // Build diagnostic response
       const diagnostics = {
         ok: matchResult.fetchStatus === 'success',
@@ -1373,7 +1369,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           company: c.company
         }))
       };
-      
+
       res.json(diagnostics);
     } catch (error) {
       console.error("Error in Clockwork diagnostics:", error);
@@ -1390,14 +1386,14 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.get("/api/clockwork/explore/:clockworkProjectId", async (req, res) => {
     try {
       const { clockworkProjectId } = req.params;
-      
+
       if (!clockworkProjectId) {
         return res.status(400).json({ error: "clockworkProjectId is required" });
       }
-      
+
       console.log(`[API] Exploring Clockwork endpoints for project: ${clockworkProjectId}`);
       const result = await exploreClockworkProjectEndpoints(clockworkProjectId);
-      
+
       res.json(result);
     } catch (error) {
       console.error("Error exploring Clockwork endpoints:", error);
@@ -1414,7 +1410,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.post("/api/enrichment/match", async (req, res) => {
     try {
       const { searchId, clockworkProjectId } = req.body;
-      
+
       if (!searchId || !clockworkProjectId) {
         return res.status(400).json({ 
           error: "Both searchId and clockworkProjectId are required" 
@@ -1450,7 +1446,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.post("/api/enrichment/confirm", async (req, res) => {
     try {
       const { executiveId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
-      
+
       if (!executiveId || !clockworkData) {
         return res.status(400).json({ 
           error: "executiveId and clockworkData are required" 
@@ -1511,7 +1507,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   app.post("/api/enrichment/create-from-clockwork", async (req, res) => {
     try {
       const { companyId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
-      
+
       if (!companyId || !clockworkData || !clockworkId) {
         return res.status(400).json({ 
           error: "companyId, clockworkData, and clockworkId are required" 
@@ -1582,7 +1578,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         imageUrl,
         clockworkProjectId 
       } = req.body;
-      
+
       if (!searchId || !clockworkId || !name) {
         return res.status(400).json({ 
           error: "searchId, clockworkId, and name are required" 
@@ -1611,7 +1607,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         // Research company details using AI before creating
         console.log(`[Import] Researching company details for: ${companyName}`);
         const researchedData = await researchCompanyDetails(companyName);
-        
+
         // Check if research was successful (null means validation failed, e.g., Unknown company)
         if (researchedData) {
           // Create a new company with researched data
@@ -1636,7 +1632,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           console.log(`[Import] Company research failed for "${companyName}" - using fallback`);
         }
       }
-      
+
       // If no company found (research failed or no company name), use fallback
       if (!targetCompany) {
         targetCompany = companiesInSearch[0];
@@ -1659,7 +1655,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           break;
         }
       }
-      
+
       if (existingExec) {
         console.log(`[Import] Executive with clockworkId ${clockworkId} already exists (ID: ${existingExec.id})`);
         return res.json({
@@ -1695,10 +1691,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       try {
         const { fetchClockworkCareerHistory } = await import('./services/enrichment');
         const careerPositions = await fetchClockworkCareerHistory(clockworkId);
-        
+
         if (careerPositions.length > 0) {
           console.log(`[Import] Adding ${careerPositions.length} career history entries for ${name}`);
-          
+
           for (let i = 0; i < careerPositions.length; i++) {
             const pos = careerPositions[i];
             await storage.createCareerHistory({
@@ -1745,12 +1741,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       const { revenue = true, employees = true, executives = true } = req.body;
-      
+
       console.log(`[Routes] Starting multi-pass enrichment for ${company.name}`);
       const result = await runMultiPassEnrichment(companyId, { revenue, employees, executives });
 
       const updatedCompany = await storage.getCompanyWithExecutives(companyId);
-      
+
       res.json({
         success: true,
         company: updatedCompany,
@@ -1779,7 +1775,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       const result = await enrichSearchResults(searchQueryId);
 
       const fullResults = await storage.getFullSearchResults(searchQueryId);
-      
+
       res.json({
         success: true,
         searchQuery,

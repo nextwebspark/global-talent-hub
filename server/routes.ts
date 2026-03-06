@@ -961,6 +961,30 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
+  app.post("/api/search-queries/bulk-delete", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids array is required" });
+      }
+      let deleted = 0;
+      for (const id of ids) {
+        const searchQueryId = parseInt(String(id));
+        if (isNaN(searchQueryId)) continue;
+        const companies = await storage.getCompaniesBySearchQuery(searchQueryId);
+        for (const company of companies) {
+          await storage.deleteCompany(company.id);
+        }
+        await storage.deleteSearchQuery(searchQueryId);
+        deleted++;
+      }
+      res.json({ deleted });
+    } catch (error) {
+      console.error("Error bulk deleting projects:", error);
+      res.status(500).json({ error: "Failed to delete projects" });
+    }
+  });
+
   // Discovery Layer: Search endpoint using Serper discovery pipeline
   app.post("/api/search", async (req, res) => {
     try {

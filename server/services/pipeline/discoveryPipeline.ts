@@ -54,6 +54,79 @@ export interface DiscoveryPipelineConfig {
   searchProvider: ISearchProvider;
 }
 
+const REGION_EXPANSION: Record<string, string[]> = {
+  'middle east': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Egypt', 'Jordan', 'Lebanon'],
+  'gcc': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman'],
+  'mena': ['United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Kuwait', 'Bahrain', 'Oman', 'Egypt', 'Jordan', 'Lebanon', 'Morocco', 'Tunisia'],
+  'europe': ['United Kingdom', 'Germany', 'France', 'Switzerland', 'Italy', 'Spain', 'Netherlands'],
+  'asia': ['China', 'Japan', 'Singapore', 'Hong Kong', 'India', 'South Korea', 'Malaysia', 'Thailand', 'Indonesia'],
+  'asia pacific': ['China', 'Japan', 'Singapore', 'Hong Kong', 'India', 'South Korea', 'Australia', 'Malaysia', 'Thailand'],
+  'southeast asia': ['Singapore', 'Malaysia', 'Thailand', 'Indonesia', 'Philippines', 'Vietnam'],
+  'north america': ['United States', 'Canada'],
+  'latin america': ['Brazil', 'Mexico', 'Argentina', 'Colombia', 'Chile'],
+  'africa': ['South Africa', 'Nigeria', 'Kenya', 'Egypt', 'Morocco'],
+};
+
+const COUNTRY_TO_REGION: Record<string, string> = {
+  'united arab emirates': 'Middle East', 'saudi arabia': 'Middle East', 'qatar': 'Middle East',
+  'kuwait': 'Middle East', 'bahrain': 'Middle East', 'oman': 'Middle East',
+  'egypt': 'Middle East', 'jordan': 'Middle East', 'lebanon': 'Middle East',
+  'iraq': 'Middle East', 'morocco': 'Middle East', 'tunisia': 'Middle East',
+  'united kingdom': 'Europe', 'germany': 'Europe', 'france': 'Europe',
+  'switzerland': 'Europe', 'italy': 'Europe', 'spain': 'Europe', 'netherlands': 'Europe',
+  'china': 'Asia', 'japan': 'Asia', 'singapore': 'Asia', 'hong kong': 'Asia',
+  'india': 'Asia', 'south korea': 'Asia', 'malaysia': 'Asia', 'thailand': 'Asia',
+  'indonesia': 'Asia', 'philippines': 'Asia', 'vietnam': 'Asia', 'taiwan': 'Asia',
+  'australia': 'Asia Pacific', 'new zealand': 'Asia Pacific',
+  'united states': 'North America', 'canada': 'North America',
+  'brazil': 'Latin America', 'mexico': 'Latin America', 'argentina': 'Latin America',
+  'colombia': 'Latin America', 'chile': 'Latin America',
+  'south africa': 'Africa', 'nigeria': 'Africa', 'kenya': 'Africa',
+  'turkey': 'Europe',
+};
+
+function splitIntoRegionGroups(countries: string[]): string[][] {
+  if (countries.length <= 1) return [countries];
+
+  const broadRegions = countries.filter(c => REGION_EXPANSION[c.toLowerCase()]);
+  const specificCountries = countries.filter(c => !REGION_EXPANSION[c.toLowerCase()]);
+
+  if (broadRegions.length > 0) {
+    const groups: string[][] = [];
+    for (const region of broadRegions) {
+      groups.push([region]);
+    }
+    if (specificCountries.length > 0) {
+      const regionMap = new Map<string, string[]>();
+      for (const country of specificCountries) {
+        const region = COUNTRY_TO_REGION[country.toLowerCase()] || 'Other';
+        const existingGroup = groups.find(g => {
+          const groupRegion = REGION_EXPANSION[g[0]?.toLowerCase()];
+          return groupRegion && groupRegion.some(c => c.toLowerCase() === country.toLowerCase());
+        });
+        if (!existingGroup) {
+          if (!regionMap.has(region)) regionMap.set(region, []);
+          regionMap.get(region)!.push(country);
+        }
+      }
+      for (const [, countryList] of regionMap) {
+        groups.push(countryList);
+      }
+    }
+    return groups;
+  }
+
+  const regionMap = new Map<string, string[]>();
+  for (const country of countries) {
+    const region = COUNTRY_TO_REGION[country.toLowerCase()] || 'Other';
+    if (!regionMap.has(region)) regionMap.set(region, []);
+    regionMap.get(region)!.push(country);
+  }
+
+  if (regionMap.size <= 1) return [countries];
+  return Array.from(regionMap.values());
+}
+
 function mergeLlmIntoHeuristic(
   heuristic: EnrichedCompany[],
   llm: EnrichedCompany[],
@@ -91,6 +164,112 @@ export class DiscoveryPipeline {
     this.searchProvider = config.searchProvider;
   }
 
+  private buildRegionFocusedQuery(originalQuery: string, regionCountries: string[], allIntentCountries: string[]): string {
+    let focused = originalQuery;
+    const keepTerms = new Set(regionCountries.map(c => c.toLowerCase()));
+
+    const geographyTermsToRemove = [
+      ...Object.keys(REGION_EXPANSION),
+      ...allIntentCountries.map(c => c.toLowerCase()),
+    ].filter(term => !keepTerms.has(term));
+
+    for (const term of geographyTermsToRemove) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+      focused = focused.replace(regex, '');
+    }
+    focused = focused.replace(/,\s*,/g, ',').replace(/,\s*and\s*,/g, ',')
+      .replace(/\band\s+and\b/gi, 'and').replace(/,\s*$/g, '')
+      .replace(/^\s*,/g, '').replace(/\s+/g, ' ').trim();
+    focused = focused.replace(/\s*,\s*and\s*$/i, '').replace(/\s*,\s*$/g, '').trim();
+    return focused;
+  }
+
+  private async searchAndExtractForRegion(
+    query: string,
+    regionIntent: QueryIntent,
+    regionLabel: string,
+    regionLimit: number,
+    allIntentCountries: string[] = [],
+  ): Promise<{ companies: EnrichedCompany[]; searchContext: string; llmAvailable: boolean }> {
+    const focusedQuery = this.buildRegionFocusedQuery(query, regionIntent.countries, allIntentCountries);
+    console.log(`[Pipeline:${regionLabel}] Searching with limit=${regionLimit}, countries=${regionIntent.countries.join(', ')}, query="${focusedQuery}"`);
+
+    let searchResponse;
+    try {
+      searchResponse = await (this.searchProvider as any).searchWithAnswer?.(focusedQuery, 15, regionIntent);
+      if (!searchResponse) throw new Error('Search provider does not support searchWithAnswer');
+      console.log(`[Pipeline:${regionLabel}] Search returned ${searchResponse.results.length} results`);
+    } catch (error: any) {
+      console.error(`[Pipeline:${regionLabel}] Search failed:`, error.message);
+      return { companies: [], searchContext: '', llmAvailable: true };
+    }
+
+    if (searchResponse.results.length === 0) {
+      return { companies: [], searchContext: '', llmAvailable: true };
+    }
+
+    let preExtractedNames: string[] = [];
+    try {
+      preExtractedNames = await preProcessListArticles(searchResponse.results, query, regionIntent);
+      if (preExtractedNames.length > 0) {
+        console.log(`[Pipeline:${regionLabel}] Pre-extracted: ${preExtractedNames.join(', ')}`);
+      }
+    } catch (preError: any) {
+      console.warn(`[Pipeline:${regionLabel}] Pre-processing failed: ${preError.message}`);
+    }
+
+    const heuristicCompanies = extractCompaniesFromSearchResults(
+      searchResponse.results,
+      query,
+      regionIntent,
+      regionLimit,
+      searchResponse.answer,
+      preExtractedNames
+    );
+
+    let fetchedPages: Array<{ url: string; content: string; sourceType: string; score: number }> = [];
+    try {
+      fetchedPages = await fetchAndClassifyPages(searchResponse.results as any, 8);
+      console.log(`[Pipeline:${regionLabel}] Fetched ${fetchedPages.length} pages for extraction`);
+    } catch (fetchError: any) {
+      console.warn(`[Pipeline:${regionLabel}] Page fetching failed: ${fetchError.message}`);
+    }
+
+    let searchContext = '';
+    if (preExtractedNames.length > 0) {
+      searchContext += `=== KNOWN COMPANIES FROM ARTICLES ===\n${preExtractedNames.join('\n')}\n\n`;
+    }
+    if (searchResponse.answer) {
+      searchContext += `=== AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
+    }
+    searchContext += '=== SOURCE DETAILS ===\n';
+    searchContext += searchResponse.results.map((r: any, i: number) => {
+      let content = `[${i + 1}] ${r.title}\nURL: ${r.url}\nSource type: ${r.sourceType || 'unknown'}\nScore: ${r.score || 1}\nSummary: ${r.snippet}`;
+      if (r.rawContent && r.rawContent.length > 100) {
+        content += `\nContent:\n${r.rawContent.substring(0, 2000)}`;
+      }
+      return content;
+    }).join('\n\n');
+
+    let enrichedCompanies: EnrichedCompany[] = heuristicCompanies;
+    let llmAvailable = true;
+
+    try {
+      const llmCompanies = await extractCompaniesNonDestructive(searchContext, focusedQuery, regionIntent, regionLimit, fetchedPages);
+      if (llmCompanies.length > 0) {
+        console.log(`[Pipeline:${regionLabel}] LLM found ${llmCompanies.length}, merging with ${heuristicCompanies.length} heuristic`);
+        enrichedCompanies = mergeLlmIntoHeuristic(heuristicCompanies, llmCompanies, regionLimit);
+      }
+    } catch (llmError: any) {
+      llmAvailable = false;
+      console.warn(`[Pipeline:${regionLabel}] LLM unavailable: ${llmError.message}`);
+    }
+
+    console.log(`[Pipeline:${regionLabel}] Extracted ${enrichedCompanies.length} companies`);
+    return { companies: enrichedCompanies, searchContext, llmAvailable };
+  }
+
   async *execute(
     query: string,
     limit: number,
@@ -99,9 +278,6 @@ export class DiscoveryPipeline {
 
     yield { type: 'status', data: { message: 'Understanding your search...', progress: 5 } };
 
-    // ── Step 0: Extract query intent ─────────────────────────────────────────
-    // This runs first, before any search. Every downstream step uses this
-    // intent object to make filtering decisions — nothing is hardcoded.
     let intent: QueryIntent;
     try {
       intent = await extractQueryIntent(query);
@@ -128,109 +304,64 @@ export class DiscoveryPipeline {
       };
     }
 
+    const regionGroups = splitIntoRegionGroups(intent.countries);
+    const isMultiRegion = regionGroups.length > 1;
+
+    if (isMultiRegion) {
+      console.log(`[Pipeline] Multi-region search detected: ${regionGroups.length} region groups: ${regionGroups.map(g => g.join('/')).join(' | ')}`);
+    }
+
     yield { type: 'status', data: { message: 'Searching...', progress: 10 } };
 
-    // ── Step 1: Search — pass intent so queries are optimised before hitting Serper
-    let searchResponse;
-    try {
-      searchResponse = await (this.searchProvider as any).searchWithAnswer?.(query, 15, intent);
-      if (!searchResponse) throw new Error('Search provider does not support searchWithAnswer');
-      console.log(`[Pipeline] Search returned ${searchResponse.results.length} results`);
-    } catch (error: any) {
-      console.error('[Pipeline] Search failed:', error);
-      yield { type: 'error', data: { message: error.message || 'Search failed', code: 'SEARCH_FAILED' } };
-      return;
-    }
-
-    if (searchResponse.results.length === 0) {
-      yield { type: 'error', data: { message: 'No search results found', code: 'NO_RESULTS' } };
-      return;
-    }
-
-    yield { type: 'source', data: { count: searchResponse.results.length } };
-
-    // ── Step 2: Pre-process list articles using intent ───────────────────────
-    yield { type: 'status', data: { message: 'Scanning articles for company names...', progress: 20 } };
-
-    let preExtractedNames: string[] = [];
-    try {
-      preExtractedNames = await preProcessListArticles(searchResponse.results, query, intent);
-      if (preExtractedNames.length > 0) {
-        console.log(`[Pipeline] Pre-extracted: ${preExtractedNames.join(', ')}`);
-      }
-    } catch (preError: any) {
-      console.warn(`[Pipeline] Pre-processing failed, continuing: ${preError.message}`);
-    }
-
-    // ── Step 3: Heuristic extraction with intent ─────────────────────────────
-    yield { type: 'status', data: { message: 'Extracting company information...', progress: 35 } };
-
-    const heuristicCompanies = extractCompaniesFromSearchResults(
-      searchResponse.results,
-      query,
-      intent,
-      limit,
-      searchResponse.answer,
-      preExtractedNames
-    );
-
-    // ── Step 4: Fetch full page content for high-score URLs ────────────────
-    yield { type: 'status', data: { message: 'Fetching source pages...', progress: 40 } };
-
-    let fetchedPages: Array<{ url: string; content: string; sourceType: string; score: number }> = [];
-    try {
-      fetchedPages = await fetchAndClassifyPages(searchResponse.results as any, 8);
-      console.log(`[Pipeline] Fetched ${fetchedPages.length} pages for extraction`);
-    } catch (fetchError: any) {
-      console.warn(`[Pipeline] Page fetching failed, continuing with snippets: ${fetchError.message}`);
-    }
-
-    // ── Step 5: Build search context for LLM enrichment ─────────────────────
-    let searchContext = '';
-
-    if (preExtractedNames.length > 0) {
-      searchContext += `=== KNOWN COMPANIES FROM ARTICLES ===\n${preExtractedNames.join('\n')}\n\n`;
-    }
-    if (searchResponse.answer) {
-      searchContext += `=== AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
-    }
-    searchContext += '=== SOURCE DETAILS ===\n';
-    searchContext += searchResponse.results.map((r: any, i: number) => {
-      let content = `[${i + 1}] ${r.title}\nURL: ${r.url}\nSource type: ${r.sourceType || 'unknown'}\nScore: ${r.score || 1}\nSummary: ${r.snippet}`;
-      if (r.rawContent && r.rawContent.length > 100) {
-        content += `\nContent:\n${r.rawContent.substring(0, 2000)}`;
-      }
-      return content;
-    }).join('\n\n');
-
-    // ── Step 6: LLM enrichment using intent + fetched pages ─────────────────
-    yield { type: 'status', data: { message: 'Analyzing sources with AI...', progress: 50 } };
-
-    let enrichedCompanies: EnrichedCompany[] = heuristicCompanies;
+    let allEnrichedCompanies: EnrichedCompany[] = [];
+    let combinedSearchContext = '';
     let llmAvailable = true;
 
-    try {
-      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, intent, limit, fetchedPages);
-      if (llmCompanies.length > 0) {
-        console.log(`[Pipeline] LLM found ${llmCompanies.length}, merging with ${heuristicCompanies.length} heuristic`);
-        enrichedCompanies = mergeLlmIntoHeuristic(heuristicCompanies, llmCompanies, limit);
+    if (isMultiRegion) {
+      const perRegionLimit = Math.max(3, Math.ceil(limit / regionGroups.length));
+      let progressBase = 10;
+      const progressPerRegion = Math.floor(40 / regionGroups.length);
+
+      for (let i = 0; i < regionGroups.length; i++) {
+        const group = regionGroups[i];
+        const regionLabel = group.join('/');
+        const regionIntent: QueryIntent = {
+          ...intent,
+          countries: group,
+        };
+
+        yield { type: 'status', data: { message: `Searching ${regionLabel}...`, progress: progressBase + (i * progressPerRegion) } };
+
+        const result = await this.searchAndExtractForRegion(query, regionIntent, regionLabel, perRegionLimit, intent.countries);
+        allEnrichedCompanies.push(...result.companies);
+        if (result.searchContext) combinedSearchContext += `\n=== REGION: ${regionLabel} ===\n${result.searchContext}\n`;
+        if (!result.llmAvailable) llmAvailable = false;
       }
-    } catch (llmError: any) {
-      llmAvailable = false;
-      console.warn(`[Pipeline] LLM unavailable: ${llmError.message}`);
+
+      const deduped = new Map<string, EnrichedCompany>();
+      for (const company of allEnrichedCompanies) {
+        const key = company.canonicalName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!deduped.has(key) || (company.overallConfidence > (deduped.get(key)?.overallConfidence ?? 0))) {
+          deduped.set(key, company);
+        }
+      }
+      allEnrichedCompanies = Array.from(deduped.values()).slice(0, limit);
+      console.log(`[Pipeline] Multi-region merged: ${allEnrichedCompanies.length} unique companies from ${regionGroups.length} regions`);
+
+    } else {
+      const result = await this.searchAndExtractForRegion(query, intent, intent.countries.join('/') || 'global', limit);
+      allEnrichedCompanies = result.companies;
+      combinedSearchContext = result.searchContext;
+      llmAvailable = result.llmAvailable;
     }
 
-    // ── Step 6: Final intent validation pass ────────────────────────────────
-    // For any company that made it through but looks ambiguous, run a final
-    // LLM check against the intent. This catches edge cases that structural
-    // filters can't handle.
+    yield { type: 'source', data: { count: allEnrichedCompanies.length } };
+
     if (intent.excludeTypes.length > 0 && llmAvailable) {
       yield { type: 'status', data: { message: 'Validating results...', progress: 55 } };
 
       const validated: EnrichedCompany[] = [];
-      for (const company of enrichedCompanies) {
-        // Only run the expensive LLM check on companies that look potentially
-        // ambiguous — skip if it already has a high confidence score
+      for (const company of allEnrichedCompanies) {
         if (company.overallConfidence >= 7) {
           validated.push(company);
           continue;
@@ -243,26 +374,25 @@ export class DiscoveryPipeline {
             console.log(`[Pipeline] Final validation rejected: ${company.canonicalName}`);
           }
         } catch {
-          validated.push(company); // Fail open on error
+          validated.push(company);
         }
       }
-      enrichedCompanies = validated;
+      allEnrichedCompanies = validated;
     }
 
-    if (enrichedCompanies.length === 0) {
+    if (allEnrichedCompanies.length === 0) {
       yield { type: 'error', data: { message: 'Could not extract company information', code: 'EXTRACTION_FAILED' } };
       return;
     }
 
-    console.log(`[Pipeline] Final: ${enrichedCompanies.length} companies`);
+    console.log(`[Pipeline] Final: ${allEnrichedCompanies.length} companies`);
 
     yield { type: 'status', data: { message: 'Saving results...', progress: 60 } };
 
-    // ── Step 7: Persist ──────────────────────────────────────────────────────
     const persistedCompanies: CompanyPersistResult[] = [];
     let newCount = 0;
 
-    for (const enriched of enrichedCompanies) {
+    for (const enriched of allEnrichedCompanies) {
       try {
         const companyData = await this.transformToInsertCompany(enriched);
 
@@ -297,13 +427,12 @@ export class DiscoveryPipeline {
           }
         };
 
-        // Extract executives scoped by intent and country
         if (llmAvailable) {
           try {
             const executives = await this.extractAndPersistExecutives(
               company.id,
               enriched.canonicalName,
-              searchContext,
+              combinedSearchContext,
               intent,
               enriched.country.value || undefined
             );
@@ -328,7 +457,7 @@ export class DiscoveryPipeline {
       type: 'complete',
       data: {
         status: 'complete',
-        companiesFound: enrichedCompanies.length,
+        companiesFound: allEnrichedCompanies.length,
         companiesPersisted: persistedCompanies.length,
         newCompanies: newCount,
         searchQueryId,

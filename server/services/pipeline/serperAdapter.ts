@@ -300,8 +300,27 @@ function detectGl(query: string): string {
   return 'us';
 }
 
+const REGION_GL_MAP: Record<string, string> = {
+  'middle east': 'ae',
+  'gcc': 'ae',
+  'mena': 'ae',
+  'gulf': 'ae',
+  'europe': 'gb',
+  'asia': 'sg',
+  'asia pacific': 'sg',
+  'southeast asia': 'sg',
+  'north america': 'us',
+  'latin america': 'br',
+  'africa': 'za',
+};
+
 function detectGlFromIntent(intent: QueryIntent): string {
   if (intent.countries.length === 1) {
+    const lower = intent.countries[0].toLowerCase();
+    if (REGION_GL_MAP[lower]) return REGION_GL_MAP[lower];
+    return detectGl(lower);
+  }
+  if (intent.countries.length === 2 || intent.countries.length === 3) {
     return detectGl(intent.countries[0].toLowerCase());
   }
   return 'us';
@@ -365,6 +384,24 @@ function deduplicateNames(names: string[]): string[] {
   return Array.from(seen.values());
 }
 
+function getNewsOutletsForRegion(countries: string[]): string {
+  const lower = countries.map(c => c.toLowerCase());
+  const isMiddleEast = lower.some(c =>
+    ['saudi arabia', 'uae', 'united arab emirates', 'qatar', 'kuwait', 'bahrain', 'oman', 'egypt', 'jordan', 'middle east', 'gcc', 'mena', 'gulf'].includes(c)
+  );
+  const isAsia = lower.some(c =>
+    ['china', 'japan', 'singapore', 'hong kong', 'india', 'south korea', 'malaysia', 'thailand', 'indonesia', 'asia', 'asia pacific', 'southeast asia'].includes(c)
+  );
+  const isEurope = lower.some(c =>
+    ['united kingdom', 'uk', 'germany', 'france', 'switzerland', 'italy', 'spain', 'netherlands', 'europe'].includes(c)
+  );
+
+  if (isMiddleEast) return 'Arabian Business Zawya Reuters Gulf Business';
+  if (isAsia) return 'Nikkei Asia Business Times South China Morning Post';
+  if (isEurope) return 'Financial Times Reuters Bloomberg European CEO';
+  return 'Reuters Bloomberg Financial Times';
+}
+
 function build3PassQueries(originalQuery: string, intent: QueryIntent): { pass1: string; pass2: string; pass3: string } {
   const countries = intent.countries.length > 0 ? intent.countries : extractCountriesFromQuery(originalQuery);
   const countryStr = countries.join(' ');
@@ -374,9 +411,7 @@ function build3PassQueries(originalQuery: string, intent: QueryIntent): { pass1:
   const pass1 = `top largest ${core} ${countryStr} list 2024 2025`.replace(/\s+/g, ' ').trim();
   const pass2 = `${core} ${countryStr} annual report official site revenue`.replace(/\s+/g, ' ').trim();
 
-  const newsOutlets = countries.some(c => 
-    ['saudi arabia', 'uae', 'united arab emirates', 'qatar', 'kuwait', 'bahrain', 'oman', 'egypt', 'jordan'].includes(c.toLowerCase())
-  ) ? 'Arabian Business Zawya Reuters' : 'Reuters Bloomberg Financial Times';
+  const newsOutlets = getNewsOutletsForRegion(countries);
   const pass3 = `${core} ${countryStr} ${newsOutlets}`.replace(/\s+/g, ' ').trim();
 
   return { pass1, pass2, pass3 };

@@ -597,13 +597,17 @@ export async function extractCompaniesNonDestructive(
     }
   }
 
+  const regionFocus = intent.countries.length > 0 && intent.countries.length <= 12
+    ? `\nREGION FOCUS: You MUST only extract companies headquartered in or primarily operating in these specific countries: ${intent.countries.join(', ')}. Do NOT include companies from other countries or regions even if they appear in the search results. If a company's headquarters is unclear, only include it if evidence suggests it operates primarily in the listed countries.\n`
+    : '';
+
   const userPrompt = `QUERY: ${query}
 
 ${intentBlock}
-
+${regionFocus}
 ${searchContext}${pageContext}
 
-Extract up to ${limit} companies matching the intent.
+Extract up to ${limit} companies matching the intent.${regionFocus ? ` Only include companies from: ${intent.countries.join(', ')}.` : ''}
 For each company use the field-level confidence schema from your instructions.
 Return JSON: { "companies": [ ... ] }`;
 

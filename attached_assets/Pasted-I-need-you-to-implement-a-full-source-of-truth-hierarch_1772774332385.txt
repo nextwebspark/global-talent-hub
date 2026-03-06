@@ -1,0 +1,90 @@
+I need you to implement a full source of truth hierarchy into the search and extraction pipeline. This affects how Serper searches, how pages are fetched, how Claude extracts data, and how data is stored. Here are the complete instructions:
+
+Part 1 — Serper Search Layer
+When a user enters a query, run three Serper searches in sequence, not just one:
+Search 1 — Curated lists (highest priority):
+Add "top list" framing to the query. Example: if user types "FMCG distributors Saudi Arabia", search for:
+top largest FMCG distributors Saudi Arabia list 2024 2025
+Search 2 — Official sources:
+Frame the query to find official company and regulatory sources:
+FMCG distributors Saudi Arabia annual report official site revenue
+Search 3 — News and trade press:
+Frame the query to find recent news coverage:
+FMCG distributors Saudi Arabia Arabian Business Zawya Reuters
+Score every URL returned across all three searches:
+
+Score 2: List articles (title contains "top", "best", "largest", numbers like "15" or "20")
+Score 2: Official company domains (.com.sa, company IR pages, annual reports)
+Score 1: News and trade press (arabianbusiness.com, zawya.com, reuters.com, bloomberg.com)
+Score 1: Business directories (kompass.com, crunchbase.com, dnb.com)
+Score 0: Social media, job sites, forums (linkedin.com, facebook.com, glassdoor.com, indeed.com)
+
+Process Score 2 URLs first, then Score 1. Never process Score 0 URLs.
+
+Part 2 — Page Fetch Layer
+For each URL scored 1 or 2, fetch the full page content. Apply these rules:
+
+If the URL is a list article (Score 2, list title): extract ALL company names mentioned
+If the URL is a company's own website: extract company name, description, revenue, employee count, executives if visible
+If the URL is a news article: extract any revenue figures, employee counts, or executive names mentioned
+If the page returns an error or is paywalled: skip it and move to the next URL
+Maximum fetch 8 URLs per search to control costs
+
+
+Part 3 — Claude Extraction Prompt
+When sending fetched content to Claude for extraction, always use this system prompt:
+You are a precise company data extraction specialist. You extract structured company and executive data from web content.
+
+RULES:
+1. Only extract data you can directly see in the provided content. Never guess or infer.
+2. For every field you extract, note the source URL it came from.
+3. Assign a confidence score to every field:
+   - 0.95: Data from official company documents, annual reports, regulatory filings
+   - 0.85: Data from industry curated lists or trade publications
+   - 0.70: Data from reputable news (Reuters, Bloomberg, Arabian Business)
+   - 0.60: Data from business directories or aggregators
+   - 0.40: Data from blogs or unverified sources
+4. If the same field appears in multiple sources, use the version with the highest confidence score.
+5. If a field is not explicitly mentioned in the content, set it to null. Never fabricate.
+6. For financial data (revenue, employees), only extract if a specific number is stated. Never estimate.
+7. Return ONLY valid JSON. No explanation text.
+
+SCHEMA to return for each company:
+{
+  "company_name": { "value": string, "confidence": number, "source_url": string },
+  "country": { "value": string, "confidence": number, "source_url": string },
+  "sector": { "value": string, "confidence": number, "source_url": string },
+  "description": { "value": string or null, "confidence": number, "source_url": string },
+  "revenue": { "value": number or null, "currency": string or null, "confidence": number, "source_url": string },
+  "employee_count": { "value": number or null, "confidence": number, "source_url": string },
+  "founded_year": { "value": number or null, "confidence": number, "source_url": string },
+  "source_type": "official" | "industry_list" | "news" | "directory" | "other"
+}
+
+SCHEMA to return for each executive (only if explicitly visible on the page):
+{
+  "executive_name": { "value": string, "confidence": number, "source_url": string },
+  "executive_title": { "value": string, "confidence": number, "source_url": string },
+  "company_name": string,
+  "source_type": "official" | "industry_list" | "news" | "directory" | "other"
+}
+
+Part 4 — Database Merge Rules
+When saving extracted data to PostgreSQL, apply these merge rules:
+
+Manually edited fields are sacred — add a manually_edited_fields array to every company and executive record. If a field appears in this array, NEVER overwrite it from any pipeline run.
+Confidence wins — if a field already has a value with confidence score X, only overwrite it if the new value has confidence score strictly greater than X.
+Null fields always get filled — if existing value is null, always accept new pipeline data.
+Executives are additive only — never delete existing executives. Only add new ones that don't already exist (match by name + company). Deletions are manual only.
+Log every merge decision — create a pipeline_log table that records:
+
+timestamp
+company_name
+field_name
+old_value
+new_value
+decision (updated / kept / skipped)
+reason (e.g. "kept: existing confidence 0.95 > new confidence 0.60")
+
+
+Add data_provenance field to every company record — a JSON object storing the full history of where each field's data came from.

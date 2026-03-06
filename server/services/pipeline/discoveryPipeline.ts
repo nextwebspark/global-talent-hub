@@ -1,7 +1,7 @@
 import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
 import { SerperAdapter, createSerperAdapter } from './serperAdapter';
-import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany, preProcessListArticles } from './nonDropExtraction';
+import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany, preProcessListArticles, fetchAndClassifyPages } from './nonDropExtraction';
 import { extractQueryIntent, checkCompanyAgainstIntent } from './queryIntent';
 import type { QueryIntent } from './queryIntent';
 import { applyCoordinateFallback } from '../coordinateFallback';
@@ -174,7 +174,18 @@ export class DiscoveryPipeline {
       preExtractedNames
     );
 
-    // ── Step 4: Build search context for LLM enrichment ─────────────────────
+    // ── Step 4: Fetch full page content for high-score URLs ────────────────
+    yield { type: 'status', data: { message: 'Fetching source pages...', progress: 40 } };
+
+    let fetchedPages: Array<{ url: string; content: string; sourceType: string; score: number }> = [];
+    try {
+      fetchedPages = await fetchAndClassifyPages(searchResponse.results as any, 8);
+      console.log(`[Pipeline] Fetched ${fetchedPages.length} pages for extraction`);
+    } catch (fetchError: any) {
+      console.warn(`[Pipeline] Page fetching failed, continuing with snippets: ${fetchError.message}`);
+    }
+
+    // ── Step 5: Build search context for LLM enrichment ─────────────────────
     let searchContext = '';
 
     if (preExtractedNames.length > 0) {
@@ -184,20 +195,22 @@ export class DiscoveryPipeline {
       searchContext += `=== AI ANALYSIS ===\n${searchResponse.answer}\n\n`;
     }
     searchContext += '=== SOURCE DETAILS ===\n';
-    searchContext += searchResponse.results.map((r, i) => {
-      let content = `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`;
+    searchContext += searchResponse.results.map((r: any, i: number) => {
+      let content = `[${i + 1}] ${r.title}\nURL: ${r.url}\nSource type: ${r.sourceType || 'unknown'}\nScore: ${r.score || 1}\nSummary: ${r.snippet}`;
       if (r.rawContent && r.rawContent.length > 100) {
         content += `\nContent:\n${r.rawContent.substring(0, 2000)}`;
       }
       return content;
     }).join('\n\n');
 
-    // ── Step 5: LLM enrichment using intent ─────────────────────────────────
+    // ── Step 6: LLM enrichment using intent + fetched pages ─────────────────
+    yield { type: 'status', data: { message: 'Analyzing sources with AI...', progress: 50 } };
+
     let enrichedCompanies: EnrichedCompany[] = heuristicCompanies;
     let llmAvailable = true;
 
     try {
-      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, intent, limit);
+      const llmCompanies = await extractCompaniesNonDestructive(searchContext, query, intent, limit, fetchedPages);
       if (llmCompanies.length > 0) {
         console.log(`[Pipeline] LLM found ${llmCompanies.length}, merging with ${heuristicCompanies.length} heuristic`);
         enrichedCompanies = mergeLlmIntoHeuristic(heuristicCompanies, llmCompanies, limit);
@@ -253,9 +266,18 @@ export class DiscoveryPipeline {
       try {
         const companyData = await this.transformToInsertCompany(enriched);
 
+        const fieldConfidences: Record<string, number> = {};
+        if (enriched.revenue.confidence > 0) fieldConfidences['revenue'] = enriched.revenue.confidence;
+        if (enriched.employees.confidence > 0) fieldConfidences['employees'] = enriched.employees.confidence;
+        if (enriched.country.confidence > 0) fieldConfidences['country'] = enriched.country.confidence;
+        if (enriched.sector.confidence > 0) fieldConfidences['sector'] = enriched.sector.confidence;
+        if (enriched.summary.confidence > 0) fieldConfidences['summary'] = enriched.summary.confidence;
+        if (enriched.website.confidence > 0) fieldConfidences['website'] = enriched.website.confidence;
+
         const { company, isNew } = await storage.upsertCompanyNonDestructive(
           companyData,
-          searchQueryId
+          searchQueryId,
+          fieldConfidences
         );
 
         if (isNew) newCount++;

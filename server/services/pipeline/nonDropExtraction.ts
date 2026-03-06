@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { EnrichedCompany, ExtractedExecutive, FieldValue } from './types';
 import type { QueryIntent } from './queryIntent';
 import { buildInclusionPromptBlock } from './queryIntent';
+import type { ScoredResult } from './serperAdapter';
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -66,32 +67,6 @@ function createEmptyFieldValue<T>(): FieldValue<T> {
   return { value: null, sourceUrl: null, confidence: 0, lastUpdated: new Date() };
 }
 
-function parseFieldSafely<T>(
-  data: any,
-  fieldName: string,
-  parser: (val: any) => T | null
-): FieldValue<T> {
-  try {
-    const fieldData = data[fieldName];
-    if (fieldData === undefined || fieldData === null) return createEmptyFieldValue<T>();
-    const value = parser(fieldData);
-    return {
-      value,
-      sourceUrl: data[`${fieldName}Source`] || data.sourceUrl || null,
-      confidence: typeof data[`${fieldName}Confidence`] === 'number'
-        ? data[`${fieldName}Confidence`] : (data.confidence || 5),
-      lastUpdated: new Date(),
-    };
-  } catch (error) {
-    console.warn(`[NonDropExtraction] Failed to parse field ${fieldName}:`, error);
-    return createEmptyFieldValue<T>();
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// fetchArticleContent — fetches real article HTML so the LLM has actual
-// content to work with, not just a 150-char snippet
-// ─────────────────────────────────────────────────────────────────────────────
 async function fetchArticleContent(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -114,7 +89,7 @@ async function fetchArticleContent(url: string): Promise<string | null> {
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/\s{2,}/g, ' ').trim();
-    return text.substring(0, 6000);
+    return text.substring(0, 8000);
   } catch (e) {
     console.warn(`[NonDropExtraction] Failed to fetch article: ${url}`);
     return null;
@@ -136,47 +111,116 @@ function parseJsonResponse(content: string): any {
   }
 }
 
+function confidenceToScale10(confidence: number): number {
+  return Math.round(confidence * 10);
+}
+
 function transformToEnrichedCompany(raw: any): EnrichedCompany | null {
-  if (!raw.name || typeof raw.name !== 'string') return null;
-  const sourceUrls = Array.isArray(raw.sourceUrls) ? raw.sourceUrls :
-    (raw.sourceUrl ? [raw.sourceUrl] : []);
+  const getName = (field: any): string | null => {
+    if (typeof field === 'string') return field;
+    if (field && typeof field === 'object' && field.value) return String(field.value);
+    return null;
+  };
+  const getFieldData = (field: any): { value: any; confidence: number; sourceUrl: string | null } => {
+    if (field && typeof field === 'object' && 'value' in field) {
+      return {
+        value: field.value,
+        confidence: typeof field.confidence === 'number' ? field.confidence : 0.5,
+        sourceUrl: field.source_url || field.sourceUrl || null,
+      };
+    }
+    return { value: field, confidence: 0.5, sourceUrl: null };
+  };
+
+  const name = getName(raw.company_name) || getName(raw.name);
+  if (!name || typeof name !== 'string') return null;
+
+  const now = new Date();
+
+  const makeField = <T>(fieldData: any, parser?: (v: any) => T | null): FieldValue<T> => {
+    const fd = getFieldData(fieldData);
+    let value: T | null = null;
+    if (fd.value !== null && fd.value !== undefined) {
+      value = parser ? parser(fd.value) : fd.value as T;
+    }
+    return {
+      value,
+      sourceUrl: fd.sourceUrl,
+      confidence: confidenceToScale10(fd.confidence),
+      lastUpdated: now,
+    };
+  };
+
+  const countryField = raw.country || null;
+  const sectorField = raw.sector || null;
+  const descField = raw.description || raw.summary || null;
+  const revenueField = raw.revenue || null;
+  const employeeField = raw.employee_count || raw.employees || null;
+
+  const revenueData = getFieldData(revenueField);
+  let revenueValue: number | null = null;
+  if (revenueData.value !== null && revenueData.value !== undefined) {
+    if (typeof revenueData.value === 'number') revenueValue = revenueData.value;
+    else {
+      const n = parseFloat(String(revenueData.value).replace(/[^0-9.-]/g, ''));
+      if (!isNaN(n)) revenueValue = n;
+    }
+  }
+
+  const revenueCurrencyData = getFieldData(revenueField);
+  const revenueCurrency = (raw.revenue && typeof raw.revenue === 'object' && raw.revenue.currency) || null;
+
+  const sourceUrls: string[] = [];
+  const collectSource = (field: any) => {
+    if (field && typeof field === 'object' && field.source_url) sourceUrls.push(field.source_url);
+  };
+  collectSource(raw.company_name); collectSource(raw.country); collectSource(raw.sector);
+  collectSource(raw.revenue); collectSource(raw.employee_count);
+
+  const sourceType = raw.source_type || 'other';
+  let overallConfidence = 5;
+  if (sourceType === 'official') overallConfidence = 10;
+  else if (sourceType === 'industry_list') overallConfidence = 9;
+  else if (sourceType === 'news') overallConfidence = 7;
+  else if (sourceType === 'directory') overallConfidence = 6;
+
   return {
-    canonicalName: raw.name.trim(),
+    canonicalName: name.trim(),
     aliases: [],
-    sector: parseFieldSafely(raw, 'sector', (v) => String(v)),
-    businessType: parseFieldSafely(raw, 'businessType', (v) => String(v)),
-    country: parseFieldSafely(raw, 'country', (v) => String(v)),
-    city: parseFieldSafely(raw, 'city', (v) => String(v)),
-    streetAddress: parseFieldSafely(raw, 'streetAddress', (v) => String(v)),
-    latitude: parseFieldSafely(raw, 'latitude', (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; }),
-    longitude: parseFieldSafely(raw, 'longitude', (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; }),
+    sector: makeField(sectorField, (v) => String(v)),
+    businessType: makeField(raw.businessType || raw.business_type, (v) => String(v)),
+    country: makeField(countryField, (v) => String(v)),
+    city: makeField(raw.city, (v) => String(v)),
+    streetAddress: makeField(raw.streetAddress, (v) => String(v)),
+    latitude: makeField(raw.latitude, (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; }),
+    longitude: makeField(raw.longitude, (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; }),
     revenue: {
-      ...parseFieldSafely(raw, 'revenue', (v) => {
-        if (typeof v === 'number') return v;
-        const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
-        return isNaN(n) ? null : n;
-      }),
-      currency: raw.revenueCurrency || null,
-      fiscalYear: raw.revenueFiscalYear ? parseInt(raw.revenueFiscalYear) : null,
+      value: revenueValue,
+      sourceUrl: revenueData.sourceUrl,
+      confidence: confidenceToScale10(revenueData.confidence),
+      lastUpdated: now,
+      currency: revenueCurrency,
+      fiscalYear: raw.founded_year ? parseInt(raw.founded_year) : null,
     },
-    employees: parseFieldSafely(raw, 'employees', (v) => {
+    employees: makeField(employeeField, (v) => {
       const n = parseInt(String(v).replace(/[^0-9]/g, ''));
       return isNaN(n) ? null : n;
     }),
-    website: parseFieldSafely(raw, 'website', (v) => String(v)),
-    summary: parseFieldSafely(raw, 'summary', (v) => String(v)),
-    sourceUrls,
+    website: makeField(raw.website, (v) => String(v)),
+    summary: makeField(descField, (v) => String(v)),
+    sourceUrls: [...new Set(sourceUrls)],
     searchProvider: 'serper',
-    overallConfidence: typeof raw.confidence === 'number' ? raw.confidence : 5,
+    overallConfidence,
   };
 }
 
 function transformPartialCompany(raw: any): EnrichedCompany | null {
-  if (!raw.name) return null;
+  const name = raw.name || (raw.company_name && typeof raw.company_name === 'object' ? raw.company_name.value : raw.company_name);
+  if (!name) return null;
   const now = new Date();
   const emptyField = <T>(): FieldValue<T> => ({ value: null, sourceUrl: null, confidence: 0, lastUpdated: now });
   return {
-    canonicalName: String(raw.name).trim(), aliases: [],
+    canonicalName: String(name).trim(), aliases: [],
     sector: emptyField(), businessType: emptyField(), country: emptyField(),
     city: emptyField(), streetAddress: emptyField(), latitude: emptyField(), longitude: emptyField(),
     revenue: { ...emptyField(), currency: null, fiscalYear: null },
@@ -310,11 +354,6 @@ function extractCompanyNameFromTitle(title: string): string {
   return name;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// isGenericTitle — structural filter for obvious article titles
-// This is intentionally minimal — it only catches things that are structurally
-// impossible to be a company name. Intent-based filtering handles the rest.
-// ─────────────────────────────────────────────────────────────────────────────
 function isGenericTitle(name: string): boolean {
   const n = name.trim();
   if (n.split(/\s+/).length > 8) return true;
@@ -354,8 +393,10 @@ interface SearchResult {
   snippet: string;
   rawContent?: string;
   domain: string;
-  rank: number;
-  provider: string;
+  rank?: number;
+  provider?: string;
+  score?: number;
+  sourceType?: string;
 }
 
 function isListArticle(result: SearchResult): boolean {
@@ -395,10 +436,39 @@ function extractNamesFromNumberedList(text: string): string[] {
   return names;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// extractCompaniesFromListArticle
-// Fetches real article content and uses QueryIntent to filter correctly
-// ─────────────────────────────────────────────────────────────────────────────
+export async function fetchAndClassifyPages(
+  scoredResults: ScoredResult[],
+  maxPages: number = 8
+): Promise<Array<{ url: string; content: string; sourceType: string; score: number }>> {
+  const toFetch = scoredResults
+    .filter(r => r.score >= 1)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxPages);
+
+  console.log(`[NonDropExtraction] Fetching ${toFetch.length} pages (Score 2: ${toFetch.filter(r => r.score === 2).length}, Score 1: ${toFetch.filter(r => r.score === 1).length})`);
+
+  const fetched: Array<{ url: string; content: string; sourceType: string; score: number }> = [];
+
+  for (const result of toFetch) {
+    try {
+      const content = await fetchArticleContent(result.url);
+      if (content && content.length > 100) {
+        fetched.push({
+          url: result.url,
+          content,
+          sourceType: result.sourceType,
+          score: result.score,
+        });
+        console.log(`[NonDropExtraction] Fetched: ${result.url} (${result.sourceType}, ${content.length} chars)`);
+      }
+    } catch (e) {
+      console.warn(`[NonDropExtraction] Skip (error/paywall): ${result.url}`);
+    }
+  }
+
+  return fetched;
+}
+
 export async function extractCompaniesFromListArticle(
   url: string,
   query: string,
@@ -438,10 +508,6 @@ Return JSON only: { "companies": ["Name 1", "Name 2", ...] }`;
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// preProcessListArticles — detects listicles in Serper results and extracts
-// real company names using the QueryIntent for filtering
-// ─────────────────────────────────────────────────────────────────────────────
 export async function preProcessListArticles(
   results: SearchResult[],
   query: string,
@@ -470,57 +536,73 @@ export async function preProcessListArticles(
   return deduped;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// extractCompaniesNonDestructive — LLM enrichment pass using QueryIntent
-// ─────────────────────────────────────────────────────────────────────────────
+const SOURCE_TRUTH_PROMPT = `You are a precise company data extraction specialist. You extract structured company and executive data from web content.
+
+RULES:
+1. Only extract data you can directly see in the provided content. Never guess or infer.
+2. For every field you extract, note the source URL it came from.
+3. Assign a confidence score to every field:
+   - 0.95: Data from official company documents, annual reports, regulatory filings
+   - 0.85: Data from industry curated lists or trade publications
+   - 0.70: Data from reputable news (Reuters, Bloomberg, Arabian Business)
+   - 0.60: Data from business directories or aggregators
+   - 0.40: Data from blogs or unverified sources
+4. If the same field appears in multiple sources, use the version with the highest confidence score.
+5. If a field is not explicitly mentioned in the content, set it to null. Never fabricate.
+6. For financial data (revenue, employees), only extract if a specific number is stated. Never estimate.
+7. Return ONLY valid JSON. No explanation text.
+
+SCHEMA to return for each company:
+{
+  "company_name": { "value": string, "confidence": number, "source_url": string },
+  "country": { "value": string or null, "confidence": number, "source_url": string },
+  "sector": { "value": string or null, "confidence": number, "source_url": string },
+  "description": { "value": string or null, "confidence": number, "source_url": string },
+  "revenue": { "value": number or null, "currency": string or null, "confidence": number, "source_url": string },
+  "employee_count": { "value": number or null, "confidence": number, "source_url": string },
+  "founded_year": { "value": number or null, "confidence": number, "source_url": string },
+  "source_type": "official" | "industry_list" | "news" | "directory" | "other"
+}
+
+SCHEMA to return for each executive (only if explicitly visible on the page):
+{
+  "executive_name": { "value": string, "confidence": number, "source_url": string },
+  "executive_title": { "value": string, "confidence": number, "source_url": string },
+  "company_name": string,
+  "source_type": "official" | "industry_list" | "news" | "directory" | "other"
+}`;
+
 export async function extractCompaniesNonDestructive(
   searchContext: string,
   query: string,
   intent: QueryIntent,
-  limit: number
+  limit: number,
+  fetchedPages?: Array<{ url: string; content: string; sourceType: string; score: number }>
 ): Promise<EnrichedCompany[]> {
   const intentBlock = buildInclusionPromptBlock(intent);
 
-  const systemPrompt = `You are extracting company and executive data from search results.
-
-CRITICAL RULES:
-1. Return ONLY valid JSON - no markdown, no explanatory text
-2. Do NOT drop companies just because data is missing - use null for missing fields
-3. Only extract what is EXPLICITLY stated in sources - NO hallucination
-
-${intentBlock}
-
-For EVERY company found, provide ALL of these fields:
-- name (REQUIRED - the company name)
-- country (REQUIRED - where the company is headquartered or operates)
-- sector (REQUIRED - the industry/sector)
-- summary (optional - 1-2 sentence description of the company)
-- revenue (optional - if mentioned, provide the numeric value)
-- revenueCurrency (optional - e.g. "USD", "SAR", "AED")
-- revenueFiscalYear (optional - the year the revenue figure is from)
-- employees (optional - as integer, if mentioned)
-- businessType (optional - e.g. "distributor", "retailer", "manufacturer")
-- city (optional)
-- website (optional)
-- confidence (1-10)
-- sourceUrls (array of source URLs)
-
-REVENUE: Only if explicitly stated. Provide the full numeric value (e.g. 1500000000 not "1.5B"). Include currency and fiscal year.
-EMPLOYEES: Only if explicitly stated. Provide as integer.
-If a field is not mentioned, set it to null.
-
-OUTPUT: { "companies": [ { "name": "...", "country": "...", "sector": "...", ... } ] }`;
+  let pageContext = '';
+  if (fetchedPages && fetchedPages.length > 0) {
+    pageContext = '\n\n=== FETCHED PAGE CONTENT ===\n';
+    for (const page of fetchedPages) {
+      pageContext += `\n--- Source: ${page.url} (${page.sourceType}, score: ${page.score}) ---\n`;
+      pageContext += page.content.substring(0, 3000) + '\n';
+    }
+  }
 
   const userPrompt = `QUERY: ${query}
 
-${searchContext}
+${intentBlock}
 
-Extract up to ${limit} companies matching the intent. Missing fields are OK - use null.
-Return JSON only.`;
+${searchContext}${pageContext}
+
+Extract up to ${limit} companies matching the intent.
+For each company use the field-level confidence schema from your instructions.
+Return JSON: { "companies": [ ... ] }`;
 
   try {
     const content = await callLLM(
-      [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+      [{ role: "system", content: SOURCE_TRUTH_PROMPT }, { role: "user", content: userPrompt }],
       { temperature: 0.1, max_tokens: 8000 }
     );
 
@@ -530,7 +612,7 @@ Return JSON only.`;
     const companies: EnrichedCompany[] = [];
     for (const raw of parsed.companies) {
       try {
-        if (isGenericTitle(raw.name || '')) continue;
+        if (isGenericTitle(raw.company_name?.value || raw.name || '')) continue;
         const company = transformToEnrichedCompany(raw);
         if (company) companies.push(company);
       } catch {
@@ -579,9 +661,6 @@ function isKnownLocation(name: string): boolean {
   return KNOWN_LOCATIONS.has(name.toLowerCase().trim());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// extractCompaniesFromSearchResults — heuristic extraction using QueryIntent
-// ─────────────────────────────────────────────────────────────────────────────
 export function extractCompaniesFromSearchResults(
   results: SearchResult[],
   query: string,
@@ -598,7 +677,6 @@ export function extractCompaniesFromSearchResults(
     name: string; sourceUrl: string; snippet: string; forcedCountry?: string;
   }> = [];
 
-  // Pre-extracted names from list articles go first — highest quality
   if (preExtractedNames && preExtractedNames.length > 0) {
     for (const name of preExtractedNames) {
       companiesFromLists.push({
@@ -608,7 +686,6 @@ export function extractCompaniesFromSearchResults(
     }
   }
 
-  // Heuristic extraction from snippets
   for (const result of results) {
     const snippet = result.snippet || '';
     if (snippet.includes('·') || snippet.includes('•')) {
@@ -680,7 +757,6 @@ export function extractCompaniesFromSearchResults(
     addCompany(item.name, item.sourceUrl, item.snippet, item.forcedCountry);
   }
 
-  // Fallback: only real company homepages, never article/listicle pages
   if (companies.length < limit) {
     for (const result of results) {
       if (companies.length >= limit) break;
@@ -698,9 +774,6 @@ export function extractCompaniesFromSearchResults(
   return companies;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// extractExecutivesForCompany — scoped by QueryIntent and country
-// ─────────────────────────────────────────────────────────────────────────────
 export async function extractExecutivesForCompany(
   companyName: string,
   searchContext: string,

@@ -10,6 +10,7 @@ import {
   remuneration,
   executiveNotes,
   companyNotes,
+  pipelineLog,
   type InsertUser,
   type User,
   type Company,
@@ -29,7 +30,8 @@ import {
   type ExecutiveNotes,
   type InsertExecutiveNotes,
   type CompanyNotes,
-  type InsertCompanyNotes
+  type InsertCompanyNotes,
+  type InsertPipelineLog,
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, ilike, or, sql, asc, inArray } from "drizzle-orm";
 
@@ -70,8 +72,8 @@ export interface IStorage {
   enrichCompanyEmptyFields(id: number, data: Partial<InsertCompany>): Promise<{ updated: Company; enrichedFields: string[] }>;
   updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company>;
   
-  // Non-destructive upsert - creates if not exists, patches only non-null fields if exists
-  upsertCompanyNonDestructive(company: InsertCompany, searchQueryId: number): Promise<{ company: Company; isNew: boolean }>;
+  logPipelineDecision(log: InsertPipelineLog): Promise<void>;
+  upsertCompanyNonDestructive(company: InsertCompany, searchQueryId: number, fieldConfidences?: Record<string, number>): Promise<{ company: Company; isNew: boolean }>;
   findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined>;
   
   getAllSearchQueries(): Promise<SearchQuery[]>;
@@ -244,6 +246,21 @@ export class DatabaseStorage implements IStorage {
    * - Must never write to profile sections after creation
    */
   async createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive> {
+    const [existingExec] = await db
+      .select()
+      .from(executives)
+      .where(
+        and(
+          ilike(executives.name, executive.name),
+          eq(executives.companyId, executive.companyId)
+        )
+      );
+    
+    if (existingExec) {
+      console.log(`[Storage:Discovery] Executive "${executive.name}" already exists for company ${executive.companyId} — skipping (additive only)`);
+      return existingExec;
+    }
+
     console.log(`[Storage:Discovery] Creating executive: ${executive.name}`);
     const [newExecutive] = await db.insert(executives).values({
       ...executive,
@@ -389,17 +406,18 @@ export class DatabaseStorage implements IStorage {
     return newExecutive;
   }
 
-  /**
-   * UI/MANUAL LAYER: Full update capability.
-   * - Manual edits always override imported data
-   * - No field restrictions
-   * - Used only for user-initiated edits via UI
-   */
   async updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
     console.log(`[Storage:Manual] User editing executive ${id}`);
+    const existing = await this.getExecutive(id);
+    const currentManualFields = (existing?.manuallyEditedFields as string[]) || [];
+    const editedFieldNames = Object.keys(data).filter(k => 
+      k !== 'manuallyEditedFields' && k !== 'updatedAt'
+    );
+    const newManualFields = [...new Set([...currentManualFields, ...editedFieldNames])];
+    
     const [updated] = await db
       .update(executives)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .set({ ...data, manuallyEditedFields: newManualFields, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(executives.id, id))
       .returning();
     return updated;
@@ -475,17 +493,18 @@ export class DatabaseStorage implements IStorage {
     return newCompany;
   }
 
-  /**
-   * UI/MANUAL LAYER: Full company update capability.
-   * - Manual edits always override imported data
-   * - No field restrictions
-   * - Used only for user-initiated edits via UI
-   */
   async updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company> {
     console.log(`[Storage:Manual] User editing company ${id}`);
+    const existing = await this.getCompany(id);
+    const currentManualFields = (existing?.manuallyEditedFields as string[]) || [];
+    const editedFieldNames = Object.keys(data).filter(k => 
+      k !== 'manuallyEditedFields' && k !== 'dataProvenance' && k !== 'updatedAt'
+    );
+    const newManualFields = [...new Set([...currentManualFields, ...editedFieldNames])];
+    
     const [updated] = await db
       .update(companies)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .set({ ...data, manuallyEditedFields: newManualFields, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(companies.id, id))
       .returning();
     return updated;
@@ -508,31 +527,118 @@ export class DatabaseStorage implements IStorage {
     return company;
   }
 
-  /**
-   * NON-DESTRUCTIVE UPSERT: Creates company if not exists, patches only non-null fields if exists.
-   * - NEVER drops a company due to missing fields
-   * - Uses patch semantics: only updates fields that have non-null values in the input
-   * - Critical for the "absolute non-drop rule"
-   */
+  async logPipelineDecision(log: InsertPipelineLog): Promise<void> {
+    try {
+      await db.insert(pipelineLog).values(log);
+    } catch (e) {
+      console.warn('[Storage] Failed to log pipeline decision:', e);
+    }
+  }
+
   async upsertCompanyNonDestructive(
     company: InsertCompany, 
-    searchQueryId: number
+    searchQueryId: number,
+    fieldConfidences?: Record<string, number>
   ): Promise<{ company: Company; isNew: boolean }> {
     const existing = await this.findCompanyByNameAndQuery(company.name, searchQueryId);
     
     if (existing) {
+      const manualFields = (existing.manuallyEditedFields as string[]) || [];
+      const existingProvenance = (existing.dataProvenance as Record<string, any>) || {};
       const patchData: Partial<InsertCompany> = {};
+      const newProvenance = { ...existingProvenance };
+
+      const dbConfidenceFields: Record<string, string> = {
+        'revenue': 'revenueConfidence',
+        'employees': 'employeesConfidence',
+      };
       
       for (const [key, value] of Object.entries(company)) {
-        if (value !== null && value !== undefined && value !== '') {
-          const existingValue = (existing as any)[key];
-          if (existingValue === null || existingValue === undefined || existingValue === '') {
-            (patchData as any)[key] = value;
+        if (key === 'manuallyEditedFields' || key === 'dataProvenance') continue;
+        if (value === null || value === undefined || value === '') continue;
+
+        if (manualFields.includes(key)) {
+          await this.logPipelineDecision({
+            companyName: company.name,
+            fieldName: key,
+            oldValue: String((existing as any)[key] ?? ''),
+            newValue: String(value),
+            decision: 'skipped',
+            reason: 'field is manually edited — sacred',
+            searchQueryId,
+          });
+          continue;
+        }
+
+        const existingValue = (existing as any)[key];
+        const newConfidence = fieldConfidences?.[key] ?? 5;
+        
+        let existingConfidence = 0;
+        if (dbConfidenceFields[key]) {
+          existingConfidence = (existing as any)[dbConfidenceFields[key]] ?? 0;
+        } else {
+          const provenanceEntry = existingProvenance[key];
+          if (provenanceEntry && typeof provenanceEntry.confidence === 'number') {
+            existingConfidence = provenanceEntry.confidence;
           }
+        }
+
+        if (existingValue === null || existingValue === undefined || existingValue === '') {
+          (patchData as any)[key] = value;
+          newProvenance[key] = {
+            value: String(value),
+            confidence: newConfidence,
+            updatedAt: new Date().toISOString(),
+            source: 'pipeline',
+          };
+          await this.logPipelineDecision({
+            companyName: company.name,
+            fieldName: key,
+            oldValue: null,
+            newValue: String(value),
+            decision: 'updated',
+            reason: 'existing field was null — filled',
+            searchQueryId,
+          });
+        } else if (newConfidence > existingConfidence) {
+          (patchData as any)[key] = value;
+          const history = existingProvenance[key]?.history || [];
+          history.push({
+            value: String(existingValue),
+            confidence: existingConfidence,
+            replacedAt: new Date().toISOString(),
+          });
+          newProvenance[key] = {
+            value: String(value),
+            confidence: newConfidence,
+            updatedAt: new Date().toISOString(),
+            source: 'pipeline',
+            history,
+          };
+          await this.logPipelineDecision({
+            companyName: company.name,
+            fieldName: key,
+            oldValue: String(existingValue),
+            newValue: String(value),
+            decision: 'updated',
+            reason: `new confidence ${newConfidence} > existing confidence ${existingConfidence}`,
+            searchQueryId,
+          });
+        } else if (existingValue !== null && existingValue !== undefined && existingValue !== '') {
+          await this.logPipelineDecision({
+            companyName: company.name,
+            fieldName: key,
+            oldValue: String(existingValue),
+            newValue: String(value),
+            decision: 'kept',
+            reason: `existing confidence ${existingConfidence} >= new confidence ${newConfidence}`,
+            searchQueryId,
+          });
         }
       }
       
       if (Object.keys(patchData).length > 0) {
+        patchData.dataProvenance = newProvenance as any;
         console.log(`[Storage:NonDestructive] Patching ${Object.keys(patchData).length} fields for company "${company.name}"`);
         const [updated] = await db
           .update(companies)
@@ -547,9 +653,20 @@ export class DatabaseStorage implements IStorage {
     }
     
     console.log(`[Storage:NonDestructive] Creating new company: "${company.name}"`);
+    const provenance: Record<string, any> = {};
+    for (const [key, value] of Object.entries(company)) {
+      if (value !== null && value !== undefined && value !== '' && key !== 'manuallyEditedFields' && key !== 'dataProvenance') {
+        provenance[key] = {
+          value: String(value),
+          confidence: fieldConfidences?.[key] ?? 5,
+          updatedAt: new Date().toISOString(),
+          source: 'pipeline',
+        };
+      }
+    }
     const [newCompany] = await db
       .insert(companies)
-      .values({ ...company, searchQueryId })
+      .values({ ...company, searchQueryId, dataProvenance: provenance })
       .returning();
     return { company: newCompany, isNew: true };
   }

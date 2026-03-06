@@ -3,6 +3,18 @@ import { pgTable, serial, integer, text, varchar, timestamp, numeric, boolean, j
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const pipelineLog = pgTable("pipeline_log", {
+  id: serial("id").primaryKey(),
+  companyName: text("company_name").notNull(),
+  fieldName: text("field_name").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  decision: text("decision").notNull(),
+  reason: text("reason").notNull(),
+  searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
@@ -47,8 +59,10 @@ export const companies = pgTable("companies", {
   website: text("website"), // Company website URL
   lastVerifiedYear: integer("last_verified_year"),
   confidence: integer("confidence").default(5),
-  relevanceReason: text("relevance_reason"), // LLM's explanation of why this company matches the query
+  relevanceReason: text("relevance_reason"),
   color: text("color").default("#1e3a8a"),
+  manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
+  dataProvenance: jsonb("data_provenance").default(sql`'{}'::jsonb`),
   searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -78,6 +92,7 @@ export const executives = pgTable("executives", {
   clockworkId: text("clockwork_id"),
   clockworkProjectId: text("clockwork_project_id"),
   customFields: jsonb("custom_fields"),
+  manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -247,6 +262,11 @@ export const insertCompanyNotesSchema = createInsertSchema(companyNotes).omit({
   updatedAt: true,
 });
 
+export const insertPipelineLogSchema = createInsertSchema(pipelineLog).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Company = typeof companies.$inferSelect;
@@ -271,3 +291,5 @@ export type ExecutiveNotes = typeof executiveNotes.$inferSelect;
 export type CompanyNotes = typeof companyNotes.$inferSelect;
 export type InsertCompanyNotes = z.infer<typeof insertCompanyNotesSchema>;
 export type InsertExecutiveNotes = z.infer<typeof insertExecutiveNotesSchema>;
+export type PipelineLog = typeof pipelineLog.$inferSelect;
+export type InsertPipelineLog = z.infer<typeof insertPipelineLogSchema>;

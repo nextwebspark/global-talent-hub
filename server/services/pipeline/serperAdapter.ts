@@ -2,12 +2,6 @@ import type { ISearchProvider, DiscoveredCompany, SearchIntent } from './types';
 import type { QueryIntent } from './queryIntent';
 import OpenAI from "openai";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Query optimisation — rewrites the raw user query into a focused Google
-// search query based on the extracted intent. This is the single most
-// important quality lever in the entire pipeline. Garbage in = garbage out.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
@@ -40,9 +34,6 @@ async function callLLMForQuery(prompt: string): Promise<string | null> {
   return null;
 }
 
-// Builds 2–3 focused Google search queries from the QueryIntent.
-// Multiple queries are run and results are merged, so we cast a wider net
-// while keeping each individual query precise.
 export async function buildOptimisedQueries(
   originalQuery: string,
   intent: QueryIntent
@@ -86,7 +77,6 @@ Return ONLY a JSON array of 3 query strings, nothing else.
     const response = await callLLMForQuery(prompt);
     if (!response) throw new Error('No response');
 
-    // Parse the JSON array
     const cleaned = response.trim().replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
     const start = cleaned.indexOf('[');
     const end = cleaned.lastIndexOf(']');
@@ -206,14 +196,22 @@ function buildHeuristicQueries(originalQuery: string, intent: QueryIntent): stri
   return queries;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Supporting utilities (unchanged from original)
-// ─────────────────────────────────────────────────────────────────────────────
-
 const NOISE_DOMAINS = new Set([
   'linkedin.com', 'facebook.com', 'instagram.com', 'twitter.com',
   'x.com', 'youtube.com', 'glassdoor.com', 'indeed.com',
   'tiktok.com', 'pinterest.com', 'reddit.com',
+]);
+
+const TRADE_PRESS_DOMAINS = new Set([
+  'arabianbusiness.com', 'zawya.com', 'reuters.com', 'bloomberg.com',
+  'ft.com', 'wsj.com', 'cnbc.com', 'fortune.com', 'economictimes.com',
+  'gulfnews.com', 'khaleejtimes.com', 'thenationalnews.com',
+  'argaam.com', 'mubasher.info',
+]);
+
+const DIRECTORY_DOMAINS = new Set([
+  'kompass.com', 'crunchbase.com', 'dnb.com', 'zoominfo.com',
+  'owler.com', 'craft.co', 'pitchbook.com', 'cbinsights.com',
 ]);
 
 const LIST_KEYWORDS = /\b(top|best|largest|leading|biggest|major|fastest|most)\b/i;
@@ -255,15 +253,46 @@ function isNoiseDomain(url: string): boolean {
   return false;
 }
 
-function scoreResult(url: string, title: string): number {
-  if (isNoiseDomain(url)) return 0;
-  if (LIST_KEYWORDS.test(title) || NUMBER_IN_TITLE.test(title)) return 2;
-  return 1;
+function isOfficialCompanyDomain(url: string): boolean {
+  const domain = extractDomain(url);
+  if (TRADE_PRESS_DOMAINS.has(domain) || DIRECTORY_DOMAINS.has(domain)) return false;
+  const path = new URL(url).pathname.toLowerCase();
+  if (path.includes('/about') || path.includes('/company') || 
+      path.includes('/investor') || path.includes('/annual-report') ||
+      path.includes('/ir/') || path === '/') {
+    const tld = domain.split('.').pop() || '';
+    const countryTlds = ['sa', 'ae', 'qa', 'kw', 'bh', 'om', 'eg', 'jo', 'lb'];
+    if (countryTlds.some(ct => domain.endsWith('.' + ct) || domain.endsWith('.com.' + ct))) return true;
+    if (/\.(com|org|net|co)$/i.test(domain)) return true;
+  }
+  return false;
+}
+
+export interface ScoredResult {
+  url: string;
+  title: string;
+  snippet: string;
+  score: number;
+  sourceType: 'official' | 'industry_list' | 'news' | 'directory' | 'other';
+  domain: string;
+}
+
+function scoreUrl(url: string, title: string): { score: number; sourceType: ScoredResult['sourceType'] } {
+  if (isNoiseDomain(url)) return { score: 0, sourceType: 'other' };
+
+  const domain = extractDomain(url);
+  const isListArticle = LIST_KEYWORDS.test(title) || NUMBER_IN_TITLE.test(title);
+  
+  if (isListArticle) return { score: 2, sourceType: 'industry_list' };
+  if (isOfficialCompanyDomain(url)) return { score: 2, sourceType: 'official' };
+  if (TRADE_PRESS_DOMAINS.has(domain)) return { score: 1, sourceType: 'news' };
+  if (DIRECTORY_DOMAINS.has(domain)) return { score: 1, sourceType: 'directory' };
+
+  return { score: 1, sourceType: 'other' };
 }
 
 function detectGl(query: string): string {
   const lower = query.toLowerCase();
-  // Sort by length descending so longer phrases match first
   const sorted = Object.entries(COUNTRY_TO_GL).sort((a, b) => b[0].length - a[0].length);
   for (const [keyword, code] of sorted) {
     if (lower.includes(keyword)) return code;
@@ -271,9 +300,6 @@ function detectGl(query: string): string {
   return 'us';
 }
 
-// When query covers multiple countries, use neutral gl so Serper does not
-// over-bias results toward a single country. Country names in the query text
-// itself are sufficient to get regional results.
 function detectGlFromIntent(intent: QueryIntent): string {
   if (intent.countries.length === 1) {
     return detectGl(intent.countries[0].toLowerCase());
@@ -339,9 +365,23 @@ function deduplicateNames(names: string[]): string[] {
   return Array.from(seen.values());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SerperAdapter
-// ─────────────────────────────────────────────────────────────────────────────
+function build3PassQueries(originalQuery: string, intent: QueryIntent): { pass1: string; pass2: string; pass3: string } {
+  const countries = intent.countries.length > 0 ? intent.countries : extractCountriesFromQuery(originalQuery);
+  const countryStr = countries.join(' ');
+  const sector = (intent.sector && intent.sector !== 'general') ? intent.sector : extractSectorFromQuery(originalQuery);
+  const core = sector ? `${sector} ${originalQuery.replace(new RegExp(sector, 'i'), '').trim()}` : originalQuery;
+
+  const pass1 = `top largest ${core} ${countryStr} list 2024 2025`.replace(/\s+/g, ' ').trim();
+  const pass2 = `${core} ${countryStr} annual report official site revenue`.replace(/\s+/g, ' ').trim();
+
+  const newsOutlets = countries.some(c => 
+    ['saudi arabia', 'uae', 'united arab emirates', 'qatar', 'kuwait', 'bahrain', 'oman', 'egypt', 'jordan'].includes(c.toLowerCase())
+  ) ? 'Arabian Business Zawya Reuters' : 'Reuters Bloomberg Financial Times';
+  const pass3 = `${core} ${countryStr} ${newsOutlets}`.replace(/\s+/g, ' ').trim();
+
+  return { pass1, pass2, pass3 };
+}
+
 export class SerperAdapter implements ISearchProvider {
   name = 'serper';
   private apiKey: string;
@@ -359,7 +399,7 @@ export class SerperAdapter implements ISearchProvider {
     const serperResults = await this.callSerper(query, gl, 10);
     const scored = serperResults.map(r => ({
       ...r,
-      score: scoreResult(r.link, r.title),
+      ...scoreUrl(r.link, r.title),
     })).filter(r => r.score > 0);
 
     const allNames: string[] = [];
@@ -404,52 +444,57 @@ export class SerperAdapter implements ISearchProvider {
     }).slice(0, intent.limit * 2);
   }
 
-  // ── searchWithAnswer — now accepts optional QueryIntent ───────────────────
-  // When intent is provided, it rewrites the query before hitting Serper,
-  // runs multiple optimised queries, and merges the results.
-  // When intent is not provided (fallback), it behaves exactly as before.
   async searchWithAnswer(
     query: string,
     numResults = 10,
     intent?: QueryIntent
   ): Promise<{
-    results: Array<{
-      url: string;
-      title: string;
-      snippet: string;
-      rawContent?: string;
-      domain: string;
-      rank: number;
-      provider: string;
-    }>;
+    results: ScoredResult[];
     answer?: string;
   }> {
 
-    let queriesToRun: string[];
     let gl: string;
 
     if (intent) {
-      // Intent-driven path: rewrite the query for precision
-      queriesToRun = await buildOptimisedQueries(query, intent);
       gl = detectGlFromIntent(intent);
     } else {
-      // Fallback path: use raw query as before
-      queriesToRun = [query];
       gl = detectGl(query);
     }
 
-    console.log(`[SerperAdapter] Running ${queriesToRun.length} optimised queries (gl=${gl})`);
-
-    // Run all queries and merge results
     const allRawResults: Array<{ title: string; link: string; snippet: string }> = [];
 
-    for (const q of queriesToRun) {
+    if (intent) {
+      const { pass1, pass2, pass3 } = build3PassQueries(query, intent);
+      
+      console.log(`[SerperAdapter] Pass 1 (Curated lists): "${pass1}"`);
+      console.log(`[SerperAdapter] Pass 2 (Official sources): "${pass2}"`);
+      console.log(`[SerperAdapter] Pass 3 (News/trade press): "${pass3}"`);
+
+      for (const q of [pass1, pass2, pass3]) {
+        try {
+          const results = await this.callSerper(q, gl, numResults);
+          allRawResults.push(...results);
+        } catch (err: any) {
+          console.warn(`[SerperAdapter] Pass query failed: "${q}" — ${err.message}`);
+        }
+      }
+
+      const llmQueries = await buildOptimisedQueries(query, intent);
+      for (const q of llmQueries) {
+        try {
+          console.log(`[SerperAdapter] LLM query: "${q}"`);
+          const results = await this.callSerper(q, gl, numResults);
+          allRawResults.push(...results);
+        } catch (err: any) {
+          console.warn(`[SerperAdapter] LLM query failed: "${q}" — ${err.message}`);
+        }
+      }
+    } else {
       try {
-        console.log(`[SerperAdapter] Query: "${q}"`);
-        const results = await this.callSerper(q, gl, numResults);
+        const results = await this.callSerper(query, gl, numResults);
         allRawResults.push(...results);
       } catch (err: any) {
-        console.warn(`[SerperAdapter] Query failed: "${q}" — ${err.message}`);
+        console.warn(`[SerperAdapter] Query failed: "${query}" — ${err.message}`);
       }
     }
 
@@ -460,30 +505,32 @@ export class SerperAdapter implements ISearchProvider {
 
     console.log(`[SerperAdapter] Total raw results: ${allRawResults.length}`);
 
-    // Deduplicate by URL and filter noise domains
-    const filtered = deduplicateResults(
+    const deduped = deduplicateResults(
       allRawResults
         .filter(r => !isNoiseDomain(r.link))
         .map(r => ({ url: r.link, title: r.title, snippet: r.snippet || '' }))
     );
 
-    const results = filtered.map((item, index) => ({
-      url: item.url,
-      title: item.title,
-      snippet: item.snippet,
-      rawContent: '',
-      domain: extractDomain(item.url),
-      rank: index + 1,
-      provider: this.name,
-    }));
+    const scored: ScoredResult[] = deduped.map(item => {
+      const { score, sourceType } = scoreUrl(item.url, item.title);
+      return {
+        url: item.url,
+        title: item.title,
+        snippet: item.snippet,
+        score,
+        sourceType,
+        domain: extractDomain(item.url),
+      };
+    }).filter(r => r.score > 0);
 
-    // Build answer from top snippets
+    scored.sort((a, b) => b.score - a.score);
+
     let answer: string | undefined;
-    const snippets = filtered.slice(0, 5).map(r => r.snippet).filter(Boolean).join(' ');
+    const snippets = scored.slice(0, 5).map(r => r.snippet).filter(Boolean).join(' ');
     if (snippets.length > 50) answer = snippets;
 
-    console.log(`[SerperAdapter] searchWithAnswer returning ${results.length} results`);
-    return { results, answer };
+    console.log(`[SerperAdapter] searchWithAnswer returning ${scored.length} scored results (Score 2: ${scored.filter(r => r.score === 2).length}, Score 1: ${scored.filter(r => r.score === 1).length})`);
+    return { results: scored, answer };
   }
 
   private async callSerper(query: string, gl: string, num: number): Promise<Array<{
@@ -509,7 +556,7 @@ export class SerperAdapter implements ISearchProvider {
     return data.organic || [];
   }
 
-  private async fetchPageContent(url: string): Promise<string> {
+  async fetchPageContent(url: string): Promise<string> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {

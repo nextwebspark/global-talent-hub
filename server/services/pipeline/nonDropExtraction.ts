@@ -9,6 +9,7 @@ const openrouter = new OpenAI({
 });
 
 const FREE_MODELS = [
+  "anthropic/claude-opus-4.5",
   "google/gemini-2.5-flash",
   "meta-llama/llama-3.3-70b-instruct:free",
   "qwen/qwen3-next-80b-a3b-instruct:free",

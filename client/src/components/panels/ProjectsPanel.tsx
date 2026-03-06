@@ -77,19 +77,20 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
       const data = await response.json();
       toast.dismiss('load-project');
 
-      if (!data.results || data.results.length === 0) {
-        toast.error('No results found for this project.');
-        return;
-      }
-
       setProject({
         id: String(item.id),
         name: item.query,
         search_string: item.query,
         created_at: new Date(item.createdAt),
       });
-      loadFromAPI(data.results);
-      toast.success(`Loaded ${data.results.length} companies`);
+
+      const results = data.results || [];
+      loadFromAPI(results);
+      if (results.length === 0) {
+        toast.info('This project has no companies yet.');
+      } else {
+        toast.success(`Loaded ${results.length} companies`);
+      }
       onClose();
     } catch {
       toast.dismiss('load-project');

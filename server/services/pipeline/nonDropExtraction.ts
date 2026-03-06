@@ -480,7 +480,7 @@ export async function extractCompaniesNonDestructive(
 ): Promise<EnrichedCompany[]> {
   const intentBlock = buildInclusionPromptBlock(intent);
 
-  const systemPrompt = `You are extracting company data from search results.
+  const systemPrompt = `You are extracting company and executive data from search results.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON - no markdown, no explanatory text
@@ -489,13 +489,26 @@ CRITICAL RULES:
 
 ${intentBlock}
 
-For each company extract:
-name (REQUIRED), sector, businessType, country, city, revenue, revenueCurrency,
-revenueFiscalYear, employees, website, summary, confidence (1-10), sourceUrls, executives
+For EVERY company found, provide ALL of these fields:
+- name (REQUIRED - the company name)
+- country (REQUIRED - where the company is headquartered or operates)
+- sector (REQUIRED - the industry/sector)
+- summary (optional - 1-2 sentence description of the company)
+- revenue (optional - if mentioned, provide the numeric value)
+- revenueCurrency (optional - e.g. "USD", "SAR", "AED")
+- revenueFiscalYear (optional - the year the revenue figure is from)
+- employees (optional - as integer, if mentioned)
+- businessType (optional - e.g. "distributor", "retailer", "manufacturer")
+- city (optional)
+- website (optional)
+- confidence (1-10)
+- sourceUrls (array of source URLs)
 
-REVENUE: Only if explicitly stated as revenue. Full number. Include currency and year.
+REVENUE: Only if explicitly stated. Provide the full numeric value (e.g. 1500000000 not "1.5B"). Include currency and fiscal year.
+EMPLOYEES: Only if explicitly stated. Provide as integer.
+If a field is not mentioned, set it to null.
 
-OUTPUT: { "companies": [ { "name": "...", "country": "...", ... } ] }`;
+OUTPUT: { "companies": [ { "name": "...", "country": "...", "sector": "...", ... } ] }`;
 
   const userPrompt = `QUERY: ${query}
 
@@ -701,7 +714,8 @@ export async function extractExecutivesForCompany(
 IMPORTANT:
 - Only extract executives who work for "${companyName}"${countryContext} specifically
 - Do NOT extract global HQ executives if this is a regional entity
-${intent.executiveRole ? `- Prioritise finding the ${intent.executiveRole}` : ''}
+${intent.executiveRole ? `- Prioritise finding the ${intent.executiveRole}. The title must match what is being looked for - e.g. if looking for CFO, only return the CFO or Chief Financial Officer.` : ''}
+- For each executive, provide their LinkedIn URL if you can find it in the search context
 
 SEARCH CONTEXT:
 ${searchContext}
@@ -709,10 +723,11 @@ ${searchContext}
 Return JSON only:
 {
   "executives": [
-    {"name": "John Doe", "title": "CEO", "role": "CEO", "sourceUrl": "...", "confidence": 8}
+    {"name": "John Doe", "title": "CEO", "role": "CEO", "linkedinUrl": "https://linkedin.com/in/johndoe", "sourceUrl": "...", "confidence": 8}
   ]
 }
 Roles: CEO, CFO, CHRO, CIO, CTO, OTHER
+If linkedinUrl is not found, set it to null.
 If none found: {"executives": []}`;
 
   try {
@@ -723,6 +738,7 @@ If none found: {"executives": []}`;
       name: String(e.name || ''),
       title: String(e.title || ''),
       role: ['CEO', 'CFO', 'CHRO', 'CIO', 'CTO'].includes(e.role) ? e.role : 'OTHER',
+      linkedinUrl: e.linkedinUrl || e.linkedin_url || e.linkedin || null,
       sourceUrl: e.sourceUrl || null,
       confidence: typeof e.confidence === 'number' ? e.confidence : 5,
     })).filter((e: ExtractedExecutive) => e.name.length > 0);

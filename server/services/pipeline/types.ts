@@ -47,6 +47,7 @@ export interface ExtractedExecutive {
   name: string;
   title: string;
   role: 'CEO' | 'CFO' | 'CHRO' | 'CIO' | 'CTO' | 'OTHER';
+  linkedinUrl: string | null;
   sourceUrl: string | null;
   confidence: number;
 }

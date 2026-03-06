@@ -367,6 +367,7 @@ export class DiscoveryPipeline {
           companyId,
           name: exec.name,
           title: exec.title || 'Unknown',
+          linkedin: exec.linkedinUrl || null,
           source: exec.sourceUrl || 'discovery',
           confidence: exec.confidence,
         };

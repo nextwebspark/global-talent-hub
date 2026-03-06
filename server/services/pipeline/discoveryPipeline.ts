@@ -353,6 +353,12 @@ export class DiscoveryPipeline {
       locationPrecision = fallback.locationPrecision;
     }
 
+    const safeInt = (v: any): number | null => {
+      if (v === null || v === undefined) return null;
+      const n = typeof v === 'number' ? v : parseInt(String(v));
+      return isNaN(n) || !isFinite(n) ? null : n;
+    };
+
     return {
       name: enriched.canonicalName,
       sector: enriched.sector.value,
@@ -364,11 +370,11 @@ export class DiscoveryPipeline {
       locationPrecision,
       revenue: enriched.revenue.value?.toString() || null,
       revenueCurrency: enriched.revenue.currency,
-      revenueFiscalYear: enriched.revenue.fiscalYear,
-      employees: enriched.employees.value,
+      revenueFiscalYear: safeInt(enriched.revenue.fiscalYear),
+      employees: safeInt(enriched.employees.value),
       website: enriched.website.value,
       summary: enriched.summary.value,
-      confidence: enriched.overallConfidence,
+      confidence: safeInt(enriched.overallConfidence) ?? 5,
     };
   }
 

@@ -200,7 +200,14 @@ function transformToEnrichedCompany(raw: any): EnrichedCompany | null {
       confidence: confidenceToScale10(revenueData.confidence),
       lastUpdated: now,
       currency: revenueCurrency,
-      fiscalYear: raw.founded_year ? parseInt(raw.founded_year) : null,
+      fiscalYear: (() => {
+        const fy = raw.revenue?.fiscal_year ?? raw.revenue_fiscal_year ?? null;
+        if (fy === null || fy === undefined) return null;
+        const fyValue = typeof fy === 'object' && fy.value !== undefined ? fy.value : fy;
+        if (fyValue === null || fyValue === undefined) return null;
+        const n = parseInt(String(fyValue));
+        return isNaN(n) ? null : n;
+      })(),
     },
     employees: makeField(employeeField, (v) => {
       const n = parseInt(String(v).replace(/[^0-9]/g, ''));

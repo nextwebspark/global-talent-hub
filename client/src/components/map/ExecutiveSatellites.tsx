@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useMap } from 'react-leaflet';
 import type { Executive } from '@/lib/store';
 
@@ -13,6 +13,20 @@ interface ExecutiveSatellitesProps {
 }
 
 const MAX_SATELLITES = 8;
+const SNAP_DISTANCE = 45;
+const CHILD_VERTICAL_OFFSET = 38;
+const CHILD_HORIZONTAL_STAGGER = 75;
+
+function getDescendants(id: string, hier: Record<string, string>): Set<string> {
+  const result = new Set<string>();
+  const stack = Object.entries(hier).filter(([, p]) => p === id).map(([c]) => c);
+  while (stack.length) {
+    const child = stack.pop()!;
+    result.add(child);
+    Object.entries(hier).filter(([, p]) => p === child).forEach(([c]) => stack.push(c));
+  }
+  return result;
+}
 
 export default function ExecutiveSatellites({
   companyId,
@@ -28,11 +42,21 @@ export default function ExecutiveSatellites({
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
+  const [hierarchy, setHierarchy] = useState<Record<string, string>>({});
+  const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
+  const snapTargetRef = useRef<string | null>(null);
   const draggingRef = useRef<{ id: string; startX: number; startY: number; origDx: number; origDy: number } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const interactingRef = useRef(false);
+  const didDragRef = useRef(false);
+
+  const hierarchyRef = useRef(hierarchy);
+  hierarchyRef.current = hierarchy;
 
   const execs = executives.slice(0, MAX_SATELLITES);
+  const execsRef = useRef(execs);
+  execsRef.current = execs;
+
   const overflow = executives.length - MAX_SATELLITES;
 
   const cancelDismiss = useCallback(() => {
@@ -64,7 +88,10 @@ export default function ExecutiveSatellites({
     requestAnimationFrame(() => setVisible(true));
     return () => {
       cancelDismiss();
-      if (dragCleanupRef.current) dragCleanupRef.current();
+      if (dragCleanupRef.current) {
+        dragCleanupRef.current();
+        dragCleanupRef.current = null;
+      }
     };
   }, [cancelDismiss]);
 
@@ -92,55 +119,140 @@ export default function ExecutiveSatellites({
     };
   }, [map, companyLat, companyLng]);
 
+  const orbitRadius = companyRadius + 65;
+  const arcStart = Math.PI / 6;
+  const arcEnd = (5 * Math.PI) / 6;
+  const arcSpan = arcEnd - arcStart;
+
+  const basePositions = useMemo(() => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    const rootExecs = execs.filter(e => !hierarchy[e.id]);
+    const totalRoots = rootExecs.length + (overflow > 0 ? 1 : 0);
+    const rootAngleStep = totalRoots > 1 ? arcSpan / (totalRoots - 1) : 0;
+
+    const computeForExec = (exec: typeof execs[0], bx: number, by: number) => {
+      positions[exec.id] = { x: bx, y: by };
+      const children = execs.filter(e => hierarchy[e.id] === exec.id);
+      if (children.length > 0) {
+        const startX = bx - ((children.length - 1) * CHILD_HORIZONTAL_STAGGER) / 2;
+        children.forEach((child, ci) => {
+          computeForExec(child, startX + ci * CHILD_HORIZONTAL_STAGGER, by + CHILD_VERTICAL_OFFSET);
+        });
+      }
+    };
+
+    rootExecs.forEach((exec, i) => {
+      const angle = totalRoots > 1 ? arcStart + i * rootAngleStep : Math.PI / 2;
+      computeForExec(exec, Math.cos(angle) * orbitRadius, Math.sin(angle) * orbitRadius);
+    });
+
+    return positions;
+  }, [execs, hierarchy, orbitRadius, arcStart, arcSpan, overflow]);
+
+  const basePositionsRef = useRef(basePositions);
+  basePositionsRef.current = basePositions;
+
+  const displayPositions = useMemo(() => {
+    const result: Record<string, { x: number; y: number }> = {};
+    for (const exec of execs) {
+      const base = basePositions[exec.id];
+      if (!base) continue;
+      const offset = dragOffsets[exec.id];
+      result[exec.id] = {
+        x: base.x + (offset?.dx || 0),
+        y: base.y + (offset?.dy || 0),
+      };
+    }
+    return result;
+  }, [execs, basePositions, dragOffsets]);
+
   const handleDragStart = useCallback((execId: string, clientX: number, clientY: number) => {
     cancelDismiss();
-    const current = dragOffsets[execId] || { dx: 0, dy: 0 };
-    draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx: current.dx, origDy: current.dy };
-
-    const maxDragDistance = 150;
+    map.dragging.disable();
+    didDragRef.current = false;
+    const currentOffset = dragOffsets[execId] || { dx: 0, dy: 0 };
+    draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx: currentOffset.dx, origDy: currentOffset.dy };
 
     const handleDragMove = (e: MouseEvent) => {
       if (!draggingRef.current || draggingRef.current.id !== execId) return;
-      let dx = draggingRef.current.origDx + (e.clientX - draggingRef.current.startX);
-      let dy = draggingRef.current.origDy + (e.clientY - draggingRef.current.startY);
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > maxDragDistance) {
-        dx = (dx / dist) * maxDragDistance;
-        dy = (dy / dist) * maxDragDistance;
-      }
+      didDragRef.current = true;
+      const dx = draggingRef.current.origDx + (e.clientX - draggingRef.current.startX);
+      const dy = draggingRef.current.origDy + (e.clientY - draggingRef.current.startY);
       setDragOffsets(prev => ({ ...prev, [execId]: { dx, dy } }));
+
+      const base = basePositionsRef.current[execId];
+      if (!base) return;
+      const draggedX = base.x + dx;
+      const draggedY = base.y + dy;
+
+      const currentHierarchy = hierarchyRef.current;
+      const descendants = getDescendants(execId, currentHierarchy);
+      const currentExecs = execsRef.current;
+
+      let closest: { id: string; dist: number } | null = null;
+      for (const exec of currentExecs) {
+        if (exec.id === execId) continue;
+        if (descendants.has(exec.id)) continue;
+        const basePos = basePositionsRef.current[exec.id];
+        if (!basePos) continue;
+        const dist = Math.sqrt((draggedX - basePos.x) ** 2 + (draggedY - basePos.y) ** 2);
+        if (dist < SNAP_DISTANCE && (!closest || dist < closest.dist)) {
+          closest = { id: exec.id, dist };
+        }
+      }
+      const newSnap = closest?.id || null;
+      snapTargetRef.current = newSnap;
+      setSnapTargetId(newSnap);
     };
 
     const handleDragEnd = () => {
+      const currentSnap = snapTargetRef.current;
       draggingRef.current = null;
       dragCleanupRef.current = null;
+      map.dragging.enable();
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('mouseup', handleDragEnd);
+
+      snapTargetRef.current = null;
+      setSnapTargetId(null);
+
+      if (currentSnap) {
+        setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
+        setDragOffsets(prev => {
+          const next = { ...prev };
+          delete next[execId];
+          return next;
+        });
+      } else if (didDragRef.current) {
+        setHierarchy(prev => {
+          if (!prev[execId]) return prev;
+          const next = { ...prev };
+          delete next[execId];
+          return next;
+        });
+      }
+
       if (!interactingRef.current) {
         startDismiss();
       }
     };
 
-    const cleanup = () => {
+    dragCleanupRef.current = () => {
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('mouseup', handleDragEnd);
       draggingRef.current = null;
+      snapTargetRef.current = null;
+      setSnapTargetId(null);
+      map.dragging.enable();
     };
-    dragCleanupRef.current = cleanup;
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [dragOffsets, cancelDismiss, startDismiss]);
+  }, [dragOffsets, cancelDismiss, startDismiss, map]);
 
   if (execs.length === 0) return null;
 
-  const orbitRadius = companyRadius + 65;
-  const totalItems = execs.length + (overflow > 0 ? 1 : 0);
-  const arcStart = Math.PI / 6;
-  const arcEnd = (5 * Math.PI) / 6;
-  const arcSpan = arcEnd - arcStart;
-  const angleStep = totalItems > 1 ? arcSpan / (totalItems - 1) : 0;
-  const hitAreaSize = (orbitRadius + 80) * 2;
+  const hitAreaSize = (orbitRadius + 140) * 2;
 
   return (
     <div
@@ -152,9 +264,9 @@ export default function ExecutiveSatellites({
         className="absolute"
         style={{
           width: hitAreaSize,
-          height: hitAreaSize * 0.7,
+          height: hitAreaSize,
           left: `calc(50% - ${hitAreaSize / 2}px)`,
-          top: -10,
+          top: `calc(50% - ${hitAreaSize / 2}px)`,
         }}
         onMouseEnter={handleContainerEnter}
         onMouseLeave={handleContainerLeave}
@@ -166,53 +278,66 @@ export default function ExecutiveSatellites({
           width: 1,
           height: 1,
           overflow: 'visible',
-          opacity: visible ? 0.4 : 0,
+          opacity: visible ? 1 : 0,
           transition: 'opacity 0.3s ease',
         }}
       >
-        {execs.map((exec, i) => {
-          const baseAngle = totalItems > 1 ? arcStart + i * angleStep : Math.PI / 2;
-          const baseX = Math.cos(baseAngle) * orbitRadius;
-          const baseY = Math.sin(baseAngle) * orbitRadius;
-          const offset = dragOffsets[exec.id];
-          const finalX = baseX + (offset?.dx || 0);
-          const finalY = baseY + (offset?.dy || 0);
+        {execs.map((exec) => {
+          const pos = displayPositions[exec.id];
+          if (!pos) return null;
+          const parentId = hierarchy[exec.id];
+
+          if (parentId) {
+            const parentPos = displayPositions[parentId];
+            if (!parentPos) return null;
+            return (
+              <line
+                key={`h-${exec.id}`}
+                x1={parentPos.x}
+                y1={parentPos.y}
+                x2={pos.x}
+                y2={pos.y}
+                stroke="hsl(35 92% 50%)"
+                strokeWidth={2}
+                strokeOpacity={0.5}
+              />
+            );
+          }
 
           return (
             <line
-              key={exec.id}
+              key={`c-${exec.id}`}
               x1={0}
               y1={0}
-              x2={finalX}
-              y2={finalY}
+              x2={pos.x}
+              y2={pos.y}
               stroke="currentColor"
               strokeWidth={1.5}
-              className="text-muted-foreground/60"
+              strokeOpacity={0.25}
+              className="text-muted-foreground"
             />
           );
         })}
       </svg>
 
       {execs.map((exec, i) => {
-        const baseAngle = totalItems > 1 ? arcStart + i * angleStep : Math.PI / 2;
-        const baseX = Math.cos(baseAngle) * orbitRadius;
-        const baseY = Math.sin(baseAngle) * orbitRadius;
-        const offset = dragOffsets[exec.id];
-        const finalX = baseX + (offset?.dx || 0);
-        const finalY = baseY + (offset?.dy || 0);
+        const pos = displayPositions[exec.id];
+        if (!pos) return null;
         const isDragging = draggingRef.current?.id === exec.id;
+        const isSnapTarget = snapTargetId === exec.id;
+        const isConnected = !!hierarchy[exec.id];
 
         return (
           <div
             key={exec.id}
             className="absolute select-none"
             style={{
-              left: `calc(50% + ${finalX}px)`,
-              top: `calc(50% + ${finalY}px)`,
+              left: `calc(50% + ${pos.x}px)`,
+              top: `calc(50% + ${pos.y}px)`,
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
-              transition: isDragging ? 'none' : `all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 50}ms`,
-              zIndex: isDragging ? 452 : 451,
+              transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
+              zIndex: isDragging ? 453 : 451,
               cursor: isDragging ? 'grabbing' : 'grab',
             }}
             onMouseDown={(e) => {
@@ -221,17 +346,38 @@ export default function ExecutiveSatellites({
               handleDragStart(exec.id, e.clientX, e.clientY);
             }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
-              const off = dragOffsets[exec.id];
-              if (off && (Math.abs(off.dx) > 3 || Math.abs(off.dy) > 3)) return;
+              if (didDragRef.current) {
+                didDragRef.current = false;
+                return;
+              }
               onSelectExecutive(exec.id, companyId);
             }}
             onMouseEnter={handleContainerEnter}
             onMouseLeave={handleContainerLeave}
             data-testid={`satellite-exec-${exec.id}`}
           >
-            <div className="flex items-center gap-1.5 bg-popover/95 backdrop-blur-sm border border-border rounded-full pl-1.5 pr-2.5 py-1 shadow-lg hover:shadow-xl hover:border-primary/50 hover:bg-popover transition-shadow whitespace-nowrap max-w-[180px]">
-              <div className="w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+            <div
+              className="flex items-center gap-1.5 backdrop-blur-sm border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
+              style={{
+                backgroundColor: isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
+                borderColor: isSnapTarget ? 'hsl(35 92% 50%)' : isConnected ? 'hsl(35 92% 50% / 0.4)' : 'hsl(var(--border))',
+                boxShadow: isSnapTarget
+                  ? '0 0 0 3px hsl(35 92% 50% / 0.3), 0 4px 16px hsl(35 92% 50% / 0.25)'
+                  : isDragging
+                  ? '0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px hsl(var(--border))'
+                  : '0 2px 8px rgba(0,0,0,0.1)',
+                transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s',
+              }}
+            >
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                style={{
+                  backgroundColor: isSnapTarget ? 'hsl(35 92% 50% / 0.3)' : 'hsl(var(--primary) / 0.15)',
+                  transition: 'background-color 0.2s',
+                }}
+              >
                 <span className="text-[9px] font-bold text-primary">
                   {exec.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                 </span>
@@ -248,7 +394,10 @@ export default function ExecutiveSatellites({
       })}
 
       {overflow > 0 && (() => {
-        const angle = totalItems > 1 ? arcStart + execs.length * angleStep : Math.PI / 2;
+        const rootCount = execs.filter(e => !hierarchy[e.id]).length;
+        const totalRoots = rootCount + 1;
+        const rootAngleStep = totalRoots > 1 ? arcSpan / (totalRoots - 1) : 0;
+        const angle = totalRoots > 1 ? arcStart + rootCount * rootAngleStep : Math.PI / 2;
         const x = Math.cos(angle) * orbitRadius;
         const y = Math.sin(angle) * orbitRadius;
         return (

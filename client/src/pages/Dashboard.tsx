@@ -25,7 +25,7 @@ export default function Dashboard() {
   const { isLoading, refetch: refetchCompanies } = useCompanies();
   const loadSearchResults = useLoadSearchResults();
 
-  const [activeView, setActiveView] = useState<ViewMode>('map');
+  const [activeView, setActiveViewRaw] = useState<ViewMode>('map');
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importModalMode, setImportModalMode] = useState<'import' | 'add'>('import');
@@ -38,6 +38,14 @@ export default function Dashboard() {
   const [matchReviewData, setMatchReviewData] = useState<EnrichmentMatchResult | null>(null);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
   const enrichmentMatch = useEnrichmentMatch();
+
+  const setActiveView = (view: ViewMode) => {
+    if (view !== 'map') {
+      selectCompany(null);
+      selectExecutive(null);
+    }
+    setActiveViewRaw(view);
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -294,7 +302,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {hasSelection && (
+          {hasSelection && activeView === 'map' && (
             <>
               <div
                 className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0 z-30"

@@ -413,6 +413,7 @@ export default function MapComponent() {
               position={[company.displayLat, company.displayLng]}
               icon={customIcon}
               draggable={true}
+              zIndexOffset={1000}
               eventHandlers={{
                 click: () => selectCompany(company.id),
                 mouseover: () => {

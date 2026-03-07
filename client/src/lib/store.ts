@@ -224,6 +224,7 @@ interface AppState {
   hiddenCountries: Set<string>;
   hiddenCompanies: Set<string>;
   showAllSatellites: boolean;
+  satelliteHierarchies: Record<string, Record<string, string>>;
   
   setProject: (project: Project) => void;
   renameProject: (name: string) => void;
@@ -255,6 +256,7 @@ interface AppState {
   toggleCountryVisibility: (countryName: string) => void;
   toggleCompanyVisibility: (companyId: string) => void;
   toggleAllSatellites: () => void;
+  setSatelliteHierarchy: (companyId: string, hierarchy: Record<string, string>) => void;
   resetVisibility: () => void;
   
   loadFromAPI: (apiCompanies: APICompany[]) => void;
@@ -456,6 +458,7 @@ export const useAppStore = create<AppState>((set) => ({
   hiddenCountries: new Set<string>(),
   hiddenCompanies: new Set<string>(),
   showAllSatellites: false,
+  satelliteHierarchies: {},
 
   setProject: (project) => set({ currentProject: project }),
   renameProject: (name) => set((state) => ({
@@ -535,6 +538,10 @@ export const useAppStore = create<AppState>((set) => ({
   
   toggleAllSatellites: () => set((state) => ({ showAllSatellites: !state.showAllSatellites })),
 
+  setSatelliteHierarchy: (companyId, hierarchy) => set((state) => ({
+    satelliteHierarchies: { ...state.satelliteHierarchies, [companyId]: hierarchy }
+  })),
+
   resetVisibility: () => set({
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>()
@@ -575,6 +582,7 @@ export const useAppStore = create<AppState>((set) => ({
     degradationReasons: undefined,
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>(),
-    showAllSatellites: false
+    showAllSatellites: false,
+    satelliteHierarchies: {}
   })
 }));

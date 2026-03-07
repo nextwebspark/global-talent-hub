@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { Executive } from '@/lib/store';
+import { useAppStore } from '@/lib/store';
 
 interface ExecutiveSatellitesProps {
   companyId: string;
@@ -11,12 +12,13 @@ interface ExecutiveSatellitesProps {
   companyRadius: number;
   executives: Executive[];
   persistent?: boolean;
-  onSelectExecutive: (execId: string, companyId: string) => void;
+  onSelectExecutive: (execId: string | null, companyId: string) => void;
   onDismiss: () => void;
 }
 
 const MAX_SATELLITES = 8;
-const SNAP_DISTANCE = 45;
+const SNAP_DISTANCE = 50;
+const DRAG_THRESHOLD = 4;
 const CHILD_VERTICAL_OFFSET = 38;
 const CHILD_HORIZONTAL_STAGGER = 75;
 
@@ -45,16 +47,27 @@ export default function ExecutiveSatellites({
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
-  const [hierarchy, setHierarchy] = useState<Record<string, string>>({});
   const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
   const [selectedExecId, setSelectedExecId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const snapTargetRef = useRef<string | null>(null);
   const draggingRef = useRef<{ id: string; startX: number; startY: number; origDx: number; origDy: number } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
-  const interactingRef = useRef(false);
+  const hoverCountRef = useRef(0);
   const didDragRef = useRef(false);
+  const thresholdPassedRef = useRef(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const anchorMarkerRef = useRef<L.Marker | null>(null);
+
+  const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] || {});
+  const setSatelliteHierarchy = useAppStore((s) => s.setSatelliteHierarchy);
+
+  const hierarchy = storeHierarchy;
+  const setHierarchy = useCallback((updater: (prev: Record<string, string>) => Record<string, string>) => {
+    const current = useAppStore.getState().satelliteHierarchies[companyId] || {};
+    const next = updater(current);
+    setSatelliteHierarchy(companyId, next);
+  }, [companyId, setSatelliteHierarchy]);
 
   const hierarchyRef = useRef(hierarchy);
   hierarchyRef.current = hierarchy;
@@ -62,6 +75,30 @@ export default function ExecutiveSatellites({
   const execs = executives.slice(0, MAX_SATELLITES);
   const execsRef = useRef(execs);
   execsRef.current = execs;
+
+  const execIdSet = useMemo(() => new Set(execs.map(e => e.id)), [execs]);
+
+  useEffect(() => {
+    const current = useAppStore.getState().satelliteHierarchies[companyId] || {};
+    const pruned: Record<string, string> = {};
+    let changed = false;
+    for (const [childId, parentId] of Object.entries(current)) {
+      if (execIdSet.has(childId) && execIdSet.has(parentId)) {
+        pruned[childId] = parentId;
+      } else {
+        changed = true;
+      }
+    }
+    if (changed) {
+      setSatelliteHierarchy(companyId, pruned);
+    }
+    hoverCountRef.current = 0;
+    setSelectedExecId(null);
+    setDragOffsets({});
+  }, [companyId, execIdSet, setSatelliteHierarchy]);
+
+  const dragOffsetsRef = useRef(dragOffsets);
+  dragOffsetsRef.current = dragOffsets;
 
   const overflow = executives.length - MAX_SATELLITES;
 
@@ -73,27 +110,28 @@ export default function ExecutiveSatellites({
   }, []);
 
   const startDismiss = useCallback(() => {
-    if (persistent || draggingRef.current || interactingRef.current) return;
+    if (persistent || draggingRef.current || hoverCountRef.current > 0) return;
     cancelDismiss();
     dismissTimerRef.current = setTimeout(() => {
       setSelectedExecId(null);
       onDismiss();
-    }, 400);
+    }, 800);
   }, [onDismiss, cancelDismiss, persistent]);
 
-  const handleContainerEnter = useCallback(() => {
-    interactingRef.current = true;
+  const startDismissRef = useRef(startDismiss);
+  startDismissRef.current = startDismiss;
+
+  const handlePillEnter = useCallback(() => {
+    hoverCountRef.current++;
     cancelDismiss();
   }, [cancelDismiss]);
 
-  const handleContainerLeave = useCallback(() => {
-    interactingRef.current = false;
-    if (!persistent) startDismiss();
-  }, [startDismiss, persistent]);
-
-  useEffect(() => {
-    setSelectedExecId(null);
-  }, [companyId, executives]);
+  const handlePillLeave = useCallback(() => {
+    hoverCountRef.current = Math.max(0, hoverCountRef.current - 1);
+    if (hoverCountRef.current === 0 && !persistent) {
+      startDismissRef.current();
+    }
+  }, [persistent]);
 
   useEffect(() => {
     const icon = L.divIcon({
@@ -155,13 +193,13 @@ export default function ExecutiveSatellites({
 
   const basePositions = useMemo(() => {
     const positions: Record<string, { x: number; y: number }> = {};
-    const rootExecs = execs.filter(e => !hierarchy[e.id]);
+    const rootExecs = execs.filter(e => !hierarchy[e.id] || !execIdSet.has(hierarchy[e.id]));
     const totalRoots = rootExecs.length + (overflow > 0 ? 1 : 0);
     const rootAngleStep = totalRoots > 1 ? arcSpan / (totalRoots - 1) : 0;
 
     const computeForExec = (exec: typeof execs[0], bx: number, by: number) => {
       positions[exec.id] = { x: bx, y: by };
-      const children = execs.filter(e => hierarchy[e.id] === exec.id);
+      const children = execs.filter(e => hierarchy[e.id] === exec.id && execIdSet.has(e.id));
       if (children.length > 0) {
         const startX = bx - ((children.length - 1) * CHILD_HORIZONTAL_STAGGER) / 2;
         children.forEach((child, ci) => {
@@ -176,7 +214,7 @@ export default function ExecutiveSatellites({
     });
 
     return positions;
-  }, [execs, hierarchy, orbitRadius, arcStart, arcSpan, overflow]);
+  }, [execs, execIdSet, hierarchy, orbitRadius, arcStart, arcSpan, overflow]);
 
   const basePositionsRef = useRef(basePositions);
   basePositionsRef.current = basePositions;
@@ -195,18 +233,32 @@ export default function ExecutiveSatellites({
     return result;
   }, [execs, basePositions, dragOffsets]);
 
+  const displayPositionsRef = useRef(displayPositions);
+  displayPositionsRef.current = displayPositions;
+
   const handleDragStart = useCallback((execId: string, clientX: number, clientY: number) => {
     cancelDismiss();
-    map.dragging.disable();
     didDragRef.current = false;
-    const currentOffset = dragOffsets[execId] || { dx: 0, dy: 0 };
+    thresholdPassedRef.current = false;
+    const currentOffset = dragOffsetsRef.current[execId] || { dx: 0, dy: 0 };
     draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx: currentOffset.dx, origDy: currentOffset.dy };
 
     const handleDragMove = (e: MouseEvent) => {
       if (!draggingRef.current || draggingRef.current.id !== execId) return;
+
+      const totalDx = e.clientX - draggingRef.current.startX;
+      const totalDy = e.clientY - draggingRef.current.startY;
+
+      if (!thresholdPassedRef.current) {
+        if (Math.sqrt(totalDx * totalDx + totalDy * totalDy) < DRAG_THRESHOLD) return;
+        thresholdPassedRef.current = true;
+        map.dragging.disable();
+        setDraggingId(execId);
+      }
+
       didDragRef.current = true;
-      const dx = draggingRef.current.origDx + (e.clientX - draggingRef.current.startX);
-      const dy = draggingRef.current.origDy + (e.clientY - draggingRef.current.startY);
+      const dx = draggingRef.current.origDx + totalDx;
+      const dy = draggingRef.current.origDy + totalDy;
       setDragOffsets(prev => ({ ...prev, [execId]: { dx, dy } }));
 
       const base = basePositionsRef.current[execId];
@@ -217,14 +269,15 @@ export default function ExecutiveSatellites({
       const currentHierarchy = hierarchyRef.current;
       const descendants = getDescendants(execId, currentHierarchy);
       const currentExecs = execsRef.current;
+      const currentDisplayPositions = displayPositionsRef.current;
 
       let closest: { id: string; dist: number } | null = null;
       for (const exec of currentExecs) {
         if (exec.id === execId) continue;
         if (descendants.has(exec.id)) continue;
-        const basePos = basePositionsRef.current[exec.id];
-        if (!basePos) continue;
-        const dist = Math.sqrt((draggedX - basePos.x) ** 2 + (draggedY - basePos.y) ** 2);
+        const displayPos = currentDisplayPositions[exec.id];
+        if (!displayPos) continue;
+        const dist = Math.sqrt((draggedX - displayPos.x) ** 2 + (draggedY - displayPos.y) ** 2);
         if (dist < SNAP_DISTANCE && (!closest || dist < closest.dist)) {
           closest = { id: exec.id, dist };
         }
@@ -236,23 +289,25 @@ export default function ExecutiveSatellites({
 
     const handleDragEnd = () => {
       const currentSnap = snapTargetRef.current;
+      const wasDragged = thresholdPassedRef.current;
       draggingRef.current = null;
       dragCleanupRef.current = null;
-      map.dragging.enable();
+      if (wasDragged) map.dragging.enable();
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('mouseup', handleDragEnd);
 
       snapTargetRef.current = null;
       setSnapTargetId(null);
+      setDraggingId(null);
 
-      if (currentSnap) {
+      if (wasDragged && currentSnap) {
         setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
         setDragOffsets(prev => {
           const next = { ...prev };
           delete next[execId];
           return next;
         });
-      } else if (didDragRef.current) {
+      } else if (wasDragged && didDragRef.current) {
         setHierarchy(prev => {
           if (!prev[execId]) return prev;
           const next = { ...prev };
@@ -266,8 +321,8 @@ export default function ExecutiveSatellites({
         });
       }
 
-      if (!persistent && !interactingRef.current) {
-        startDismiss();
+      if (!persistent && hoverCountRef.current === 0) {
+        startDismissRef.current();
       }
     };
 
@@ -277,12 +332,13 @@ export default function ExecutiveSatellites({
       draggingRef.current = null;
       snapTargetRef.current = null;
       setSnapTargetId(null);
+      setDraggingId(null);
       map.dragging.enable();
     };
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [dragOffsets, cancelDismiss, startDismiss, map, persistent]);
+  }, [cancelDismiss, setHierarchy, map, persistent]);
 
   if (execs.length === 0 || !anchorEl) return null;
 
@@ -325,7 +381,7 @@ export default function ExecutiveSatellites({
                 y2={pos.y}
                 stroke="hsl(35 92% 50%)"
                 strokeWidth={2}
-                strokeOpacity={0.5}
+                strokeOpacity={0.6}
               />
             );
           }
@@ -344,12 +400,30 @@ export default function ExecutiveSatellites({
             />
           );
         })}
+
+        {draggingId && snapTargetRef.current && (() => {
+          const dragPos = displayPositions[draggingId];
+          const targetPos = displayPositions[snapTargetRef.current];
+          if (!dragPos || !targetPos) return null;
+          return (
+            <line
+              x1={targetPos.x}
+              y1={targetPos.y}
+              x2={dragPos.x}
+              y2={dragPos.y}
+              stroke="hsl(35 92% 50%)"
+              strokeWidth={2}
+              strokeDasharray="4 3"
+              strokeOpacity={0.8}
+            />
+          );
+        })()}
       </svg>
 
       {execs.map((exec, i) => {
         const pos = displayPositions[exec.id];
         if (!pos) return null;
-        const isDragging = draggingRef.current?.id === exec.id;
+        const isDragging = draggingId === exec.id;
         const isSnapTarget = snapTargetId === exec.id;
         const isConnected = !!hierarchy[exec.id];
         const isSelected = selectedExecId === exec.id;
@@ -372,6 +446,7 @@ export default function ExecutiveSatellites({
             onMouseDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              cancelDismiss();
               handleDragStart(exec.id, e.clientX, e.clientY);
             }}
             onClick={(e) => {
@@ -381,11 +456,16 @@ export default function ExecutiveSatellites({
                 didDragRef.current = false;
                 return;
               }
-              setSelectedExecId(exec.id);
-              onSelectExecutive(exec.id, companyId);
+              if (isSelected) {
+                setSelectedExecId(null);
+                onSelectExecutive(null, companyId);
+              } else {
+                setSelectedExecId(exec.id);
+                onSelectExecutive(exec.id, companyId);
+              }
             }}
-            onMouseEnter={handleContainerEnter}
-            onMouseLeave={handleContainerLeave}
+            onMouseEnter={handlePillEnter}
+            onMouseLeave={handlePillLeave}
             data-testid={`satellite-exec-${exec.id}`}
           >
             <div
@@ -454,8 +534,8 @@ export default function ExecutiveSatellites({
               zIndex: 451,
               pointerEvents: 'auto',
             }}
-            onMouseEnter={handleContainerEnter}
-            onMouseLeave={handleContainerLeave}
+            onMouseEnter={handlePillEnter}
+            onMouseLeave={handlePillLeave}
           >
             <div className="flex items-center bg-muted/90 backdrop-blur-sm border border-border rounded-full px-2.5 py-1 shadow-md">
               <span className="text-[10px] font-medium text-muted-foreground">+{overflow} more</span>

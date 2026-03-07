@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import logoImage from '@/assets/images/logo.png';
 import { toast } from 'sonner';
+import ExecutiveSatellites from './ExecutiveSatellites';
 
 import L from 'leaflet';
 
@@ -169,7 +170,7 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -177,6 +178,8 @@ export default function MapComponent() {
   const [newMapCountry, setNewMapCountry] = useState('');
   const [newMapExecTitle, setNewMapExecTitle] = useState('');
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
+  const [hoveredCompanyId, setHoveredCompanyId] = useState<string | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
@@ -412,8 +415,21 @@ export default function MapComponent() {
               draggable={true}
               eventHandlers={{
                 click: () => selectCompany(company.id),
+                mouseover: () => {
+                  if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                  hoverTimerRef.current = setTimeout(() => {
+                    setHoveredCompanyId(company.id);
+                  }, 300);
+                },
+                mouseout: () => {
+                  if (hoverTimerRef.current) {
+                    clearTimeout(hoverTimerRef.current);
+                    hoverTimerRef.current = null;
+                  }
+                },
                 dragstart: () => {
                   isMarkerDragging = true;
+                  setHoveredCompanyId(null);
                 },
                 dragend: (e) => {
                   isMarkerDragging = false;
@@ -425,15 +441,11 @@ export default function MapComponent() {
                   });
                 },
                 dblclick: (e) => {
-                  // Prevent map zoom on double click
                   e.originalEvent.stopPropagation();
                   e.originalEvent.preventDefault();
                   
-                  // Open color picker
                   const mapContainer = e.target._map.getContainer();
-                  const point = e.containerPoint; // Pixel coordinates relative to map container
-                  
-                  // We need absolute coordinates for the fixed overlay
+                  const point = e.containerPoint;
                   const rect = mapContainer.getBoundingClientRect();
                   
                   setColorPickerTarget({
@@ -458,6 +470,29 @@ export default function MapComponent() {
             </Marker>
           );
         })}
+
+        {hoveredCompanyId && (() => {
+          const hovered = scatteredCompanies.find(c => c.id === hoveredCompanyId);
+          if (!hovered) return null;
+          const hoveredExecs = executives.filter((e: Executive) => e.company_id === hoveredCompanyId);
+          if (hoveredExecs.length === 0) return null;
+          const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
+          const hoveredRadius = getRadius(hoveredValue);
+          return (
+            <ExecutiveSatellites
+              companyId={hoveredCompanyId}
+              companyLat={hovered.displayLat}
+              companyLng={hovered.displayLng}
+              companyRadius={hoveredRadius}
+              executives={hoveredExecs}
+              onSelectExecutive={(execId, companyId) => {
+                setHoveredCompanyId(null);
+                selectExecutive(execId, companyId);
+              }}
+              onDismiss={() => setHoveredCompanyId(null)}
+            />
+          );
+        })()}
       </MapContainer>
 
       {/* Logo in bottom right */}

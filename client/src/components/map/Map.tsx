@@ -180,6 +180,7 @@ export default function MapComponent() {
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
   const [hoveredCompanyId, setHoveredCompanyId] = useState<string | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [draggingCompany, setDraggingCompany] = useState<{ id: string; lat: number; lng: number } | null>(null);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
@@ -431,10 +432,14 @@ export default function MapComponent() {
                 },
                 dragstart: () => {
                   isMarkerDragging = true;
-                  setHoveredCompanyId(null);
+                },
+                drag: (e) => {
+                  const pos = e.target.getLatLng();
+                  setDraggingCompany({ id: company.id, lat: pos.lat, lng: pos.lng });
                 },
                 dragend: (e) => {
                   isMarkerDragging = false;
+                  setDraggingCompany(null);
                   const marker = e.target;
                   const position = marker.getLatLng();
                   updateCompany(company.id, {
@@ -478,12 +483,13 @@ export default function MapComponent() {
           if (companyExecs.length === 0) return null;
           const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const r = getRadius(val);
+          const isDragging = draggingCompany?.id === company.id;
           return (
             <ExecutiveSatellites
               key={`sat-${company.id}`}
               companyId={company.id}
-              companyLat={company.displayLat}
-              companyLng={company.displayLng}
+              companyLat={isDragging ? draggingCompany.lat : company.displayLat}
+              companyLng={isDragging ? draggingCompany.lng : company.displayLng}
               companyRadius={r}
               executives={companyExecs}
               persistent
@@ -502,11 +508,12 @@ export default function MapComponent() {
           if (hoveredExecs.length === 0) return null;
           const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
           const hoveredRadius = getRadius(hoveredValue);
+          const isDragging = draggingCompany?.id === hoveredCompanyId;
           return (
             <ExecutiveSatellites
               companyId={hoveredCompanyId}
-              companyLat={hovered.displayLat}
-              companyLng={hovered.displayLng}
+              companyLat={isDragging ? draggingCompany.lat : hovered.displayLat}
+              companyLng={isDragging ? draggingCompany.lng : hovered.displayLng}
               companyRadius={hoveredRadius}
               executives={hoveredExecs}
               onSelectExecutive={(execId, companyId) => {

@@ -77,7 +77,8 @@ export default function ExecutiveSatellites({
   const execsRef = useRef(execs);
   execsRef.current = execs;
 
-  const execIdSet = useMemo(() => new Set(execs.map(e => e.id)), [execs]);
+  const execIdKey = execs.map(e => e.id).join(',');
+  const execIdSet = useMemo(() => new Set(execs.map(e => e.id)), [execIdKey]);
 
   useEffect(() => {
     const current = useAppStore.getState().satelliteHierarchies[companyId] || {};
@@ -96,7 +97,7 @@ export default function ExecutiveSatellites({
     hoverCountRef.current = 0;
     setSelectedExecId(null);
     setDragOffsets({});
-  }, [companyId, execIdSet, setSatelliteHierarchy]);
+  }, [companyId, execIdKey, setSatelliteHierarchy]);
 
   const dragOffsetsRef = useRef(dragOffsets);
   dragOffsetsRef.current = dragOffsets;

@@ -16,6 +16,7 @@ interface ExecutiveSatellitesProps {
   onDismiss: () => void;
 }
 
+const EMPTY_HIERARCHY: Record<string, string> = {};
 const MAX_SATELLITES = 8;
 const SNAP_DISTANCE = 50;
 const DRAG_THRESHOLD = 4;
@@ -59,7 +60,7 @@ export default function ExecutiveSatellites({
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const anchorMarkerRef = useRef<L.Marker | null>(null);
 
-  const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] || {});
+  const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] ?? EMPTY_HIERARCHY);
   const setSatelliteHierarchy = useAppStore((s) => s.setSatelliteHierarchy);
 
   const hierarchy = storeHierarchy;

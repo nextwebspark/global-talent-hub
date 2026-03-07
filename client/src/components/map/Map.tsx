@@ -170,7 +170,7 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -472,7 +472,29 @@ export default function MapComponent() {
           );
         })}
 
-        {hoveredCompanyId && (() => {
+        {showAllSatellites && scatteredCompanies.map((company) => {
+          const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
+          if (companyExecs.length === 0) return null;
+          const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+          const r = getRadius(val);
+          return (
+            <ExecutiveSatellites
+              key={`sat-${company.id}`}
+              companyId={company.id}
+              companyLat={company.displayLat}
+              companyLng={company.displayLng}
+              companyRadius={r}
+              executives={companyExecs}
+              persistent
+              onSelectExecutive={(execId, cId) => {
+                selectExecutive(execId, cId);
+              }}
+              onDismiss={() => {}}
+            />
+          );
+        })}
+
+        {!showAllSatellites && hoveredCompanyId && (() => {
           const hovered = scatteredCompanies.find(c => c.id === hoveredCompanyId);
           if (!hovered) return null;
           const hoveredExecs = executives.filter((e: Executive) => e.company_id === hoveredCompanyId);

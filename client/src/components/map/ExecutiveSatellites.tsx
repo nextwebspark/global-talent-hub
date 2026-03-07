@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useMap } from 'react-leaflet';
 import type { Executive } from '@/lib/store';
 
@@ -8,6 +9,7 @@ interface ExecutiveSatellitesProps {
   companyLng: number;
   companyRadius: number;
   executives: Executive[];
+  persistent?: boolean;
   onSelectExecutive: (execId: string, companyId: string) => void;
   onDismiss: () => void;
 }
@@ -34,11 +36,11 @@ export default function ExecutiveSatellites({
   companyLng,
   companyRadius,
   executives,
+  persistent = false,
   onSelectExecutive,
   onDismiss,
 }: ExecutiveSatellitesProps) {
   const map = useMap();
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
@@ -49,6 +51,8 @@ export default function ExecutiveSatellites({
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const interactingRef = useRef(false);
   const didDragRef = useRef(false);
+  const [containerPos, setContainerPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [paneEl, setPaneEl] = useState<HTMLElement | null>(null);
 
   const hierarchyRef = useRef(hierarchy);
   hierarchyRef.current = hierarchy;
@@ -67,12 +71,12 @@ export default function ExecutiveSatellites({
   }, []);
 
   const startDismiss = useCallback(() => {
-    if (draggingRef.current || interactingRef.current) return;
+    if (persistent || draggingRef.current || interactingRef.current) return;
     cancelDismiss();
     dismissTimerRef.current = setTimeout(() => {
       onDismiss();
     }, 400);
-  }, [onDismiss, cancelDismiss]);
+  }, [onDismiss, cancelDismiss, persistent]);
 
   const handleContainerEnter = useCallback(() => {
     interactingRef.current = true;
@@ -81,8 +85,13 @@ export default function ExecutiveSatellites({
 
   const handleContainerLeave = useCallback(() => {
     interactingRef.current = false;
-    startDismiss();
-  }, [startDismiss]);
+    if (!persistent) startDismiss();
+  }, [startDismiss, persistent]);
+
+  useEffect(() => {
+    const markerPane = map.getPane('markerPane');
+    if (markerPane) setPaneEl(markerPane);
+  }, [map]);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -96,25 +105,21 @@ export default function ExecutiveSatellites({
   }, [cancelDismiss]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
     const updatePosition = () => {
-      const point = map.latLngToContainerPoint([companyLat, companyLng]);
-      const mapContainer = map.getContainer();
-      const rect = mapContainer.getBoundingClientRect();
-      container.style.left = `${rect.left + point.x}px`;
-      container.style.top = `${rect.top + point.y}px`;
+      const point = map.latLngToLayerPoint([companyLat, companyLng]);
+      setContainerPos({ x: point.x, y: point.y });
     };
 
     updatePosition();
     map.on('move', updatePosition);
     map.on('zoom', updatePosition);
+    map.on('viewreset', updatePosition);
     map.on('resize', updatePosition);
 
     return () => {
       map.off('move', updatePosition);
       map.off('zoom', updatePosition);
+      map.off('viewreset', updatePosition);
       map.off('resize', updatePosition);
     };
   }, [map, companyLat, companyLng]);
@@ -232,7 +237,7 @@ export default function ExecutiveSatellites({
         });
       }
 
-      if (!interactingRef.current) {
+      if (!persistent && !interactingRef.current) {
         startDismiss();
       }
     };
@@ -248,38 +253,48 @@ export default function ExecutiveSatellites({
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [dragOffsets, cancelDismiss, startDismiss, map]);
+  }, [dragOffsets, cancelDismiss, startDismiss, map, persistent]);
 
-  if (execs.length === 0) return null;
+  if (execs.length === 0 || !paneEl) return null;
 
   const hitAreaSize = (orbitRadius + 140) * 2;
 
-  return (
+  const content = (
     <div
-      ref={containerRef}
-      className="fixed z-[450]"
-      style={{ transform: 'translate(-50%, -50%)' }}
+      style={{
+        position: 'absolute',
+        left: containerPos.x,
+        top: containerPos.y,
+        zIndex: 450,
+        pointerEvents: 'none',
+      }}
     >
-      <div
-        className="absolute"
-        style={{
-          width: hitAreaSize,
-          height: hitAreaSize,
-          left: `calc(50% - ${hitAreaSize / 2}px)`,
-          top: `calc(50% - ${hitAreaSize / 2}px)`,
-        }}
-        onMouseEnter={handleContainerEnter}
-        onMouseLeave={handleContainerLeave}
-      />
+      {!persistent && (
+        <div
+          style={{
+            position: 'absolute',
+            width: hitAreaSize,
+            height: hitAreaSize,
+            left: -(hitAreaSize / 2),
+            top: -(hitAreaSize / 2),
+            pointerEvents: 'auto',
+          }}
+          onMouseEnter={handleContainerEnter}
+          onMouseLeave={handleContainerLeave}
+        />
+      )}
 
       <svg
-        className="absolute left-1/2 top-1/2 pointer-events-none"
         style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
           width: 1,
           height: 1,
           overflow: 'visible',
           opacity: visible ? 1 : 0,
           transition: 'opacity 0.3s ease',
+          pointerEvents: 'none',
         }}
       >
         {execs.map((exec) => {
@@ -330,15 +345,17 @@ export default function ExecutiveSatellites({
         return (
           <div
             key={exec.id}
-            className="absolute select-none"
             style={{
-              left: `calc(50% + ${pos.x}px)`,
-              top: `calc(50% + ${pos.y}px)`,
+              position: 'absolute',
+              left: pos.x,
+              top: pos.y,
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
               zIndex: isDragging ? 453 : 451,
               cursor: isDragging ? 'grabbing' : 'grab',
+              pointerEvents: 'auto',
+              userSelect: 'none',
             }}
             onMouseDown={(e) => {
               e.preventDefault();
@@ -354,8 +371,8 @@ export default function ExecutiveSatellites({
               }
               onSelectExecutive(exec.id, companyId);
             }}
-            onMouseEnter={handleContainerEnter}
-            onMouseLeave={handleContainerLeave}
+            onMouseEnter={!persistent ? handleContainerEnter : undefined}
+            onMouseLeave={!persistent ? handleContainerLeave : undefined}
             data-testid={`satellite-exec-${exec.id}`}
           >
             <div
@@ -402,17 +419,18 @@ export default function ExecutiveSatellites({
         const y = Math.sin(angle) * orbitRadius;
         return (
           <div
-            className="absolute"
             style={{
-              left: `calc(50% + ${x}px)`,
-              top: `calc(50% + ${y}px)`,
+              position: 'absolute',
+              left: x,
+              top: y,
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
               transition: `all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${execs.length * 50}ms`,
               zIndex: 451,
+              pointerEvents: 'auto',
             }}
-            onMouseEnter={handleContainerEnter}
-            onMouseLeave={handleContainerLeave}
+            onMouseEnter={!persistent ? handleContainerEnter : undefined}
+            onMouseLeave={!persistent ? handleContainerLeave : undefined}
           >
             <div className="flex items-center bg-muted/90 backdrop-blur-sm border border-border rounded-full px-2.5 py-1 shadow-md">
               <span className="text-[10px] font-medium text-muted-foreground">+{overflow} more</span>
@@ -422,4 +440,6 @@ export default function ExecutiveSatellites({
       })()}
     </div>
   );
+
+  return createPortal(content, paneEl);
 }

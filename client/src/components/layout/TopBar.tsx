@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft, Sun, Moon, Pencil } from 'lucide-react';
+import { Building2, Users, MapPin, Search, Download, Upload, Zap, Plus, Loader2, ChevronDown, ArrowLeft, Sun, Moon, Pencil, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
@@ -18,7 +18,7 @@ interface TopBarProps {
 }
 
 export default function TopBar({ activeView, onCommandPalette, onExport, onImport, onEnrichAll, onAddCompany, onHome, isEnriching }: TopBarProps) {
-  const { currentProject, companies, executives, renameProject } = useAppStore();
+  const { currentProject, companies, executives, renameProject, showAllSatellites, toggleAllSatellites } = useAppStore();
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -210,6 +210,25 @@ export default function TopBar({ activeView, onCommandPalette, onExport, onImpor
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Export to Excel</TooltipContent>
           </Tooltip>
+
+          {activeView === 'map' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={showAllSatellites ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={toggleAllSatellites}
+                  className="h-7 w-7 p-0"
+                  data-testid="topbar-satellites"
+                >
+                  {showAllSatellites ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {showAllSatellites ? 'Hide executives' : 'Show executives'}
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           <Tooltip>
             <TooltipTrigger asChild>

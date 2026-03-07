@@ -223,6 +223,7 @@ interface AppState {
   // Map visibility state (UI-only, does not persist to database)
   hiddenCountries: Set<string>;
   hiddenCompanies: Set<string>;
+  showAllSatellites: boolean;
   
   setProject: (project: Project) => void;
   renameProject: (name: string) => void;
@@ -253,6 +254,7 @@ interface AppState {
   // Map visibility actions
   toggleCountryVisibility: (countryName: string) => void;
   toggleCompanyVisibility: (companyId: string) => void;
+  toggleAllSatellites: () => void;
   resetVisibility: () => void;
   
   loadFromAPI: (apiCompanies: APICompany[]) => void;
@@ -453,6 +455,7 @@ export const useAppStore = create<AppState>((set) => ({
   degradationReasons: undefined,
   hiddenCountries: new Set<string>(),
   hiddenCompanies: new Set<string>(),
+  showAllSatellites: false,
 
   setProject: (project) => set({ currentProject: project }),
   renameProject: (name) => set((state) => ({
@@ -530,6 +533,8 @@ export const useAppStore = create<AppState>((set) => ({
     return { hiddenCompanies: next };
   }),
   
+  toggleAllSatellites: () => set((state) => ({ showAllSatellites: !state.showAllSatellites })),
+
   resetVisibility: () => set({
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>()
@@ -569,6 +574,7 @@ export const useAppStore = create<AppState>((set) => ({
     discoveryStatus: null,
     degradationReasons: undefined,
     hiddenCountries: new Set<string>(),
-    hiddenCompanies: new Set<string>()
+    hiddenCompanies: new Set<string>(),
+    showAllSatellites: false
   })
 }));

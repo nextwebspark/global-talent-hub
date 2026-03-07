@@ -416,6 +416,7 @@ export default function MapComponent() {
               eventHandlers={{
                 click: () => selectCompany(company.id),
                 mouseover: () => {
+                  if (hoveredCompanyId === company.id) return;
                   if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
                   hoverTimerRef.current = setTimeout(() => {
                     setHoveredCompanyId(company.id);

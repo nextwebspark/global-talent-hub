@@ -158,3 +158,8 @@
 .overflow-auto {
   scrollbar-gutter: stable;
 }
+
+.satellite-anchor {
+  background: transparent !important;
+  border: none !important;
+}

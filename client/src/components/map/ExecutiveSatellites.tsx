@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useMap } from 'react-leaflet';
+import L from 'leaflet';
 import type { Executive } from '@/lib/store';
 
 interface ExecutiveSatellitesProps {
@@ -52,8 +53,8 @@ export default function ExecutiveSatellites({
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const interactingRef = useRef(false);
   const didDragRef = useRef(false);
-  const containerElRef = useRef<HTMLDivElement | null>(null);
-  const [paneEl, setPaneEl] = useState<HTMLElement | null>(null);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const anchorMarkerRef = useRef<L.Marker | null>(null);
 
   const hierarchyRef = useRef(hierarchy);
   hierarchyRef.current = hierarchy;
@@ -91,13 +92,50 @@ export default function ExecutiveSatellites({
   }, [startDismiss, persistent]);
 
   useEffect(() => {
-    const markerPane = map.getPane('markerPane');
-    if (markerPane) setPaneEl(markerPane);
+    setSelectedExecId(null);
+  }, [companyId, executives]);
+
+  useEffect(() => {
+    const icon = L.divIcon({
+      className: 'satellite-anchor',
+      html: '<div></div>',
+      iconSize: [1, 1],
+      iconAnchor: [0, 0],
+    });
+
+    const marker = L.marker([companyLat, companyLng], {
+      icon,
+      interactive: false,
+      zIndexOffset: -1000,
+    });
+
+    anchorMarkerRef.current = marker;
+
+    const onAdd = () => {
+      const el = marker.getElement();
+      if (el) {
+        el.style.pointerEvents = 'none';
+        el.style.overflow = 'visible';
+        setAnchorEl(el);
+      }
+    };
+
+    marker.on('add', onAdd);
+    marker.addTo(map);
+
+    return () => {
+      marker.off('add', onAdd);
+      marker.remove();
+      anchorMarkerRef.current = null;
+      setAnchorEl(null);
+    };
   }, [map]);
 
   useEffect(() => {
-    setSelectedExecId(null);
-  }, [companyId, executives]);
+    if (anchorMarkerRef.current) {
+      anchorMarkerRef.current.setLatLng([companyLat, companyLng]);
+    }
+  }, [companyLat, companyLng]);
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -109,38 +147,6 @@ export default function ExecutiveSatellites({
       }
     };
   }, [cancelDismiss]);
-
-  const updatePositionRef = useRef<() => void>(() => {});
-  updatePositionRef.current = () => {
-    const point = map.latLngToLayerPoint([companyLat, companyLng]);
-    if (containerElRef.current) {
-      containerElRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
-    }
-  };
-
-  const containerRefCallback = useCallback((node: HTMLDivElement | null) => {
-    containerElRef.current = node;
-    if (node) updatePositionRef.current();
-  }, []);
-
-  useEffect(() => {
-    const handler = () => updatePositionRef.current();
-
-    handler();
-    map.on('move', handler);
-    map.on('zoom', handler);
-    map.on('viewreset', handler);
-    map.on('resize', handler);
-    map.on('zoomanim', handler);
-
-    return () => {
-      map.off('move', handler);
-      map.off('zoom', handler);
-      map.off('viewreset', handler);
-      map.off('resize', handler);
-      map.off('zoomanim', handler);
-    };
-  }, [map, companyLat, companyLng]);
 
   const orbitRadius = companyRadius + 65;
   const arcStart = Math.PI / 6;
@@ -278,54 +284,17 @@ export default function ExecutiveSatellites({
     window.addEventListener('mouseup', handleDragEnd);
   }, [dragOffsets, cancelDismiss, startDismiss, map, persistent]);
 
-  if (execs.length === 0 || !paneEl) return null;
-
-  const hitAreaSize = (orbitRadius + 140) * 2;
-  const exclusionRadius = companyRadius + 10;
-  const maskId = `donut-${companyId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+  if (execs.length === 0 || !anchorEl) return null;
 
   const content = (
     <div
-      ref={containerRefCallback}
       style={{
         position: 'absolute',
         left: 0,
         top: 0,
-        zIndex: 450,
         pointerEvents: 'none',
-        willChange: 'transform',
       }}
     >
-      {!persistent && (
-        <svg
-          style={{
-            position: 'absolute',
-            width: hitAreaSize,
-            height: hitAreaSize,
-            left: -(hitAreaSize / 2),
-            top: -(hitAreaSize / 2),
-            pointerEvents: 'auto',
-          }}
-          onMouseEnter={handleContainerEnter}
-          onMouseLeave={handleContainerLeave}
-        >
-          <defs>
-            <mask id={maskId}>
-              <rect width="100%" height="100%" fill="white" />
-              <circle cx={hitAreaSize / 2} cy={hitAreaSize / 2} r={exclusionRadius} fill="black" />
-            </mask>
-          </defs>
-          <rect
-            width="100%"
-            height="100%"
-            fill="white"
-            fillOpacity={0}
-            style={{ pointerEvents: 'all' }}
-            mask={`url(#${maskId})`}
-          />
-        </svg>
-      )}
-
       <svg
         style={{
           position: 'absolute',
@@ -396,12 +365,11 @@ export default function ExecutiveSatellites({
               opacity: visible ? 1 : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
               zIndex: isDragging ? 453 : isSelected ? 452 : 451,
-              cursor: isDragging ? 'grabbing' : isSelected ? 'grab' : 'pointer',
+              cursor: isDragging ? 'grabbing' : 'grab',
               pointerEvents: 'auto',
               userSelect: 'none',
             }}
             onMouseDown={(e) => {
-              if (!isSelected) return;
               e.preventDefault();
               e.stopPropagation();
               handleDragStart(exec.id, e.clientX, e.clientY);
@@ -413,15 +381,11 @@ export default function ExecutiveSatellites({
                 didDragRef.current = false;
                 return;
               }
-              if (isSelected) {
-                onSelectExecutive(exec.id, companyId);
-              } else {
-                setSelectedExecId(exec.id);
-                onSelectExecutive(exec.id, companyId);
-              }
+              setSelectedExecId(exec.id);
+              onSelectExecutive(exec.id, companyId);
             }}
-            onMouseEnter={!persistent ? handleContainerEnter : undefined}
-            onMouseLeave={!persistent ? handleContainerLeave : undefined}
+            onMouseEnter={handleContainerEnter}
+            onMouseLeave={handleContainerLeave}
             data-testid={`satellite-exec-${exec.id}`}
           >
             <div
@@ -490,8 +454,8 @@ export default function ExecutiveSatellites({
               zIndex: 451,
               pointerEvents: 'auto',
             }}
-            onMouseEnter={!persistent ? handleContainerEnter : undefined}
-            onMouseLeave={!persistent ? handleContainerLeave : undefined}
+            onMouseEnter={handleContainerEnter}
+            onMouseLeave={handleContainerLeave}
           >
             <div className="flex items-center bg-muted/90 backdrop-blur-sm border border-border rounded-full px-2.5 py-1 shadow-md">
               <span className="text-[10px] font-medium text-muted-foreground">+{overflow} more</span>
@@ -502,5 +466,5 @@ export default function ExecutiveSatellites({
     </div>
   );
 
-  return createPortal(content, paneEl);
+  return createPortal(content, anchorEl);
 }

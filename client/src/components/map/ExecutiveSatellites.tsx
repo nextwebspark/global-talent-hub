@@ -46,12 +46,13 @@ export default function ExecutiveSatellites({
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
   const [hierarchy, setHierarchy] = useState<Record<string, string>>({});
   const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
+  const [selectedExecId, setSelectedExecId] = useState<string | null>(null);
   const snapTargetRef = useRef<string | null>(null);
   const draggingRef = useRef<{ id: string; startX: number; startY: number; origDx: number; origDy: number } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const interactingRef = useRef(false);
   const didDragRef = useRef(false);
-  const [containerPos, setContainerPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const containerElRef = useRef<HTMLDivElement | null>(null);
   const [paneEl, setPaneEl] = useState<HTMLElement | null>(null);
 
   const hierarchyRef = useRef(hierarchy);
@@ -74,6 +75,7 @@ export default function ExecutiveSatellites({
     if (persistent || draggingRef.current || interactingRef.current) return;
     cancelDismiss();
     dismissTimerRef.current = setTimeout(() => {
+      setSelectedExecId(null);
       onDismiss();
     }, 400);
   }, [onDismiss, cancelDismiss, persistent]);
@@ -94,6 +96,10 @@ export default function ExecutiveSatellites({
   }, [map]);
 
   useEffect(() => {
+    setSelectedExecId(null);
+  }, [companyId, executives]);
+
+  useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
     return () => {
       cancelDismiss();
@@ -104,23 +110,35 @@ export default function ExecutiveSatellites({
     };
   }, [cancelDismiss]);
 
-  useEffect(() => {
-    const updatePosition = () => {
-      const point = map.latLngToLayerPoint([companyLat, companyLng]);
-      setContainerPos({ x: point.x, y: point.y });
-    };
+  const updatePositionRef = useRef<() => void>(() => {});
+  updatePositionRef.current = () => {
+    const point = map.latLngToLayerPoint([companyLat, companyLng]);
+    if (containerElRef.current) {
+      containerElRef.current.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    }
+  };
 
-    updatePosition();
-    map.on('move', updatePosition);
-    map.on('zoom', updatePosition);
-    map.on('viewreset', updatePosition);
-    map.on('resize', updatePosition);
+  const containerRefCallback = useCallback((node: HTMLDivElement | null) => {
+    containerElRef.current = node;
+    if (node) updatePositionRef.current();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => updatePositionRef.current();
+
+    handler();
+    map.on('move', handler);
+    map.on('zoom', handler);
+    map.on('viewreset', handler);
+    map.on('resize', handler);
+    map.on('zoomanim', handler);
 
     return () => {
-      map.off('move', updatePosition);
-      map.off('zoom', updatePosition);
-      map.off('viewreset', updatePosition);
-      map.off('resize', updatePosition);
+      map.off('move', handler);
+      map.off('zoom', handler);
+      map.off('viewreset', handler);
+      map.off('resize', handler);
+      map.off('zoomanim', handler);
     };
   }, [map, companyLat, companyLng]);
 
@@ -235,6 +253,11 @@ export default function ExecutiveSatellites({
           delete next[execId];
           return next;
         });
+        setDragOffsets(prev => {
+          const next = { ...prev };
+          delete next[execId];
+          return next;
+        });
       }
 
       if (!persistent && !interactingRef.current) {
@@ -258,19 +281,23 @@ export default function ExecutiveSatellites({
   if (execs.length === 0 || !paneEl) return null;
 
   const hitAreaSize = (orbitRadius + 140) * 2;
+  const exclusionRadius = companyRadius + 10;
+  const maskId = `donut-${companyId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
   const content = (
     <div
+      ref={containerRefCallback}
       style={{
         position: 'absolute',
-        left: containerPos.x,
-        top: containerPos.y,
+        left: 0,
+        top: 0,
         zIndex: 450,
         pointerEvents: 'none',
+        willChange: 'transform',
       }}
     >
       {!persistent && (
-        <div
+        <svg
           style={{
             position: 'absolute',
             width: hitAreaSize,
@@ -281,7 +308,22 @@ export default function ExecutiveSatellites({
           }}
           onMouseEnter={handleContainerEnter}
           onMouseLeave={handleContainerLeave}
-        />
+        >
+          <defs>
+            <mask id={maskId}>
+              <rect width="100%" height="100%" fill="white" />
+              <circle cx={hitAreaSize / 2} cy={hitAreaSize / 2} r={exclusionRadius} fill="black" />
+            </mask>
+          </defs>
+          <rect
+            width="100%"
+            height="100%"
+            fill="white"
+            fillOpacity={0}
+            style={{ pointerEvents: 'all' }}
+            mask={`url(#${maskId})`}
+          />
+        </svg>
       )}
 
       <svg
@@ -341,6 +383,7 @@ export default function ExecutiveSatellites({
         const isDragging = draggingRef.current?.id === exec.id;
         const isSnapTarget = snapTargetId === exec.id;
         const isConnected = !!hierarchy[exec.id];
+        const isSelected = selectedExecId === exec.id;
 
         return (
           <div
@@ -352,12 +395,13 @@ export default function ExecutiveSatellites({
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
-              zIndex: isDragging ? 453 : 451,
-              cursor: isDragging ? 'grabbing' : 'grab',
+              zIndex: isDragging ? 453 : isSelected ? 452 : 451,
+              cursor: isDragging ? 'grabbing' : isSelected ? 'grab' : 'pointer',
               pointerEvents: 'auto',
               userSelect: 'none',
             }}
             onMouseDown={(e) => {
+              if (!isSelected) return;
               e.preventDefault();
               e.stopPropagation();
               handleDragStart(exec.id, e.clientX, e.clientY);
@@ -369,7 +413,12 @@ export default function ExecutiveSatellites({
                 didDragRef.current = false;
                 return;
               }
-              onSelectExecutive(exec.id, companyId);
+              if (isSelected) {
+                onSelectExecutive(exec.id, companyId);
+              } else {
+                setSelectedExecId(exec.id);
+                onSelectExecutive(exec.id, companyId);
+              }
             }}
             onMouseEnter={!persistent ? handleContainerEnter : undefined}
             onMouseLeave={!persistent ? handleContainerLeave : undefined}
@@ -379,8 +428,16 @@ export default function ExecutiveSatellites({
               className="flex items-center gap-1.5 backdrop-blur-sm border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
               style={{
                 backgroundColor: isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
-                borderColor: isSnapTarget ? 'hsl(35 92% 50%)' : isConnected ? 'hsl(35 92% 50% / 0.4)' : 'hsl(var(--border))',
-                boxShadow: isSnapTarget
+                borderColor: isSelected
+                  ? 'hsl(var(--primary))'
+                  : isSnapTarget
+                  ? 'hsl(35 92% 50%)'
+                  : isConnected
+                  ? 'hsl(35 92% 50% / 0.4)'
+                  : 'hsl(var(--border))',
+                boxShadow: isSelected
+                  ? '0 0 0 2px hsl(var(--primary) / 0.3), 0 4px 12px rgba(0,0,0,0.15)'
+                  : isSnapTarget
                   ? '0 0 0 3px hsl(35 92% 50% / 0.3), 0 4px 16px hsl(35 92% 50% / 0.25)'
                   : isDragging
                   ? '0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px hsl(var(--border))'
@@ -391,7 +448,11 @@ export default function ExecutiveSatellites({
               <div
                 className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
                 style={{
-                  backgroundColor: isSnapTarget ? 'hsl(35 92% 50% / 0.3)' : 'hsl(var(--primary) / 0.15)',
+                  backgroundColor: isSelected
+                    ? 'hsl(var(--primary) / 0.2)'
+                    : isSnapTarget
+                    ? 'hsl(35 92% 50% / 0.3)'
+                    : 'hsl(var(--primary) / 0.15)',
                   transition: 'background-color 0.2s',
                 }}
               >

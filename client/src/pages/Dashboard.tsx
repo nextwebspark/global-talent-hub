@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
 import { useCompanies, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatchResult } from '@/lib/api';
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
@@ -89,6 +89,31 @@ export default function Dashboard() {
   useEffect(() => {
     if (!currentProject) setLocation('/');
   }, [currentProject, setLocation]);
+
+  const hierarchySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevHierarchiesRef = useRef<Record<string, Record<string, string>>>({});
+  useEffect(() => {
+    prevHierarchiesRef.current = useAppStore.getState().satelliteHierarchies;
+    const unsub = useAppStore.subscribe((state) => {
+      const hierarchies = state.satelliteHierarchies;
+      if (hierarchies === prevHierarchiesRef.current) return;
+      prevHierarchiesRef.current = hierarchies;
+      const projectId = state.currentProject?.id;
+      if (!projectId) return;
+      if (hierarchySaveTimerRef.current) clearTimeout(hierarchySaveTimerRef.current);
+      hierarchySaveTimerRef.current = setTimeout(() => {
+        fetch(`/api/search/${projectId}/satellite-hierarchies`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hierarchies }),
+        }).catch(() => {});
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      if (hierarchySaveTimerRef.current) clearTimeout(hierarchySaveTimerRef.current);
+    };
+  }, []);
 
   const tableData = useMemo(() => {
     const data: any[] = [];

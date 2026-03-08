@@ -198,7 +198,7 @@ export default function Landing() {
         search_string: item.query,
         created_at: new Date(item.createdAt)
       });
-      loadFromAPI(data.results);
+      loadFromAPI(data.results, data.satelliteHierarchies || {});
       toast.success(`Loaded ${data.results.length} companies from history`);
       setLocation('/dashboard');
     } catch (error) {

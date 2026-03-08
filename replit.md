@@ -41,6 +41,9 @@ The backend is a Node.js Express.js application written in TypeScript, providing
 ### Data Storage
 PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, `messages`, and `pipeline_log`.
 
+### Satellite Hierarchy Persistence
+Executive satellite parent-child hierarchies (created by drag-and-drop on the map) are stored in the `satellite_hierarchies` JSONB column on `search_queries`. The structure is `{companyId: {childExecId: parentExecId}}`. Changes are auto-saved to the backend with a 1-second debounce (via a Zustand subscription in Dashboard.tsx). Hierarchies are restored when loading a previous search via `loadFromAPI(results, data.satelliteHierarchies)`. The `loadFromAPI` function preserves existing hierarchies when called without the second argument (e.g., during data refreshes).
+
 ### Layered Architecture
 The backend employs a strict layered architecture:
 - **Serper Search Layer**: 3-pass search (curated lists → official sources → news/trade press) with URL scoring (Score 2: list articles & official company domains, Score 1: news & directories, Score 0: social/job sites — filtered out). Up to 8 pages fetched for full content extraction.

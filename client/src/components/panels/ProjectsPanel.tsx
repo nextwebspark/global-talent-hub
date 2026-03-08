@@ -85,7 +85,7 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
       });
 
       const results = data.results || [];
-      loadFromAPI(results);
+      loadFromAPI(results, data.satelliteHierarchies || {});
       if (results.length === 0) {
         toast.info('This project has no companies yet.');
       } else {

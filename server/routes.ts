@@ -1216,10 +1216,32 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         };
       });
 
-      res.json({ results: formattedCompanies, searchQueryId: searchId });
+      res.json({
+        results: formattedCompanies,
+        searchQueryId: searchId,
+        satelliteHierarchies: data.searchQuery.satelliteHierarchies || {}
+      });
     } catch (error) {
       console.error("Error loading search history:", error);
       res.status(500).json({ error: "Failed to load search history" });
+    }
+  });
+
+  app.put("/api/search/:id/satellite-hierarchies", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.id);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+      const hierarchies = req.body.hierarchies;
+      if (typeof hierarchies !== 'object' || hierarchies === null) {
+        return res.status(400).json({ error: "Invalid hierarchies data" });
+      }
+      await storage.saveSatelliteHierarchies(searchId, hierarchies);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving satellite hierarchies:", error);
+      res.status(500).json({ error: "Failed to save satellite hierarchies" });
     }
   });
 
@@ -1252,7 +1274,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       res.json({
         searchQuery: results.searchQuery,
-        companies: formattedCompanies
+        companies: formattedCompanies,
+        satelliteHierarchies: results.searchQuery.satelliteHierarchies || {}
       });
     } catch (error) {
       console.error("Error loading search results:", error);

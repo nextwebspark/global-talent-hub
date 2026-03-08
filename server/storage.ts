@@ -90,6 +90,7 @@ export interface IStorage {
   deleteSearchQuery(id: number): Promise<void>;
   getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
   getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
+  saveSatelliteHierarchies(searchQueryId: number, hierarchies: Record<string, Record<string, string>>): Promise<void>;
   
   // Executive Details
   getCareerHistory(executiveId: number): Promise<CareerHistory[]>;
@@ -813,6 +814,12 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { searchQuery, companies: companiesWithExecs };
+  }
+
+  async saveSatelliteHierarchies(searchQueryId: number, hierarchies: Record<string, Record<string, string>>): Promise<void> {
+    await db.update(searchQueries)
+      .set({ satelliteHierarchies: hierarchies, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(searchQueries.id, searchQueryId));
   }
 
   // Career History

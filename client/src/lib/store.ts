@@ -259,7 +259,7 @@ interface AppState {
   setSatelliteHierarchy: (companyId: string, hierarchy: Record<string, string>) => void;
   resetVisibility: () => void;
   
-  loadFromAPI: (apiCompanies: APICompany[]) => void;
+  loadFromAPI: (apiCompanies: APICompany[], satelliteHierarchies?: Record<string, Record<string, string>>) => void;
   reset: () => void;
 }
 
@@ -547,7 +547,7 @@ export const useAppStore = create<AppState>((set) => ({
     hiddenCompanies: new Set<string>()
   }),
 
-  loadFromAPI: (apiCompanies: APICompany[]) => {
+  loadFromAPI: (apiCompanies: APICompany[], savedHierarchies?: Record<string, Record<string, string>>) => {
     const companies: Company[] = [];
     const executives: Executive[] = [];
 
@@ -562,7 +562,11 @@ export const useAppStore = create<AppState>((set) => ({
       }
     });
 
-    set({ companies, executives });
+    const updates: Partial<AppState> = { companies, executives };
+    if (savedHierarchies !== undefined) {
+      updates.satelliteHierarchies = savedHierarchies;
+    }
+    set(updates);
   },
 
   reset: () => set({

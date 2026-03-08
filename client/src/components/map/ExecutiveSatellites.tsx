@@ -18,6 +18,8 @@ interface ExecutiveSatellitesProps {
 
 const EMPTY_HIERARCHY: Record<string, string> = {};
 const MAX_SATELLITES = 8;
+
+export const satelliteAnchors = new Map<string, L.Marker>();
 const SNAP_DISTANCE = 50;
 const DRAG_THRESHOLD = 4;
 const CHILD_VERTICAL_OFFSET = 38;
@@ -162,14 +164,16 @@ export default function ExecutiveSatellites({
 
     marker.on('add', onAdd);
     marker.addTo(map);
+    satelliteAnchors.set(companyId, marker);
 
     return () => {
+      satelliteAnchors.delete(companyId);
       marker.off('add', onAdd);
       marker.remove();
       anchorMarkerRef.current = null;
       setAnchorEl(null);
     };
-  }, [map]);
+  }, [map, companyId]);
 
   useEffect(() => {
     if (anchorMarkerRef.current) {

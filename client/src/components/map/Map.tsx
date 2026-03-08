@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import logoImage from '@/assets/images/logo.png';
 import { toast } from 'sonner';
-import ExecutiveSatellites from './ExecutiveSatellites';
+import ExecutiveSatellites, { satelliteAnchors } from './ExecutiveSatellites';
 
 import L from 'leaflet';
 
@@ -180,7 +180,7 @@ export default function MapComponent() {
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
   const [hoveredCompanyId, setHoveredCompanyId] = useState<string | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [draggingCompany, setDraggingCompany] = useState<{ id: string; lat: number; lng: number } | null>(null);
+  const draggingCompanyRef = useRef<string | null>(null);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
@@ -408,15 +408,10 @@ export default function MapComponent() {
             iconAnchor: [radius, radius], // Center the icon
           });
 
-          const isBeingDragged = draggingCompany?.id === company.id;
-
           return (
             <Marker
               key={company.id}
-              position={[
-                isBeingDragged ? draggingCompany.lat : company.displayLat,
-                isBeingDragged ? draggingCompany.lng : company.displayLng
-              ]}
+              position={[company.displayLat, company.displayLng]}
               icon={customIcon}
               draggable={true}
               zIndexOffset={1000}
@@ -440,6 +435,7 @@ export default function MapComponent() {
                 },
                 dragstart: () => {
                   isMarkerDragging = true;
+                  draggingCompanyRef.current = company.id;
                   if (hoverTimerRef.current) {
                     clearTimeout(hoverTimerRef.current);
                     hoverTimerRef.current = null;
@@ -447,12 +443,15 @@ export default function MapComponent() {
                 },
                 drag: (e) => {
                   const pos = e.target.getLatLng();
-                  setDraggingCompany({ id: company.id, lat: pos.lat, lng: pos.lng });
+                  const anchor = satelliteAnchors.get(company.id);
+                  if (anchor) {
+                    anchor.setLatLng([pos.lat, pos.lng]);
+                  }
                 },
                 dragend: (e) => {
                   const marker = e.target;
                   const position = marker.getLatLng();
-                  setDraggingCompany(null);
+                  draggingCompanyRef.current = null;
                   isMarkerDragging = false;
                   updateCompany(company.id, {
                     lat: position.lat,
@@ -495,13 +494,12 @@ export default function MapComponent() {
           if (companyExecs.length === 0) return null;
           const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const r = getRadius(val);
-          const isDragging = draggingCompany?.id === company.id;
           return (
             <ExecutiveSatellites
               key={`sat-${company.id}`}
               companyId={company.id}
-              companyLat={isDragging ? draggingCompany.lat : company.displayLat}
-              companyLng={isDragging ? draggingCompany.lng : company.displayLng}
+              companyLat={company.displayLat}
+              companyLng={company.displayLng}
               companyRadius={r}
               executives={companyExecs}
               persistent
@@ -520,12 +518,11 @@ export default function MapComponent() {
           if (hoveredExecs.length === 0) return null;
           const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
           const hoveredRadius = getRadius(hoveredValue);
-          const isDragging = draggingCompany?.id === hoveredCompanyId;
           return (
             <ExecutiveSatellites
               companyId={hoveredCompanyId}
-              companyLat={isDragging ? draggingCompany.lat : hovered.displayLat}
-              companyLng={isDragging ? draggingCompany.lng : hovered.displayLng}
+              companyLat={hovered.displayLat}
+              companyLng={hovered.displayLng}
               companyRadius={hoveredRadius}
               executives={hoveredExecs}
               onSelectExecutive={(execId, companyId) => {

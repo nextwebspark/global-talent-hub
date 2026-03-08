@@ -158,6 +158,15 @@ function MapClickHandler({ onDoubleClick }: { onDoubleClick: (lat: number, lng: 
   return null;
 }
 
+function ZoomDismissGuard({ onCancelDismiss }: { onCancelDismiss: () => void }) {
+  useMapEvents({
+    zoomstart() {
+      onCancelDismiss();
+    },
+  });
+  return null;
+}
+
 const EXECUTIVE_COLORS = [
   'hsl(35 92% 50%)', // Gold (Default Accent)
   'hsl(222 47% 11%)', // Navy (Default Primary)
@@ -179,8 +188,25 @@ export default function MapComponent() {
   const [newMapExecTitle, setNewMapExecTitle] = useState('');
   const newCompanyInputRef = useRef<HTMLInputElement>(null);
   const [hoveredCompanyId, setHoveredCompanyId] = useState<string | null>(null);
+  const hoveredCompanyIdRef = useRef<string | null>(null);
+  hoveredCompanyIdRef.current = hoveredCompanyId;
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draggingCompanyRef = useRef<string | null>(null);
+
+  const cancelHoverDismiss = useCallback(() => {
+    if (hoverDismissTimerRef.current) {
+      clearTimeout(hoverDismissTimerRef.current);
+      hoverDismissTimerRef.current = null;
+    }
+  }, []);
+
+  const startHoverDismiss = useCallback(() => {
+    cancelHoverDismiss();
+    hoverDismissTimerRef.current = setTimeout(() => {
+      setHoveredCompanyId(null);
+    }, 800);
+  }, [cancelHoverDismiss]);
 
   const handleMapDoubleClick = useCallback((lat: number, lng: number) => {
     setAddCompanyDialog({ lat, lng });
@@ -367,6 +393,7 @@ export default function MapComponent() {
       >
         <ReactiveTileLayer />
         <MapClickHandler onDoubleClick={handleMapDoubleClick} />
+        <ZoomDismissGuard onCancelDismiss={cancelHoverDismiss} />
         
         <MapUpdater />
 
@@ -421,7 +448,8 @@ export default function MapComponent() {
                 },
                 mouseover: () => {
                   if (isMarkerDragging) return;
-                  if (hoveredCompanyId === company.id) return;
+                  cancelHoverDismiss();
+                  if (hoveredCompanyIdRef.current === company.id) return;
                   if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
                   hoverTimerRef.current = setTimeout(() => {
                     setHoveredCompanyId(company.id);
@@ -431,6 +459,9 @@ export default function MapComponent() {
                   if (hoverTimerRef.current) {
                     clearTimeout(hoverTimerRef.current);
                     hoverTimerRef.current = null;
+                  }
+                  if (hoveredCompanyIdRef.current === company.id) {
+                    startHoverDismiss();
                   }
                 },
                 dragstart: () => {
@@ -530,6 +561,8 @@ export default function MapComponent() {
                 selectExecutive(execId, companyId);
               }}
               onDismiss={() => setHoveredCompanyId(null)}
+              onPillEnter={cancelHoverDismiss}
+              onPillLeave={startHoverDismiss}
             />
           );
         })()}

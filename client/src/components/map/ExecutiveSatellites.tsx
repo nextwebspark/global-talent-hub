@@ -14,6 +14,8 @@ interface ExecutiveSatellitesProps {
   persistent?: boolean;
   onSelectExecutive: (execId: string | null, companyId: string) => void;
   onDismiss: () => void;
+  onPillEnter?: () => void;
+  onPillLeave?: () => void;
 }
 
 const EMPTY_HIERARCHY: Record<string, string> = {};
@@ -45,6 +47,8 @@ export default function ExecutiveSatellites({
   persistent = false,
   onSelectExecutive,
   onDismiss,
+  onPillEnter: onPillEnterProp,
+  onPillLeave: onPillLeaveProp,
 }: ExecutiveSatellitesProps) {
   const map = useMap();
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,6 +61,7 @@ export default function ExecutiveSatellites({
   const draggingRef = useRef<{ id: string; startX: number; startY: number; origDx: number; origDy: number } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const hoverCountRef = useRef(0);
+  const isZoomingRef = useRef(false);
   const didDragRef = useRef(false);
   const thresholdPassedRef = useRef(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -114,7 +119,7 @@ export default function ExecutiveSatellites({
   }, []);
 
   const startDismiss = useCallback(() => {
-    if (persistent || draggingRef.current || hoverCountRef.current > 0) return;
+    if (persistent || draggingRef.current || hoverCountRef.current > 0 || isZoomingRef.current) return;
     cancelDismiss();
     dismissTimerRef.current = setTimeout(() => {
       setSelectedExecId(null);
@@ -125,15 +130,22 @@ export default function ExecutiveSatellites({
   const startDismissRef = useRef(startDismiss);
   startDismissRef.current = startDismiss;
 
+  const onPillEnterRef = useRef(onPillEnterProp);
+  onPillEnterRef.current = onPillEnterProp;
+  const onPillLeaveRef = useRef(onPillLeaveProp);
+  onPillLeaveRef.current = onPillLeaveProp;
+
   const handlePillEnter = useCallback(() => {
     hoverCountRef.current++;
     cancelDismiss();
+    onPillEnterRef.current?.();
   }, [cancelDismiss]);
 
   const handlePillLeave = useCallback(() => {
     hoverCountRef.current = Math.max(0, hoverCountRef.current - 1);
     if (hoverCountRef.current === 0 && !persistent) {
       startDismissRef.current();
+      onPillLeaveRef.current?.();
     }
   }, [persistent]);
 
@@ -191,6 +203,23 @@ export default function ExecutiveSatellites({
       }
     };
   }, [cancelDismiss]);
+
+  useEffect(() => {
+    const onZoomStart = () => {
+      isZoomingRef.current = true;
+      cancelDismiss();
+    };
+    const onZoomEnd = () => {
+      isZoomingRef.current = false;
+      hoverCountRef.current = 0;
+    };
+    map.on('zoomstart', onZoomStart);
+    map.on('zoomend', onZoomEnd);
+    return () => {
+      map.off('zoomstart', onZoomStart);
+      map.off('zoomend', onZoomEnd);
+    };
+  }, [map, cancelDismiss]);
 
   const orbitRadius = companyRadius + 65;
   const arcStart = Math.PI / 6;

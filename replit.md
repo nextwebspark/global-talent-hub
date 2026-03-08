@@ -77,6 +77,7 @@ The Dashboard provides a professional Talent Mapping Report with:
 - Revenue Distribution by bands, with sector and ownership breakdowns.
 - Status & Interest analytics.
 - Comprehensive Compensation Analytics (median/min/max, level-to-level step-up, median compensation by revenue band & region).
+- **Diversity & Inclusion Analytics**: Gender distribution (donut chart with percentages), gender by seniority level (stacked bars), ethnicity distribution (horizontal bars with diversity index), ethnicity by seniority level (stacked bars). Gender and ethnicity are stored as persistent fields on executives (`gender`, `genderConfidence`, `ethnicity`, `ethnicityConfidence` columns). Values are inferred by the LLM during discovery and enrichment pipelines (high-confidence only, 8+/10), and can be manually set/overridden on executive profiles in the right panel. Manual edits are protected via `manuallyEditedFields`.
 All analytics are computed server-side.
 
 ## External Dependencies

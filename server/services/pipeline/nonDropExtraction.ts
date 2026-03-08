@@ -801,6 +801,11 @@ IMPORTANT:
 - Do NOT extract global HQ executives if this is a regional entity
 ${intent.executiveRole ? `- Prioritise finding the ${intent.executiveRole}. The title must match what is being looked for - e.g. if looking for CFO, only return the CFO or Chief Financial Officer.` : ''}
 - For each executive, provide their LinkedIn URL if you can find it in the search context
+- **DIVERSITY & INCLUSION**: Infer the gender and ethnicity for each executive.
+  - ONLY provide these values if you are highly confident (8+ out of 10). If unsure, return null.
+  - Gender must be one of: "Male", "Female", "Non-Binary".
+  - Ethnicity should be a descriptive category (e.g., "South Asian", "Middle Eastern", "East Asian", "European", "African", "Latin American", "Mixed/Other").
+  - Include separate confidence scores (1-10) for gender and ethnicity.
 
 SEARCH CONTEXT:
 ${searchContext}
@@ -808,7 +813,18 @@ ${searchContext}
 Return JSON only:
 {
   "executives": [
-    {"name": "John Doe", "title": "CEO", "role": "CEO", "linkedinUrl": "https://linkedin.com/in/johndoe", "sourceUrl": "...", "confidence": 8}
+    {
+      "name": "John Doe",
+      "title": "CEO",
+      "role": "CEO",
+      "linkedinUrl": "https://linkedin.com/in/johndoe",
+      "sourceUrl": "...",
+      "confidence": 8,
+      "gender": "Male",
+      "genderConfidence": 9,
+      "ethnicity": "European",
+      "ethnicityConfidence": 9
+    }
   ]
 }
 Roles: CEO, CFO, CHRO, CIO, CTO, OTHER
@@ -826,6 +842,10 @@ If none found: {"executives": []}`;
       linkedinUrl: e.linkedinUrl || e.linkedin_url || e.linkedin || null,
       sourceUrl: e.sourceUrl || null,
       confidence: typeof e.confidence === 'number' ? e.confidence : 5,
+      gender: e.gender || null,
+      genderConfidence: typeof e.genderConfidence === 'number' ? e.genderConfidence : null,
+      ethnicity: e.ethnicity || null,
+      ethnicityConfidence: typeof e.ethnicityConfidence === 'number' ? e.ethnicityConfidence : null,
     })).filter((e: ExtractedExecutive) => e.name.length > 0);
   } catch (error) {
     console.error('[NonDropExtraction] Executive extraction failed:', error);

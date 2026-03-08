@@ -43,6 +43,8 @@ async function persistExecutiveUpdate(id: string, updates: Partial<any>): Promis
     if (updates.remunerationNotes !== undefined) dbUpdates.remunerationNotes = updates.remunerationNotes;
     if (updates.availability !== undefined) dbUpdates.availability = updates.availability;
     if (updates.level !== undefined) dbUpdates.level = updates.level;
+    if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
+    if (updates.ethnicity !== undefined) dbUpdates.ethnicity = updates.ethnicity;
     if (updates.customFields !== undefined) dbUpdates.customFields = updates.customFields;
     
     if (Object.keys(dbUpdates).length > 0) {
@@ -126,6 +128,8 @@ export interface Executive {
   remunerationNotes?: string;
   availability?: string;
   level?: string;
+  gender?: string;
+  ethnicity?: string;
   customFields?: Record<string, string>;
   confidence: number;
   enrichmentSource?: string;
@@ -159,6 +163,8 @@ export interface ExecutiveDetails {
     remunerationNotes: string | null;
     availability: string | null;
     level: string | null;
+    gender: string | null;
+    ethnicity: string | null;
     sourceText: string | null;
     enrichmentSource: string | null;
     enrichmentConfidence: number | null;
@@ -431,6 +437,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     remunerationNotes: (apiExec as any).remunerationNotes || undefined,
     availability: (apiExec as any).availability || undefined,
     level: (apiExec as any).level || undefined,
+    gender: (apiExec as any).gender || undefined,
+    ethnicity: (apiExec as any).ethnicity || undefined,
     customFields,
     confidence,
     enrichmentSource,

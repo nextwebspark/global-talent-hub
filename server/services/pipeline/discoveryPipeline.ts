@@ -527,6 +527,10 @@ export class DiscoveryPipeline {
           linkedin: exec.linkedinUrl || null,
           source: exec.sourceUrl || 'discovery',
           confidence: exec.confidence,
+          gender: exec.gender || null,
+          genderConfidence: exec.genderConfidence || null,
+          ethnicity: exec.ethnicity || null,
+          ethnicityConfidence: exec.ethnicityConfidence || null,
         };
         try {
           const newExec = await storage.createExecutiveFromDiscovery(executiveData);

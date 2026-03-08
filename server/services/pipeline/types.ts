@@ -50,6 +50,10 @@ export interface ExtractedExecutive {
   linkedinUrl: string | null;
   sourceUrl: string | null;
   confidence: number;
+  gender?: string | null;
+  genderConfidence?: number | null;
+  ethnicity?: string | null;
+  ethnicityConfidence?: number | null;
 }
 
 export interface SearchIntent {

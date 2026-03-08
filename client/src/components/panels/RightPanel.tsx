@@ -774,6 +774,8 @@ function ExecutiveDetailView({
   const [remunerationNotes, setRemunerationNotes] = useState('');
   const [availability, setAvailability] = useState('');
   const [level, setLevel] = useState('');
+  const [gender, setGender] = useState('');
+  const [ethnicity, setEthnicity] = useState('');
   
   const [editingField, setEditingField] = useState<string | null>(null);
   
@@ -803,6 +805,8 @@ function ExecutiveDetailView({
       setRemunerationNotes(executiveDetails.executive.remunerationNotes || '');
       setAvailability(executiveDetails.executive.availability || '');
       setLevel(executiveDetails.executive.level || '');
+      setGender(executiveDetails.executive.gender || '');
+      setEthnicity(executiveDetails.executive.ethnicity || '');
       setSourceText(executiveDetails.executive.sourceText || '');
       setLinkedInInput(executiveDetails.executive.linkedin || '');
       setStructuredRem(null);
@@ -916,6 +920,8 @@ function ExecutiveDetailView({
       }
 
       setViewMode('profile');
+      if (data.executive.gender) setGender(data.executive.gender);
+      if (data.executive.ethnicity) setEthnicity(data.executive.ethnicity);
       toast.success('Profile extracted successfully');
       onRefresh();
     } catch (error) {
@@ -1353,6 +1359,47 @@ function ExecutiveDetailView({
                 <option value="N-1">N-1</option>
                 <option value="N-2">N-2</option>
               </select>
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold">Diversity & Inclusion</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground ml-1">Gender</label>
+                  <select
+                    className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                    value={gender}
+                    onChange={(e) => {
+                      setGender(e.target.value);
+                      handleSaveTextField('gender', e.target.value);
+                    }}
+                    data-testid="select-gender"
+                  >
+                    <option value="">- Select Gender -</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Non-Binary">Non-Binary</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground ml-1">Ethnicity</label>
+                  <Input
+                    value={ethnicity}
+                    onChange={(e) => setEthnicity(e.target.value)}
+                    onBlur={() => handleSaveTextField('ethnicity', ethnicity)}
+                    placeholder="e.g. South Asian, European, etc."
+                    className="text-sm"
+                    data-testid="input-ethnicity"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </ScrollArea>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Building2, Users, DollarSign, UserCheck, ChevronDown, ChevronUp, BarChart3, ArrowUpRight, Target } from 'lucide-react';
+import { Loader2, Building2, Users, DollarSign, UserCheck, ChevronDown, ChevronUp, BarChart3, ArrowUpRight, Target, Sparkles } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface CategoryStats {
@@ -74,6 +74,12 @@ interface DashboardData {
     availabilityPct: number;
     byLevel: Record<string, { total: number; available: number }>;
     byGeography: Record<string, { total: number; available: number }>;
+  };
+  diversity?: {
+    genderBreakdown: Record<string, number>;
+    ethnicityBreakdown: Record<string, number>;
+    genderByLevel: Record<string, Record<string, number>>;
+    ethnicityByLevel: Record<string, Record<string, number>>;
   };
 }
 
@@ -471,6 +477,186 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           )}
         </div>
       </div>
+
+      {data.diversity && (
+        <div className="grid grid-cols-2 gap-6">
+          <div className="bg-card border border-border rounded-lg p-5" data-testid="section-gender-diversity">
+            <SectionHeader title="Gender Distribution" icon={Sparkles} />
+            {(() => {
+              const gb = data.diversity!.genderBreakdown;
+              const total = Object.values(gb).reduce((s, v) => s + v, 0);
+              if (total === 0) return (
+                <div className="text-xs text-muted-foreground py-8 text-center">
+                  No gender data captured yet. Gender is inferred automatically during discovery or can be set manually on executive profiles.
+                </div>
+              );
+              const GENDER_COLORS: Record<string, string> = { Male: '#3b82f6', Female: '#ec4899', 'Non-Binary': '#a855f7', Unknown: '#6b7280' };
+              const entries = Object.entries(gb).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+              const gbl = data.diversity!.genderByLevel;
+              const levels = Object.keys(gbl).sort((a, b) => {
+                const order: Record<string, number> = { Board: 0, 'C-Suite': 1, 'N-1': 2, 'N-2': 3 };
+                return (order[a] ?? 99) - (order[b] ?? 99);
+              });
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-6">
+                    <div className="relative w-[120px] h-[120px]">
+                      <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+                        {(() => {
+                          let offset = 0;
+                          return entries.map(([gender, count]) => {
+                            const pct = (count / total) * 100;
+                            const dashArray = `${pct} ${100 - pct}`;
+                            const el = (
+                              <circle
+                                key={gender}
+                                cx="18" cy="18" r="15.9155"
+                                fill="none"
+                                stroke={GENDER_COLORS[gender] || '#6b7280'}
+                                strokeWidth="3.5"
+                                strokeDasharray={dashArray}
+                                strokeDashoffset={`${-offset}`}
+                                className="transition-all duration-500"
+                              />
+                            );
+                            offset += pct;
+                            return el;
+                          });
+                        })()}
+                      </svg>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-lg font-bold text-foreground">{total}</span>
+                        <span className="text-[9px] text-muted-foreground uppercase">Total</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      {entries.map(([gender, count]) => {
+                        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                        return (
+                          <div key={gender} className="flex items-center gap-2" data-testid={`gender-stat-${gender.toLowerCase()}`}>
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: GENDER_COLORS[gender] || '#6b7280' }} />
+                            <span className="text-xs text-muted-foreground w-20">{gender}</span>
+                            <span className="text-xs font-semibold text-foreground">{count}</span>
+                            <span className="text-[10px] text-muted-foreground">({pct}%)</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {levels.length > 0 && (
+                    <CollapsibleSection title={`Gender by Level (${levels.length} levels)`} defaultOpen={false}>
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                        {levels.map(level => {
+                          const levelData = gbl[level];
+                          const levelTotal = Object.values(levelData).reduce((s, v) => s + v, 0);
+                          if (levelTotal === 0) return null;
+                          return (
+                            <div key={level} className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-foreground">{level}</span>
+                                <span className="text-[10px] text-muted-foreground">{levelTotal} executives</span>
+                              </div>
+                              <div className="flex h-4 rounded-full overflow-hidden bg-muted/20">
+                                {Object.entries(levelData).filter(([, v]) => v > 0).map(([g, v]) => (
+                                  <div
+                                    key={g}
+                                    className="h-full transition-all duration-500"
+                                    style={{
+                                      width: `${(v / levelTotal) * 100}%`,
+                                      backgroundColor: GENDER_COLORS[g] || '#6b7280',
+                                    }}
+                                    title={`${g}: ${v} (${Math.round((v / levelTotal) * 100)}%)`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CollapsibleSection>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="bg-card border border-border rounded-lg p-5" data-testid="section-ethnicity-diversity">
+            <SectionHeader title="Ethnicity Distribution" icon={Sparkles} />
+            {(() => {
+              const eb = data.diversity!.ethnicityBreakdown;
+              const total = Object.values(eb).reduce((s, v) => s + v, 0);
+              const knownCount = total - (eb['Unknown'] || 0);
+              if (total === 0 || knownCount === 0) return (
+                <div className="text-xs text-muted-foreground py-8 text-center">
+                  No ethnicity data captured yet. Ethnicity is inferred automatically during discovery or can be set manually on executive profiles.
+                </div>
+              );
+              const ETHNICITY_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#a855f7', '#06b6d4', '#ef4444', '#84cc16', '#f97316', '#6366f1'];
+              const entries = Object.entries(eb).filter(([k, v]) => v > 0 && k !== 'Unknown').sort((a, b) => b[1] - a[1]);
+              const maxEth = Math.max(...entries.map(([, v]) => v), 1);
+              const ebl = data.diversity!.ethnicityByLevel;
+              const levels = Object.keys(ebl).sort((a, b) => {
+                const order: Record<string, number> = { Board: 0, 'C-Suite': 1, 'N-1': 2, 'N-2': 3 };
+                return (order[a] ?? 99) - (order[b] ?? 99);
+              });
+              const distinctCount = entries.length;
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 pb-3 border-b border-border">
+                    <div className="flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-primary" />
+                      <span className="text-xs text-muted-foreground">Diversity Index:</span>
+                      <span className={`text-xs font-semibold ${distinctCount >= 5 ? 'text-emerald-400' : distinctCount >= 3 ? 'text-blue-400' : 'text-amber-400'}`}>
+                        {distinctCount} {distinctCount === 1 ? 'ethnicity' : 'ethnicities'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground ml-auto">{knownCount} of {total} identified</span>
+                  </div>
+                  <div className="max-h-[160px] overflow-y-auto pr-1">
+                    {entries.map(([eth, count], i) => {
+                      const colors = ['bg-blue-500/70', 'bg-emerald-500/70', 'bg-amber-500/70', 'bg-pink-500/70', 'bg-purple-500/70', 'bg-cyan-500/70', 'bg-red-500/70', 'bg-lime-500/70', 'bg-orange-500/70', 'bg-indigo-500/70'];
+                      return <BarRow key={eth} label={eth} value={count} maxValue={maxEth} color={colors[i % colors.length]} />;
+                    })}
+                  </div>
+                  {levels.length > 0 && (
+                    <CollapsibleSection title={`Ethnicity by Level (${levels.length} levels)`} defaultOpen={false}>
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                        {levels.map(level => {
+                          const levelData = ebl[level];
+                          const levelEntries = Object.entries(levelData).filter(([k, v]) => v > 0 && k !== 'Unknown').sort((a, b) => b[1] - a[1]);
+                          const levelTotal = levelEntries.reduce((s, [, v]) => s + v, 0);
+                          if (levelTotal === 0) return null;
+                          return (
+                            <div key={level} className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-foreground">{level}</span>
+                                <span className="text-[10px] text-muted-foreground">{levelTotal} executives</span>
+                              </div>
+                              <div className="flex h-4 rounded-full overflow-hidden bg-muted/20">
+                                {levelEntries.map(([eth, v], i) => (
+                                  <div
+                                    key={eth}
+                                    className="h-full transition-all duration-500"
+                                    style={{
+                                      width: `${(v / levelTotal) * 100}%`,
+                                      backgroundColor: ETHNICITY_COLORS[i % ETHNICITY_COLORS.length],
+                                    }}
+                                    title={`${eth}: ${v} (${Math.round((v / levelTotal) * 100)}%)`}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CollapsibleSection>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       <div className="bg-card border border-border rounded-lg p-5" data-testid="section-remuneration">
         <SectionHeader title="Compensation Analytics (USD)" icon={DollarSign} />

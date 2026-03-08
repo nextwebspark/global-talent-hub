@@ -293,6 +293,8 @@ export async function registerRoutes(
           const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
           const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
           const notes = safeStr(mappings.notes ? record[mappings.notes] : null);
+          const gender = safeStr(mappings.gender ? record[mappings.gender] : null);
+          const ethnicity = safeStr(mappings.ethnicity ? record[mappings.ethnicity] : null);
           const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
           const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
           const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
@@ -371,6 +373,8 @@ export async function registerRoutes(
               phone,
               linkedin,
               notes,
+              gender,
+              ethnicity,
               careerSummary,
               remunerationNotes,
               availability,
@@ -2299,9 +2303,29 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let availableCount = 0;
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
+      
+      const genderBreakdown: Record<string, number> = { Male: 0, Female: 0, "Non-Binary": 0, Unknown: 0 };
+      const ethnicityBreakdown: Record<string, number> = {};
+      const genderByLevel: Record<string, Record<string, number>> = {};
+      const ethnicityByLevel: Record<string, Record<string, number>> = {};
+
       for (const e of allExecutives) {
         const execLevel = (e.level || '').trim() || 'Unassigned';
         const country = e.companyCountry;
+        
+        // Diversity Analytics
+        const gender = (e.gender || 'Unknown').trim();
+        const ethnicity = (e.ethnicity || 'Unknown').trim();
+        
+        genderBreakdown[gender] = (genderBreakdown[gender] || 0) + 1;
+        ethnicityBreakdown[ethnicity] = (ethnicityBreakdown[ethnicity] || 0) + 1;
+
+        if (!genderByLevel[execLevel]) genderByLevel[execLevel] = { Male: 0, Female: 0, "Non-Binary": 0, Unknown: 0 };
+        genderByLevel[execLevel][gender] = (genderByLevel[execLevel][gender] || 0) + 1;
+
+        if (!ethnicityByLevel[execLevel]) ethnicityByLevel[execLevel] = {};
+        ethnicityByLevel[execLevel][ethnicity] = (ethnicityByLevel[execLevel][ethnicity] || 0) + 1;
+
         if (!availByLevel[execLevel]) availByLevel[execLevel] = { total: 0, available: 0 };
         if (!availByGeo[country]) availByGeo[country] = { total: 0, available: 0 };
         availByLevel[execLevel].total++;
@@ -2347,6 +2371,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           availabilityPct: totalExecutives > 0 ? Math.round((availableCount / totalExecutives) * 100) : 0,
           byLevel: availByLevel,
           byGeography: availByGeo,
+        },
+        diversity: {
+          genderBreakdown,
+          ethnicityBreakdown,
+          genderByLevel,
+          ethnicityByLevel,
         },
       });
     } catch (error) {

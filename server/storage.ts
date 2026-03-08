@@ -258,7 +258,49 @@ export class DatabaseStorage implements IStorage {
       );
     
     if (existingExec) {
-      console.log(`[Storage:Discovery] Executive "${executive.name}" already exists for company ${executive.companyId} — skipping (additive only)`);
+      console.log(`[Storage:Discovery] Executive "${executive.name}" already exists for company ${executive.companyId} — checking for non-destructive updates`);
+      
+      const manualFields = (existingExec.manuallyEditedFields as string[]) || [];
+      const updateData: Partial<InsertExecutive> = {};
+      let updated = false;
+
+      // Fields to potentially update from discovery if they are null and not manually edited
+      const updatableFields: (keyof InsertExecutive)[] = [
+        'title', 'linkedin', 'gender', 'ethnicity'
+      ];
+
+      for (const field of updatableFields) {
+        if (manualFields.includes(field as string)) continue;
+
+        const existingValue = existingExec[field as keyof typeof existingExec];
+        const newValue = executive[field];
+
+        if ((existingValue === null || existingValue === undefined || existingValue === '') && 
+            newValue !== null && newValue !== undefined && newValue !== '') {
+          
+          (updateData as any)[field] = newValue;
+          
+          // Also update confidence scores if applicable
+          if (field === 'gender' && executive.genderConfidence) {
+            updateData.genderConfidence = executive.genderConfidence;
+          }
+          if (field === 'ethnicity' && executive.ethnicityConfidence) {
+            updateData.ethnicityConfidence = executive.ethnicityConfidence;
+          }
+          
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        const [updatedExec] = await db
+          .update(executives)
+          .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
+          .where(eq(executives.id, existingExec.id))
+          .returning();
+        return updatedExec;
+      }
+
       return existingExec;
     }
 
@@ -306,12 +348,32 @@ export class DatabaseStorage implements IStorage {
 
     // Only update fields that are currently null or empty
     const fieldsToCheck: (keyof InsertExecutive)[] = [
-      'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl'
+      'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl', 'gender', 'ethnicity'
     ];
 
     for (const field of fieldsToCheck) {
       const existingValue = existing[field as keyof typeof existing];
       const newValue = data[field];
+      const existingConfidence = (field === 'gender' ? existing.genderConfidence : (field === 'ethnicity' ? existing.ethnicityConfidence : 0)) || 0;
+      const newConfidence = (field === 'gender' ? metadata?.confidence : (field === 'ethnicity' ? metadata?.confidence : 0)) || 0;
+      
+      // Special handling for gender and ethnicity with confidence scores
+      if (field === 'gender' || field === 'ethnicity') {
+        if ((existingValue === null || existingValue === undefined || existingValue === '') && 
+            newValue !== null && newValue !== undefined && newValue !== '') {
+          (updateData as any)[field] = newValue;
+          (updateData as any)[`${field}Confidence`] = newConfidence;
+          enrichedFields.push(field);
+          console.log(`[Storage:Enrichment] Enriching field ${field} for executive ${id} with confidence ${newConfidence}`);
+        } else if (newValue !== null && newValue !== undefined && newValue !== '' && newConfidence > existingConfidence) {
+          // Update if new confidence is strictly higher
+          (updateData as any)[field] = newValue;
+          (updateData as any)[`${field}Confidence`] = newConfidence;
+          enrichedFields.push(field);
+          console.log(`[Storage:Enrichment] Updating field ${field} for executive ${id} (higher confidence: ${newConfidence} > ${existingConfidence})`);
+        }
+        continue;
+      }
       
       // Only enrich if current value is null/undefined/empty AND new value exists
       if ((existingValue === null || existingValue === undefined || existingValue === '') && 
@@ -412,7 +474,7 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getExecutive(id);
     const currentManualFields = (existing?.manuallyEditedFields as string[]) || [];
     const editedFieldNames = Object.keys(data).filter(k => 
-      k !== 'manuallyEditedFields' && k !== 'updatedAt'
+      k !== 'manuallyEditedFields' && k !== 'updatedAt' && k !== 'genderConfidence' && k !== 'ethnicityConfidence'
     );
     const newManualFields = [...new Set([...currentManualFields, ...editedFieldNames])];
     

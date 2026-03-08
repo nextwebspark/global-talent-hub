@@ -30,6 +30,10 @@ interface ExecutiveEnrichment {
   role: 'CEO' | 'CFO' | 'OTHER';
   sourceUrl: string | null;
   confidence: number;
+  gender?: string | null;
+  genderConfidence?: number | null;
+  ethnicity?: string | null;
+  ethnicityConfidence?: number | null;
 }
 
 async function callLlm(
@@ -192,7 +196,25 @@ async function enrichSingleExecutive(
     let context = searchResults.answer || '';
     context += '\n' + searchResults.results.slice(0, 2).map(r => r.snippet).join('\n');
 
-    const prompt = `Find the ${role} of "${companyName}". Return JSON: {"found":bool,"name":"Full Name","title":"Title"} or {"found":false}
+    const prompt = `Find the ${role} of "${companyName}". 
+Infer gender and ethnicity if possible with high confidence.
+
+Gender values: Male, Female, Non-Binary.
+Ethnicity values: free-text (e.g., "South Asian", "Middle Eastern", "East Asian", "European", "African", "Latin American", "Mixed/Other").
+
+Only provide gender/ethnicity if confidence is 8/10 or higher.
+
+Return JSON: 
+{
+  "found": bool,
+  "name": "Full Name",
+  "title": "Title",
+  "gender": "Male" | "Female" | "Non-Binary" | null,
+  "genderConfidence": number (1-10) | null,
+  "ethnicity": "Ethnicity Name" | null,
+  "ethnicityConfidence": number (1-10) | null
+} 
+or {"found":false}
 
 ${context}`;
 
@@ -207,6 +229,10 @@ ${context}`;
         role,
         sourceUrl: null,
         confidence: 6,
+        gender: parsed.gender,
+        genderConfidence: parsed.genderConfidence,
+        ethnicity: parsed.ethnicity,
+        ethnicityConfidence: parsed.ethnicityConfidence,
       };
     }
   } catch (error) {
@@ -285,6 +311,10 @@ export async function runMultiPassEnrichment(
         title: exec.title,
         source: 'Enrichment',
         confidence: exec.confidence,
+        gender: exec.gender,
+        genderConfidence: exec.genderConfidence,
+        ethnicity: exec.ethnicity,
+        ethnicityConfidence: exec.ethnicityConfidence,
       });
       result.executivesAdded++;
     } catch (error) {

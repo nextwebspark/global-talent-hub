@@ -408,16 +408,24 @@ export default function MapComponent() {
             iconAnchor: [radius, radius], // Center the icon
           });
 
+          const isBeingDragged = draggingCompany?.id === company.id;
+
           return (
             <Marker
               key={company.id}
-              position={[company.displayLat, company.displayLng]}
+              position={[
+                isBeingDragged ? draggingCompany.lat : company.displayLat,
+                isBeingDragged ? draggingCompany.lng : company.displayLng
+              ]}
               icon={customIcon}
               draggable={true}
               zIndexOffset={1000}
               eventHandlers={{
-                click: () => selectCompany(company.id),
+                click: () => {
+                  if (!isMarkerDragging) selectCompany(company.id);
+                },
                 mouseover: () => {
+                  if (isMarkerDragging) return;
                   if (hoveredCompanyId === company.id) return;
                   if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
                   hoverTimerRef.current = setTimeout(() => {
@@ -432,16 +440,20 @@ export default function MapComponent() {
                 },
                 dragstart: () => {
                   isMarkerDragging = true;
+                  if (hoverTimerRef.current) {
+                    clearTimeout(hoverTimerRef.current);
+                    hoverTimerRef.current = null;
+                  }
                 },
                 drag: (e) => {
                   const pos = e.target.getLatLng();
                   setDraggingCompany({ id: company.id, lat: pos.lat, lng: pos.lng });
                 },
                 dragend: (e) => {
-                  isMarkerDragging = false;
-                  setDraggingCompany(null);
                   const marker = e.target;
                   const position = marker.getLatLng();
+                  setDraggingCompany(null);
+                  isMarkerDragging = false;
                   updateCompany(company.id, {
                     lat: position.lat,
                     lng: position.lng

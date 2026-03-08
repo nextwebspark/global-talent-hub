@@ -228,6 +228,14 @@ export async function registerRoutes(
       const validated = insertExecutiveSchema.parse(req.body);
       const executive = await storage.createExecutiveManual(validated);
       res.status(201).json(executive);
+
+      if (!validated.gender || !validated.ethnicity) {
+        import("./services/pipeline/diversityInference").then(({ inferDiversityForExecutive }) => {
+          inferDiversityForExecutive(executive.id).catch(err =>
+            console.error("[Routes] Background diversity inference failed:", err)
+          );
+        });
+      }
     } catch (error) {
       console.error("Error creating executive:", error);
       res.status(400).json({ error: "Invalid executive data" });
@@ -418,6 +426,14 @@ export async function registerRoutes(
         total: records.length,
         errors: errors.length > 0 ? errors.slice(0, 5) : undefined 
       });
+
+      if (imported > 0) {
+        import("./services/pipeline/diversityInference").then(({ inferDiversityForSearch }) => {
+          inferDiversityForSearch(searchQueryId).catch(err =>
+            console.error("[Routes] Background diversity inference after bulk import failed:", err)
+          );
+        });
+      }
     } catch (error) {
       console.error("Error bulk importing executives:", error);
       res.status(500).json({ error: "Bulk import failed" });
@@ -1825,12 +1841,17 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       console.log(`[Routes] Starting batch multi-pass enrichment for search ${searchQueryId}`);
       const result = await enrichSearchResults(searchQueryId);
 
+      const { inferDiversityForSearch } = await import("./services/pipeline/diversityInference");
+      const diversityResult = await inferDiversityForSearch(searchQueryId);
+      console.log(`[Routes] Diversity inference: ${diversityResult.updated}/${diversityResult.total} executives updated`);
+
       const fullResults = await storage.getFullSearchResults(searchQueryId);
 
       res.json({
         success: true,
         searchQuery,
         enrichment: result,
+        diversity: diversityResult,
         companies: fullResults?.companies || []
       });
     } catch (error: any) {
@@ -2006,8 +2027,11 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       });
 
       // Fire-and-forget enrichment in background
-      enrichSearchResults(searchQueryId).then(enrichResult => {
+      enrichSearchResults(searchQueryId).then(async enrichResult => {
         console.log(`[ImportProject] Background enrichment complete for "${name}":`, enrichResult);
+        const { inferDiversityForSearch } = await import("./services/pipeline/diversityInference");
+        const diversityResult = await inferDiversityForSearch(searchQueryId);
+        console.log(`[ImportProject] Diversity inference complete for "${name}": ${diversityResult.updated}/${diversityResult.total}`);
       }).catch(err => {
         console.error(`[ImportProject] Background enrichment failed for "${name}":`, err);
       });

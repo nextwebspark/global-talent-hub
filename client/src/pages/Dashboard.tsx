@@ -130,6 +130,7 @@ export default function Dashboard() {
           id: `company-${company.id}`,
           name: '', title: '', notes: '', email: '', phone: '', linkedin: '',
           careerSummary: '', remunerationNotes: '', availability: '', level: '',
+          gender: '', ethnicity: '',
           isCompanyRow: true,
         });
       } else {
@@ -141,6 +142,7 @@ export default function Dashboard() {
             email: exec.email || '', phone: exec.phone || '', linkedin: exec.linkedin || '',
             careerSummary: exec.careerSummary || '', remunerationNotes: exec.remunerationNotes || '',
             availability: exec.availability || '', level: exec.level || '',
+            gender: exec.gender || '', ethnicity: exec.ethnicity || '',
             isCompanyRow: false, customFields: exec.customFields,
           });
         });
@@ -159,6 +161,8 @@ export default function Dashboard() {
         'Career Summary': row.careerSummary || '', 'Remuneration': row.remunerationNotes || '',
         'Status': row.availability || '',
         'Level': row.level || '',
+        'Gender': row.gender || '',
+        'Ethnicity': row.ethnicity || '',
       };
       if (row.customFields) Object.entries(row.customFields).forEach(([k, v]) => { base[k] = v as string || ''; });
       return base;

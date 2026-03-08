@@ -62,6 +62,8 @@ export interface TableRowData {
   remunerationNotes: string;
   availability: string;
   level: string;
+  gender: string;
+  ethnicity: string;
   companyId: string;
   companyName: string;
   companyColor: string;
@@ -100,6 +102,7 @@ function parseRevenueInput(input: string): number {
 
 const STATUS_OPTIONS = ['Interested', 'Not Interested'] as const;
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
+const GENDER_OPTIONS = ['Male', 'Female', 'Non-Binary', 'Prefer not to say'] as const;
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -436,6 +439,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     remunerationNotes: false,
     availability: false,
     level: false,
+    gender: false,
+    ethnicity: false,
   });
 
   const prevDataCountRef = useRef(0);
@@ -444,7 +449,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     const prevCount = prevDataCountRef.current;
     prevDataCountRef.current = data.length;
     if (prevCount > 0 && data.length === prevCount) return;
-    const optionalFields = ['sector', 'email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability', 'level'] as const;
+    const optionalFields = ['sector', 'email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability', 'level', 'gender', 'ethnicity'] as const;
     setColumnVisibility(prev => {
       const next = { ...prev };
       let changed = false;
@@ -906,6 +911,24 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         size: 100,
         enableGrouping: true,
       }),
+      columnHelper.accessor('gender', {
+        header: 'Gender',
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row || info.row.getIsGrouped()) return null;
+          return (
+            <SelectCell
+              value={String(info.getValue() || '')}
+              options={GENDER_OPTIONS}
+              onSave={(val) => handleCellSave(row, 'gender', val)}
+              placeholder="- Select Gender -"
+            />
+          );
+        },
+        size: 120,
+        enableGrouping: true,
+      }),
+      columnHelper.accessor('ethnicity', { header: 'Ethnicity', cell: editableCell('ethnicity'), size: 130, enableGrouping: true }),
     ];
 
     customFieldKeys.forEach(key => {

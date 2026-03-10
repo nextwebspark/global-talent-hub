@@ -2042,12 +2042,24 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
+  const REGION_DEFINITIONS: Record<string, string[]> = {
+    'GCC': ['UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman'],
+    'Europe': ['United Kingdom', 'UK', 'France', 'Germany', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Switzerland', 'Austria', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Ireland', 'Portugal', 'Poland', 'Czech Republic', 'Romania', 'Hungary', 'Greece', 'Luxembourg', 'Croatia', 'Slovakia', 'Slovenia', 'Bulgaria', 'Lithuania', 'Latvia', 'Estonia', 'Malta', 'Cyprus', 'Iceland', 'Serbia', 'Bosnia and Herzegovina', 'North Macedonia', 'Albania', 'Montenegro', 'Moldova', 'Ukraine', 'Belarus'],
+    'Asia Pacific': ['China', 'Japan', 'South Korea', 'India', 'Australia', 'New Zealand', 'Singapore', 'Hong Kong', 'Taiwan', 'Malaysia', 'Thailand', 'Indonesia', 'Philippines', 'Vietnam', 'Myanmar', 'Cambodia', 'Laos', 'Bangladesh', 'Pakistan', 'Sri Lanka', 'Nepal', 'Mongolia'],
+    'Middle East & North Africa': ['UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman', 'Egypt', 'Morocco', 'Tunisia', 'Algeria', 'Libya', 'Jordan', 'Lebanon', 'Iraq', 'Iran', 'Syria', 'Palestine', 'Yemen', 'Israel', 'Turkey'],
+    'Sub-Saharan Africa': ['Nigeria', 'South Africa', 'Kenya', 'Ghana', 'Ethiopia', 'Tanzania', 'Uganda', 'Rwanda', 'Senegal', 'Ivory Coast', 'Cameroon', 'Angola', 'Mozambique', 'Zimbabwe', 'Zambia', 'Botswana', 'Namibia', 'Mauritius', 'Madagascar'],
+    'Americas': ['United States', 'USA', 'Canada', 'Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia', 'Peru', 'Venezuela', 'Ecuador', 'Uruguay', 'Paraguay', 'Bolivia', 'Costa Rica', 'Panama', 'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua', 'Dominican Republic', 'Cuba', 'Jamaica', 'Trinidad and Tobago'],
+  };
+
   app.get("/api/dashboard/:searchId", async (req, res) => {
     try {
       const searchId = parseInt(req.params.searchId);
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
+
+      const customDomiciledCountry = req.query.domiciledCountry as string | undefined;
+      const customRegion = req.query.region as string | undefined;
 
       const results = await storage.getFullSearchResults(searchId);
       if (!results) {
@@ -2101,13 +2113,17 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         .filter(([c]) => c !== 'Unknown')
         .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown';
 
-      const GCC_COUNTRIES = ['UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman'];
-      const isGCC = (country: string) => GCC_COUNTRIES.some(g => g.toLowerCase() === country.toLowerCase());
+      const domiciledCountry = customDomiciledCountry || originCountry;
+      const selectedRegionName = (customRegion && REGION_DEFINITIONS[customRegion]) ? customRegion : 'GCC';
+      const regionCountries = REGION_DEFINITIONS[selectedRegionName];
+      const isInRegion = (country: string) => regionCountries.some(g => g.toLowerCase() === country.toLowerCase());
       const getRegionLabel = (country: string) => {
-        if (country.toLowerCase() === originCountry.toLowerCase()) return 'origin';
-        if (isGCC(country)) return 'gcc';
+        if (country.toLowerCase() === domiciledCountry.toLowerCase()) return 'origin';
+        if (isInRegion(country)) return 'gcc';
         return 'international';
       };
+      const availableCountries = Object.keys(companiesByCountry).filter(c => c !== 'Unknown').sort();
+      const availableRegions = Object.keys(REGION_DEFINITIONS).sort();
 
       const allExecutives = allCompanies.flatMap(c =>
         c.executives.map(e => ({ ...e, companyCountry: c.country || 'Unknown', companyRevenue: c.revenue ? Number(c.revenue) : null }))
@@ -2364,7 +2380,11 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       res.json({
         reportTitle,
-        originCountry,
+        originCountry: domiciledCountry,
+        selectedRegion: selectedRegionName,
+        autoDetectedCountry: originCountry,
+        availableCountries,
+        availableRegions,
         distinctCountries,
         mappingCompletion: {
           totalCompanies,

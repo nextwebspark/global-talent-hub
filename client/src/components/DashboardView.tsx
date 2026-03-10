@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Loader2, Building2, Users, DollarSign, UserCheck, ChevronDown, ChevronUp, BarChart3, ArrowUpRight, Target, Sparkles } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface CategoryStats {
   min: number;
@@ -44,6 +44,10 @@ interface ConcentrationIndex {
 interface DashboardData {
   reportTitle: string;
   originCountry: string;
+  selectedRegion: string;
+  autoDetectedCountry: string;
+  availableCountries: string[];
+  availableRegions: string[];
   distinctCountries: number;
   mappingCompletion: {
     totalCompanies: number;
@@ -214,20 +218,52 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('totalPackage');
+  const [domiciledCountry, setDomiciledCountry] = useState<string>('');
+  const [selectedRegion, setSelectedRegion] = useState<string>('');
+  const [showDomiciled, setShowDomiciled] = useState(true);
+  const [showRegion, setShowRegion] = useState(true);
+  const [showInternational, setShowInternational] = useState(true);
+  const fetchCounterRef = useRef(0);
 
-  useEffect(() => {
-    if (!searchId) return;
+  const fetchDashboard = useCallback((sid: string, country?: string, region?: string) => {
+    const thisCall = ++fetchCounterRef.current;
     setLoading(true);
     setError(null);
-    fetch(`/api/dashboard/${searchId}`)
+    const params = new URLSearchParams();
+    if (country) params.set('domiciledCountry', country);
+    if (region) params.set('region', region);
+    const qs = params.toString();
+    fetch(`/api/dashboard/${sid}${qs ? `?${qs}` : ''}`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to load dashboard');
         return res.json();
       })
-      .then(setData)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [searchId]);
+      .then(d => {
+        if (thisCall !== fetchCounterRef.current) return;
+        setData(d);
+        if (!country) setDomiciledCountry(d.autoDetectedCountry || d.originCountry || '');
+        if (!region) setSelectedRegion(d.selectedRegion || 'GCC');
+      })
+      .catch(e => { if (thisCall === fetchCounterRef.current) setError(e.message); })
+      .finally(() => { if (thisCall === fetchCounterRef.current) setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    if (!searchId) return;
+    setDomiciledCountry('');
+    setSelectedRegion('');
+    fetchDashboard(searchId);
+  }, [searchId, fetchDashboard]);
+
+  const handleCountryChange = (country: string) => {
+    setDomiciledCountry(country);
+    if (searchId) fetchDashboard(searchId, country, selectedRegion);
+  };
+
+  const handleRegionChange = (region: string) => {
+    setSelectedRegion(region);
+    if (searchId) fetchDashboard(searchId, domiciledCountry, region);
+  };
 
   if (!searchId) {
     return (
@@ -732,6 +768,57 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-3">
                   Median {CATEGORY_LABELS[selectedCategory]?.label || 'Compensation'} by Revenue Band & Region
                 </p>
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider whitespace-nowrap">Domiciled Country</label>
+                    <select
+                      data-testid="select-domiciled-country"
+                      className="text-xs bg-background border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      value={domiciledCountry}
+                      onChange={e => handleCountryChange(e.target.value)}
+                    >
+                      {(data.availableCountries || []).map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider whitespace-nowrap">Region</label>
+                    <select
+                      data-testid="select-region"
+                      className="text-xs bg-background border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      value={selectedRegion}
+                      onChange={e => handleRegionChange(e.target.value)}
+                    >
+                      {(data.availableRegions || []).map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <button
+                      data-testid="toggle-domiciled"
+                      onClick={() => setShowDomiciled(v => !v)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${showDomiciled ? 'bg-[hsl(210,100%,60%)]/15 border-[hsl(210,100%,60%)] text-[hsl(210,100%,60%)]' : 'bg-muted/30 border-border text-muted-foreground line-through'}`}
+                    >
+                      {domiciledCountry || data.originCountry}
+                    </button>
+                    <button
+                      data-testid="toggle-region"
+                      onClick={() => setShowRegion(v => !v)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${showRegion ? 'bg-[hsl(160,80%,50%)]/15 border-[hsl(160,80%,50%)] text-[hsl(160,80%,50%)]' : 'bg-muted/30 border-border text-muted-foreground line-through'}`}
+                    >
+                      {selectedRegion || 'GCC'}
+                    </button>
+                    <button
+                      data-testid="toggle-international"
+                      onClick={() => setShowInternational(v => !v)}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${showInternational ? 'bg-[hsl(45,90%,55%)]/15 border-[hsl(45,90%,55%)] text-[hsl(45,90%,55%)]' : 'bg-muted/30 border-border text-muted-foreground line-through'}`}
+                    >
+                      International
+                    </button>
+                  </div>
+                </div>
                 <div className="h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={activeLineData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
@@ -750,41 +837,42 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                         width={65}
                       />
                       <Tooltip content={<CustomTooltip />} />
-                      <Legend
-                        wrapperStyle={{ fontSize: 11 }}
-                        iconType="circle"
-                        iconSize={8}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="originMedian"
-                        name={data.originCountry}
-                        stroke="hsl(210, 100%, 60%)"
-                        strokeWidth={2.5}
-                        dot={{ fill: 'hsl(210, 100%, 60%)', r: 4 }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="gccMedian"
-                        name="GCC"
-                        stroke="hsl(160, 80%, 50%)"
-                        strokeWidth={2.5}
-                        dot={{ fill: 'hsl(160, 80%, 50%)', r: 4 }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="internationalMedian"
-                        name="International"
-                        stroke="hsl(45, 90%, 55%)"
-                        strokeWidth={2.5}
-                        dot={{ fill: 'hsl(45, 90%, 55%)', r: 4 }}
-                        activeDot={{ r: 6 }}
-                        connectNulls={false}
-                      />
+                      {showDomiciled && (
+                        <Line
+                          type="monotone"
+                          dataKey="originMedian"
+                          name={domiciledCountry || data.originCountry}
+                          stroke="hsl(210, 100%, 60%)"
+                          strokeWidth={2.5}
+                          dot={{ fill: 'hsl(210, 100%, 60%)', r: 4 }}
+                          activeDot={{ r: 6 }}
+                          connectNulls={false}
+                        />
+                      )}
+                      {showRegion && (
+                        <Line
+                          type="monotone"
+                          dataKey="gccMedian"
+                          name={selectedRegion || 'GCC'}
+                          stroke="hsl(160, 80%, 50%)"
+                          strokeWidth={2.5}
+                          dot={{ fill: 'hsl(160, 80%, 50%)', r: 4 }}
+                          activeDot={{ r: 6 }}
+                          connectNulls={false}
+                        />
+                      )}
+                      {showInternational && (
+                        <Line
+                          type="monotone"
+                          dataKey="internationalMedian"
+                          name="International"
+                          stroke="hsl(45, 90%, 55%)"
+                          strokeWidth={2.5}
+                          dot={{ fill: 'hsl(45, 90%, 55%)', r: 4 }}
+                          activeDot={{ r: 6 }}
+                          connectNulls={false}
+                        />
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

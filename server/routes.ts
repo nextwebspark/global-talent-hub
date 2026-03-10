@@ -2058,9 +2058,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(400).json({ error: "Invalid search ID" });
       }
 
-      const customDomiciledCountry = req.query.domiciledCountry as string | undefined;
-      const customRegion = req.query.region as string | undefined;
-
       const results = await storage.getFullSearchResults(searchId);
       if (!results) {
         return res.status(404).json({ error: "Search not found" });
@@ -2113,15 +2110,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         .filter(([c]) => c !== 'Unknown')
         .sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unknown';
 
-      const domiciledCountry = customDomiciledCountry || originCountry;
-      const selectedRegionName = (customRegion && REGION_DEFINITIONS[customRegion]) ? customRegion : 'GCC';
-      const regionCountries = REGION_DEFINITIONS[selectedRegionName];
-      const isInRegion = (country: string) => regionCountries.some(g => g.toLowerCase() === country.toLowerCase());
-      const getRegionLabel = (country: string) => {
-        if (country.toLowerCase() === domiciledCountry.toLowerCase()) return 'origin';
-        if (isInRegion(country)) return 'gcc';
-        return 'international';
-      };
       const availableCountries = Object.keys(companiesByCountry).filter(c => c !== 'Unknown').sort();
       const availableRegions = Object.keys(REGION_DEFINITIONS).sort();
 
@@ -2198,7 +2186,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let remunerationByGeo: Record<string, CategoryBreakdown> = {};
       let overallCategories: CategoryBreakdown = emptyBreakdown();
 
-      type CompRevenueEntry = { fixedFees: number; allowances: number; variableBonus: number; ltip: number; totalPackage: number; band: string; region: string };
+      type CompRevenueEntry = { fixedFees: number; allowances: number; variableBonus: number; ltip: number; totalPackage: number; band: string; country: string };
       const compRevenueEntries: CompRevenueEntry[] = [];
 
       if (execIds.length > 0) {
@@ -2239,8 +2227,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           addValues(overallCategories);
 
           const band = getRevenueBand(exec.companyRevenue);
-          const region = getRegionLabel(country);
-          compRevenueEntries.push({ fixedFees: base, allowances: allow, variableBonus: bon, ltip, totalPackage: total, band, region });
+          compRevenueEntries.push({ fixedFees: base, allowances: allow, variableBonus: bon, ltip, totalPackage: total, band, country });
         }
       }
 
@@ -2297,49 +2284,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         stepUpAnalysis[cat] = buildStepUp(cat);
       }
 
-      const bandLabels = REVENUE_BANDS.map(b => b.label);
-      const medianOf = (arr: number[]) => {
-        if (arr.length === 0) return null;
-        arr.sort((a, b) => a - b);
-        const m = Math.floor(arr.length / 2);
-        return arr.length % 2 === 0 ? Math.round((arr[m - 1] + arr[m]) / 2) : arr[m];
-      };
-
-      const buildCompByRevBand = (catKey: CatKey) => {
-        const result: Array<{
-          band: string;
-          originMedian: number | null; originCount: number;
-          gccMedian: number | null; gccCount: number;
-          internationalMedian: number | null; internationalCount: number;
-        }> = [];
-        for (const bandLabel of bandLabels) {
-          const byRegion: Record<string, number[]> = { origin: [], gcc: [], international: [] };
-          for (const entry of compRevenueEntries) {
-            if (entry.band === bandLabel) {
-              const val = entry[catKey];
-              if (val > 0) byRegion[entry.region].push(val);
-            }
-          }
-          result.push({
-            band: bandLabel,
-            originMedian: medianOf(byRegion.origin), originCount: byRegion.origin.length,
-            gccMedian: medianOf(byRegion.gcc), gccCount: byRegion.gcc.length,
-            internationalMedian: medianOf(byRegion.international), internationalCount: byRegion.international.length,
-          });
-        }
-        return result;
-      };
-
-      const compByRevenueBandRegion: Record<string, Array<{
-        band: string;
-        originMedian: number | null; originCount: number;
-        gccMedian: number | null; gccCount: number;
-        internationalMedian: number | null; internationalCount: number;
-      }>> = {};
-      for (const cat of CATEGORY_KEYS) {
-        compByRevenueBandRegion[cat] = buildCompByRevBand(cat);
-      }
-
       let availableCount = 0;
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
@@ -2378,13 +2322,15 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         }
       }
 
+      const revenueBandLabels = REVENUE_BANDS.map(b => b.label);
+
       res.json({
         reportTitle,
-        originCountry: domiciledCountry,
-        selectedRegion: selectedRegionName,
-        autoDetectedCountry: originCountry,
+        originCountry,
         availableCountries,
         availableRegions,
+        regionDefinitions: REGION_DEFINITIONS,
+        revenueBandLabels,
         distinctCountries,
         mappingCompletion: {
           totalCompanies,
@@ -2403,7 +2349,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           byGeography: remGeoStats,
           currency: 'USD',
           stepUpAnalysis,
-          compByRevenueBandRegion,
+          compRevenueEntries,
         },
         revenueBands,
         sectorBreakdown,

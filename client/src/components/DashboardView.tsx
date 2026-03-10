@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Loader2, Building2, Users, DollarSign, UserCheck, ChevronDown, ChevronUp, BarChart3, ArrowUpRight, Target, Sparkles } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
@@ -25,14 +25,14 @@ interface StepUpEntry {
   stepUpFrom?: string;
 }
 
-interface CompRevenueBandRegion {
+interface CompRevenueEntry {
+  fixedFees: number;
+  allowances: number;
+  variableBonus: number;
+  ltip: number;
+  totalPackage: number;
   band: string;
-  originMedian: number | null;
-  originCount: number;
-  gccMedian: number | null;
-  gccCount: number;
-  internationalMedian: number | null;
-  internationalCount: number;
+  country: string;
 }
 
 interface ConcentrationIndex {
@@ -44,10 +44,10 @@ interface ConcentrationIndex {
 interface DashboardData {
   reportTitle: string;
   originCountry: string;
-  selectedRegion: string;
-  autoDetectedCountry: string;
   availableCountries: string[];
   availableRegions: string[];
+  regionDefinitions: Record<string, string[]>;
+  revenueBandLabels: string[];
   distinctCountries: number;
   mappingCompletion: {
     totalCompanies: number;
@@ -66,7 +66,7 @@ interface DashboardData {
     byGeography: Record<string, CategoryBreakdownStats>;
     currency: string;
     stepUpAnalysis: Record<string, StepUpEntry[]>;
-    compByRevenueBandRegion: Record<string, CompRevenueBandRegion[]>;
+    compRevenueEntries: CompRevenueEntry[];
   };
   revenueBands: Record<string, number>;
   sectorBreakdown: Record<string, number>;
@@ -219,51 +219,64 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('totalPackage');
   const [domiciledCountry, setDomiciledCountry] = useState<string>('');
-  const [selectedRegion, setSelectedRegion] = useState<string>('');
+  const [selectedRegion, setSelectedRegion] = useState<string>('GCC');
   const [showDomiciled, setShowDomiciled] = useState(true);
   const [showRegion, setShowRegion] = useState(true);
   const [showInternational, setShowInternational] = useState(true);
-  const fetchCounterRef = useRef(0);
 
-  const fetchDashboard = useCallback((sid: string, country?: string, region?: string) => {
-    const thisCall = ++fetchCounterRef.current;
+  useEffect(() => {
+    if (!searchId) return;
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams();
-    if (country) params.set('domiciledCountry', country);
-    if (region) params.set('region', region);
-    const qs = params.toString();
-    fetch(`/api/dashboard/${sid}${qs ? `?${qs}` : ''}`)
+    fetch(`/api/dashboard/${searchId}`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to load dashboard');
         return res.json();
       })
       .then(d => {
-        if (thisCall !== fetchCounterRef.current) return;
         setData(d);
-        if (!country) setDomiciledCountry(d.autoDetectedCountry || d.originCountry || '');
-        if (!region) setSelectedRegion(d.selectedRegion || 'GCC');
+        setDomiciledCountry(d.originCountry || '');
+        setSelectedRegion('GCC');
       })
-      .catch(e => { if (thisCall === fetchCounterRef.current) setError(e.message); })
-      .finally(() => { if (thisCall === fetchCounterRef.current) setLoading(false); });
-  }, []);
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [searchId]);
 
-  useEffect(() => {
-    if (!searchId) return;
-    setDomiciledCountry('');
-    setSelectedRegion('');
-    fetchDashboard(searchId);
-  }, [searchId, fetchDashboard]);
+  const activeLineData = useMemo(() => {
+    if (!data) return [];
+    const entries = data.remuneration?.compRevenueEntries || [];
+    const bandLabels = data.revenueBandLabels || [];
+    const regionCountries = (data.regionDefinitions || {})[selectedRegion] || [];
+    const regionSet = new Set(regionCountries.map((c: string) => c.toLowerCase()));
+    const domLower = domiciledCountry.toLowerCase();
+    const catKey = selectedCategory as keyof CompRevenueEntry;
 
-  const handleCountryChange = (country: string) => {
-    setDomiciledCountry(country);
-    if (searchId) fetchDashboard(searchId, country, selectedRegion);
-  };
+    const medianOf = (arr: number[]) => {
+      if (arr.length === 0) return null;
+      arr.sort((a, b) => a - b);
+      const m = Math.floor(arr.length / 2);
+      return arr.length % 2 === 0 ? Math.round((arr[m - 1] + arr[m]) / 2) : arr[m];
+    };
 
-  const handleRegionChange = (region: string) => {
-    setSelectedRegion(region);
-    if (searchId) fetchDashboard(searchId, domiciledCountry, region);
-  };
+    return bandLabels.map((bandLabel: string) => {
+      const byRegion: Record<string, number[]> = { origin: [], gcc: [], international: [] };
+      for (const entry of entries) {
+        if (entry.band !== bandLabel) continue;
+        const val = entry[catKey] as number;
+        if (!val || val <= 0) continue;
+        const cl = entry.country.toLowerCase();
+        if (cl === domLower) byRegion.origin.push(val);
+        else if (regionSet.has(cl)) byRegion.gcc.push(val);
+        else byRegion.international.push(val);
+      }
+      return {
+        band: bandLabel,
+        originMedian: medianOf(byRegion.origin), originCount: byRegion.origin.length,
+        gccMedian: medianOf(byRegion.gcc), gccCount: byRegion.gcc.length,
+        internationalMedian: medianOf(byRegion.international), internationalCount: byRegion.international.length,
+      };
+    });
+  }, [data, selectedRegion, domiciledCountry, selectedCategory]);
 
   if (!searchId) {
     return (
@@ -334,7 +347,6 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const sortedOwnership = Object.entries(ownershipBreakdown).sort((a, b) => b[1] - a[1]);
   const maxOwnership = Math.max(...sortedOwnership.map(([, v]) => v), 1);
 
-  const activeLineData = remuneration.compByRevenueBandRegion?.[selectedCategory] || [];
   const activeStepUp = remuneration.stepUpAnalysis?.[selectedCategory] || [];
   const hasLineChartData = activeLineData.some(
     d => d.originMedian != null || d.gccMedian != null || d.internationalMedian != null
@@ -775,7 +787,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                       data-testid="select-domiciled-country"
                       className="text-xs bg-background border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       value={domiciledCountry}
-                      onChange={e => handleCountryChange(e.target.value)}
+                      onChange={e => setDomiciledCountry(e.target.value)}
                     >
                       {(data.availableCountries || []).map(c => (
                         <option key={c} value={c}>{c}</option>
@@ -788,7 +800,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                       data-testid="select-region"
                       className="text-xs bg-background border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                       value={selectedRegion}
-                      onChange={e => handleRegionChange(e.target.value)}
+                      onChange={e => setSelectedRegion(e.target.value)}
                     >
                       {(data.availableRegions || []).map(r => (
                         <option key={r} value={r}>{r}</option>

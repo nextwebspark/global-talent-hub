@@ -39,7 +39,6 @@ async function persistExecutiveUpdate(id: string, updates: Partial<any>): Promis
     if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
     if (updates.linkedin !== undefined) dbUpdates.linkedin = updates.linkedin;
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-    if (updates.careerSummary !== undefined) dbUpdates.careerSummary = updates.careerSummary;
     if (updates.remunerationNotes !== undefined) dbUpdates.remunerationNotes = updates.remunerationNotes;
     if (updates.availability !== undefined) dbUpdates.availability = updates.availability;
     if (updates.level !== undefined) dbUpdates.level = updates.level;
@@ -124,7 +123,6 @@ export interface Executive {
   notes?: string;
   email?: string;
   phone?: string;
-  careerSummary?: string;
   remunerationNotes?: string;
   availability?: string;
   level?: string;
@@ -158,7 +156,6 @@ export interface ExecutiveDetails {
     imageUrl: string | null;
     email: string | null;
     phone: string | null;
-    careerSummary: string | null;
     notes: string | null;
     remunerationNotes: string | null;
     availability: string | null;
@@ -433,7 +430,6 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     notes: (apiExec as any).notes || undefined,
     email: (apiExec as any).email || undefined,
     phone: (apiExec as any).phone || undefined,
-    careerSummary: (apiExec as any).careerSummary || undefined,
     remunerationNotes: (apiExec as any).remunerationNotes || undefined,
     availability: (apiExec as any).availability || undefined,
     level: (apiExec as any).level || undefined,

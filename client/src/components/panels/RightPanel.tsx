@@ -769,7 +769,6 @@ function ExecutiveDetailView({
 }) {
   const [localExecutive, setLocalExecutive] = useState(executiveDetails?.executive);
   
-  const [careerSummary, setCareerSummary] = useState('');
   const [notes, setNotes] = useState('');
   const [remunerationNotes, setRemunerationNotes] = useState('');
   const [availability, setAvailability] = useState('');
@@ -800,7 +799,6 @@ function ExecutiveDetailView({
   useEffect(() => {
     if (executiveDetails) {
       setLocalExecutive(executiveDetails.executive);
-      setCareerSummary(executiveDetails.executive.careerSummary || '');
       setNotes(executiveDetails.executive.notes || '');
       setRemunerationNotes(executiveDetails.executive.remunerationNotes || '');
       setAvailability(executiveDetails.executive.availability || '');
@@ -887,7 +885,6 @@ function ExecutiveDetailView({
       const data = await response.json();
       
       setLocalExecutive(data.executive);
-      if (data.executive.careerSummary) setCareerSummary(data.executive.careerSummary);
       if (data.executive.remunerationNotes) setRemunerationNotes(data.executive.remunerationNotes);
       if (data.executive.linkedin) setLinkedInInput(data.executive.linkedin);
       
@@ -1070,7 +1067,7 @@ function ExecutiveDetailView({
                   </>
                 )}
               </Button>
-              {(careerSummary || remunerationNotes || executive.linkedin) && (
+              {(remunerationNotes || executive.linkedin) && (
                 <Button 
                   variant="outline" 
                   onClick={() => setViewMode('profile')}
@@ -1180,38 +1177,6 @@ function ExecutiveDetailView({
 
             <div>
               <div className="flex items-center gap-2 mb-3">
-                <Briefcase className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Career History</h3>
-              </div>
-              {editingField === 'careerSummary' ? (
-                <div className="space-y-2">
-                  <Textarea
-                    autoFocus
-                    value={careerSummary}
-                    onChange={(e) => setCareerSummary(e.target.value)}
-                    onBlur={() => handleSaveTextField('careerSummary', careerSummary)}
-                    placeholder="AI-generated career summary or paste from other sources..."
-                    className="min-h-[120px]"
-                  />
-                  <p className="text-xs text-muted-foreground">Click outside to save</p>
-                </div>
-              ) : (
-                <div 
-                  className="p-3 border rounded-lg bg-card min-h-[80px] cursor-text hover:bg-muted/30 transition-colors"
-                  onClick={() => setEditingField('careerSummary')}>
-                  {careerSummary ? (
-                    <p className="text-sm whitespace-pre-wrap">{careerSummary}</p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">Click to add career history summary...</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="flex items-center gap-2 mb-3">
                 <FileText className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold">Notes</h3>
               </div>
@@ -1223,13 +1188,13 @@ function ExecutiveDetailView({
                     onChange={(e) => setNotes(e.target.value)}
                     onBlur={() => handleSaveTextField('notes', notes)}
                     placeholder="Internal notes and assessments..."
-                    className="min-h-[100px]"
+                    className="min-h-[200px]"
                   />
                   <p className="text-xs text-muted-foreground">Click outside to save</p>
                 </div>
               ) : (
                 <div 
-                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                  className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors"
                   onClick={() => setEditingField('notes')}>
                   {notes ? (
                     <p className="text-sm whitespace-pre-wrap">{notes}</p>
@@ -1263,13 +1228,13 @@ function ExecutiveDetailView({
                     onChange={(e) => setRemunerationNotes(e.target.value)}
                     onBlur={() => handleSaveTextField('remunerationNotes', remunerationNotes)}
                     placeholder="Paste compensation details in any format and currency. AI will extract Fixed fees, Allowances, Variable bonus, and LTIP..."
-                    className="min-h-[100px]"
+                    className="min-h-[200px]"
                   />
                   <p className="text-xs text-muted-foreground">Click outside to save — AI will automatically extract structured data.</p>
                 </div>
               ) : (
                 <div 
-                  className="p-3 border rounded-lg bg-card min-h-[60px] cursor-text hover:bg-muted/30 transition-colors"
+                  className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors"
                   onClick={() => setEditingField('remunerationNotes')}>
                   {remunerationNotes ? (
                     <p className="text-sm whitespace-pre-wrap">{remunerationNotes}</p>
@@ -1383,7 +1348,6 @@ function ExecutiveDetailView({
                     <option value="">- Select Gender -</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
-                    <option value="Non-Binary">Non-Binary</option>
                     <option value="Prefer not to say">Prefer not to say</option>
                   </select>
                 </div>

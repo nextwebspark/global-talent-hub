@@ -82,12 +82,6 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'comment', 'remark', 'note', 'detail', 'details', 'other', 'misc',
     'miscellaneous', 'summary', 'overview'
   ],
-  careerSummary: [
-    'career summary', 'bio', 'biography', 'background', 'career', 'experience',
-    'work history', 'professional summary', 'profile summary', 'career history',
-    'work experience', 'employment history', 'professional background',
-    'career background', 'career profile', 'resume summary', 'cv summary'
-  ],
   remunerationNotes: [
     'remuneration', 'salary', 'compensation', 'pay', 'package', 'total compensation',
     'comp', 'tc', 'total comp', 'salary range', 'pay range', 'earnings',
@@ -587,7 +581,6 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                             <option value="phone" disabled={!!importPreview.mappings.phone && importPreview.mappings.phone !== header}>Phone</option>
                             <option value="linkedin" disabled={!!importPreview.mappings.linkedin && importPreview.mappings.linkedin !== header}>LinkedIn</option>
                             <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
-                            <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                             <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
                             <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
                             <option value="level" disabled={!!importPreview.mappings.level && importPreview.mappings.level !== header}>Level</option>

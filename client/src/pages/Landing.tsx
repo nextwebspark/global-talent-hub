@@ -154,12 +154,6 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'comment', 'remark', 'note', 'detail', 'details', 'other', 'misc',
     'miscellaneous', 'summary', 'overview'
   ],
-  careerSummary: [
-    'career summary', 'bio', 'biography', 'background', 'career', 'experience',
-    'work history', 'professional summary', 'profile summary', 'career history',
-    'work experience', 'employment history', 'professional background',
-    'career background', 'career profile', 'resume summary', 'cv summary'
-  ],
   remunerationNotes: [
     'remuneration', 'salary', 'compensation', 'pay', 'package', 'total compensation',
     'comp', 'tc', 'total comp', 'salary range', 'pay range', 'earnings',
@@ -524,7 +518,7 @@ export default function Landing() {
     name: 'Name', company: 'Company', title: 'Title', country: 'Country',
     city: 'City', sector: 'Sector', revenue: 'Revenue', employees: 'Employees',
     email: 'Email', phone: 'Phone', linkedin: 'LinkedIn', notes: 'Notes',
-    careerSummary: 'Career Summary', remunerationNotes: 'Remuneration', availability: 'Status', level: 'Level',
+    remunerationNotes: 'Remuneration', availability: 'Status', level: 'Level',
   };
 
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -914,7 +908,7 @@ export default function Landing() {
                               >
                                 <option value="">-- skip --</option>
                                 <optgroup label="Executive Fields">
-                                  {['name', 'title', 'email', 'phone', 'linkedin', 'notes', 'careerSummary', 'remunerationNotes', 'availability'].map(key => (
+                                  {['name', 'title', 'email', 'phone', 'linkedin', 'notes', 'remunerationNotes', 'availability'].map(key => (
                                     <option key={key} value={key} disabled={!!importPreview.mappings[key] && importPreview.mappings[key] !== header}>
                                       {FIELD_LABELS[key]}
                                     </option>

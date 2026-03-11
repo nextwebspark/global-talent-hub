@@ -58,7 +58,6 @@ export interface TableRowData {
   email: string;
   phone: string;
   linkedin: string;
-  careerSummary: string;
   remunerationNotes: string;
   availability: string;
   level: string;
@@ -102,7 +101,7 @@ function parseRevenueInput(input: string): number {
 
 const STATUS_OPTIONS = ['Interested', 'Not Interested'] as const;
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
-const GENDER_OPTIONS = ['Male', 'Female', 'Non-Binary', 'Prefer not to say'] as const;
+const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -435,7 +434,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     email: false,
     phone: false,
     linkedin: false,
-    careerSummary: false,
     remunerationNotes: false,
     availability: false,
     level: false,
@@ -449,7 +447,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     const prevCount = prevDataCountRef.current;
     prevDataCountRef.current = data.length;
     if (prevCount > 0 && data.length === prevCount) return;
-    const optionalFields = ['sector', 'email', 'phone', 'linkedin', 'careerSummary', 'remunerationNotes', 'availability', 'level', 'gender', 'ethnicity'] as const;
+    const optionalFields = ['sector', 'email', 'phone', 'linkedin', 'remunerationNotes', 'availability', 'level', 'gender', 'ethnicity'] as const;
     setColumnVisibility(prev => {
       const next = { ...prev };
       let changed = false;
@@ -504,7 +502,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newLinkedin, setNewLinkedin] = useState('');
-  const [newCareerSummary, setNewCareerSummary] = useState('');
   const [newRemunerationNotes, setNewRemunerationNotes] = useState('');
   const [newAvailability, setNewAvailability] = useState('');
   const [newLevel, setNewLevel] = useState('');
@@ -586,7 +583,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     setNewEmail('');
     setNewPhone('');
     setNewLinkedin('');
-    setNewCareerSummary('');
     setNewRemunerationNotes('');
     setNewAvailability('');
     setNewLevel('');
@@ -661,7 +657,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
             email: newEmail.trim() || undefined,
             phone: newPhone.trim() || undefined,
             linkedin: newLinkedin.trim() || undefined,
-            careerSummary: newCareerSummary.trim() || undefined,
             remunerationNotes: newRemunerationNotes.trim() || undefined,
             availability: newAvailability || undefined,
             level: newLevel || undefined,
@@ -681,11 +676,11 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     } finally {
       setIsSubmitting(false);
     }
-  }, [newCompanyName, newCompanyCountry, newExecName, newExecTitle, newSector, newRevenue, newEmployees, newNotes, newEmail, newPhone, newLinkedin, newCareerSummary, newRemunerationNotes, newAvailability, newLevel, matchedCompany, currentProject, addCompany, addExecutive, companies, resetDialogFields]);
+  }, [newCompanyName, newCompanyCountry, newExecName, newExecTitle, newSector, newRevenue, newEmployees, newNotes, newEmail, newPhone, newLinkedin, newRemunerationNotes, newAvailability, newLevel, matchedCompany, currentProject, addCompany, addExecutive, companies, resetDialogFields]);
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([
     'country', 'companyName', 'name', 'title', 'level', 'availability', 'linkedin',
     'sector', 'revenue', 'employees', 'notes', 'email', 'phone',
-    'careerSummary', 'remunerationNotes',
+    'remunerationNotes',
   ]);
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
@@ -875,7 +870,6 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       columnHelper.accessor('email', { header: 'Email', cell: editableCell('email'), size: 160, enableGrouping: false }),
       columnHelper.accessor('phone', { header: 'Phone', cell: editableCell('phone'), size: 120, enableGrouping: false }),
       columnHelper.accessor('linkedin', { header: 'LinkedIn', cell: editableCell('linkedin'), size: 160, enableGrouping: false }),
-      columnHelper.accessor('careerSummary', { header: 'Career Summary', cell: editableCell('careerSummary'), size: 180, enableGrouping: false }),
       columnHelper.accessor('remunerationNotes', { header: 'Remuneration', cell: editableCell('remunerationNotes'), size: 140, enableGrouping: false }),
       columnHelper.accessor('availability', {
         header: 'Status',
@@ -1470,23 +1464,10 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               </div>
             )}
 
-            {(columnVisibility.careerSummary !== false || columnVisibility.remunerationNotes !== false) && (
+            {columnVisibility.remunerationNotes !== false && (
               <div className="border-t border-border/40 pt-4">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Compensation & Career</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Compensation</div>
                 <div className="space-y-3">
-                  {columnVisibility.careerSummary !== false && (
-                    <div>
-                      <Label htmlFor="exec-career" className="text-xs font-medium">Career Summary</Label>
-                      <Input
-                        id="exec-career"
-                        value={newCareerSummary}
-                        onChange={(e) => setNewCareerSummary(e.target.value)}
-                        placeholder="Brief career summary"
-                        className="mt-1"
-                        data-testid="input-exec-career"
-                      />
-                    </div>
-                  )}
                   {columnVisibility.remunerationNotes !== false && (
                     <div>
                       <Label htmlFor="exec-remuneration" className="text-xs font-medium">Remuneration Notes</Label>

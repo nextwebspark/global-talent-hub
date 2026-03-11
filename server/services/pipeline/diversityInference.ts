@@ -87,7 +87,6 @@ Name: ${exec.name}
 Title: ${exec.title || 'Unknown'}
 Company: ${companyName}
 Country: ${country}
-${exec.careerSummary ? `Career Summary: ${exec.careerSummary}` : ''}
 
 RULES:
 - Gender options: "Male", "Female", "Non-Binary"
@@ -153,7 +152,6 @@ export async function inferDiversityBatch(executiveIds: number[]): Promise<{ upd
         title: exec.title || 'Unknown',
         company: company?.name || 'Unknown',
         country: company?.country || '',
-        careerSummary: exec.careerSummary || '',
         needGender,
         needEthnicity,
       });
@@ -169,7 +167,7 @@ export async function inferDiversityBatch(executiveIds: number[]): Promise<{ upd
     const batch = executives.slice(i, i + BATCH_SIZE);
 
     const execList = batch.map((e, idx) => 
-      `${idx + 1}. Name: "${e.name}", Title: "${e.title}", Company: "${e.company}", Country: "${e.country}"${e.careerSummary ? `, Career: "${e.careerSummary.slice(0, 100)}"` : ''}`
+      `${idx + 1}. Name: "${e.name}", Title: "${e.title}", Company: "${e.company}", Country: "${e.country}"`
     ).join('\n');
 
     const prompt = `For each executive below, infer their gender and ethnicity.

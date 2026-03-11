@@ -78,7 +78,6 @@ export const executives = pgTable("executives", {
   linkedin: text("linkedin"),
   profileUrl: text("profile_url"),
   imageUrl: text("image_url"),
-  careerSummary: text("career_summary"),
   notes: text("notes"),
   remunerationNotes: text("remuneration_notes"),
   availability: text("availability"),

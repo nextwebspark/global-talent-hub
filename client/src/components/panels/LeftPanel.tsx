@@ -354,7 +354,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           email: '',
           phone: '',
           linkedin: '',
-          careerSummary: '',
           remunerationNotes: '',
           availability: '',
           level: '',
@@ -377,7 +376,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
             email: exec.email || '',
             phone: exec.phone || '',
             linkedin: exec.linkedin || '',
-            careerSummary: exec.careerSummary || '',
             remunerationNotes: exec.remunerationNotes || '',
             availability: exec.availability || '',
             level: exec.level || '',
@@ -405,7 +403,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         'Email': row.email || '',
         'Phone': row.phone || '',
         'LinkedIn': row.linkedin || '',
-        'Career Summary': row.careerSummary || '',
         'Remuneration': row.remunerationNotes || '',
         'Status': row.availability || '',
         'Level': row.level || '',
@@ -496,12 +493,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
       'observation', 'info', 'information', 'additional notes', 'general notes',
       'comment', 'remark', 'note', 'detail', 'details', 'other', 'misc',
       'miscellaneous', 'summary', 'overview'
-    ],
-    careerSummary: [
-      'career summary', 'bio', 'biography', 'background', 'career', 'experience',
-      'work history', 'professional summary', 'profile summary', 'career history',
-      'work experience', 'employment history', 'professional background',
-      'career background', 'career profile', 'resume summary', 'cv summary'
     ],
     remunerationNotes: [
       'remuneration', 'salary', 'compensation', 'pay', 'package', 'total compensation',
@@ -1433,7 +1424,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                                 <option value="phone" disabled={!!importPreview.mappings.phone && importPreview.mappings.phone !== header}>Phone</option>
                                 <option value="linkedin" disabled={!!importPreview.mappings.linkedin && importPreview.mappings.linkedin !== header}>LinkedIn</option>
                                 <option value="notes" disabled={!!importPreview.mappings.notes && importPreview.mappings.notes !== header}>Notes</option>
-                                <option value="careerSummary" disabled={!!importPreview.mappings.careerSummary && importPreview.mappings.careerSummary !== header}>Career Summary</option>
                                 <option value="remunerationNotes" disabled={!!importPreview.mappings.remunerationNotes && importPreview.mappings.remunerationNotes !== header}>Remuneration</option>
                                 <option value="availability" disabled={!!importPreview.mappings.availability && importPreview.mappings.availability !== header}>Status</option>
                                 <option value="level" disabled={!!importPreview.mappings.level && importPreview.mappings.level !== header}>Level</option>

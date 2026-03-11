@@ -303,7 +303,6 @@ export async function registerRoutes(
           const notes = safeStr(mappings.notes ? record[mappings.notes] : null);
           const gender = safeStr(mappings.gender ? record[mappings.gender] : null);
           const ethnicity = safeStr(mappings.ethnicity ? record[mappings.ethnicity] : null);
-          const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
           const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
           const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
           const level = safeStr(mappings.level ? record[mappings.level] : null);
@@ -383,7 +382,6 @@ export async function registerRoutes(
               notes,
               gender,
               ethnicity,
-              careerSummary,
               remunerationNotes,
               availability,
               level,
@@ -485,10 +483,9 @@ export async function registerRoutes(
 - name: Full name of the executive
 - title: Current job title/position
 - linkedin: LinkedIn profile URL (look for linkedin.com URLs)
-- careerSummary: A summary of their career history, previous roles, companies worked at
 - remunerationNotes: Any compensation, salary, bonus, equity, or remuneration information
 
-Return ONLY a valid JSON object with these fields. Use null for any field that cannot be determined from the text. For careerSummary and remunerationNotes, synthesize the information into readable paragraphs.`;
+Return ONLY a valid JSON object with these fields. Use null for any field that cannot be determined from the text. For remunerationNotes, synthesize the information into readable paragraphs.`;
 
       const response = await openrouter.chat.completions.create({
         model: model,
@@ -527,7 +524,6 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       if (extracted.name) updateData.name = extracted.name;
       if (extracted.title) updateData.title = extracted.title;
       if (extracted.linkedin) updateData.linkedin = extracted.linkedin;
-      if (extracted.careerSummary) updateData.careerSummary = extracted.careerSummary;
       if (extracted.remunerationNotes) updateData.remunerationNotes = extracted.remunerationNotes;
 
       const updatedExecutive = await storage.updateExecutiveManual(id, updateData);
@@ -597,7 +593,6 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
           imageUrl: details.executive.imageUrl,
           email: details.executive.email,
           phone: details.executive.phone,
-          careerSummary: details.executive.careerSummary,
           notes: details.executive.notes,
           remunerationNotes: details.executive.remunerationNotes,
           availability: details.executive.availability,
@@ -1916,7 +1911,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           const phone = safeStr(mappings.phone ? record[mappings.phone] : null);
           const linkedin = safeStr(mappings.linkedin ? record[mappings.linkedin] : null);
           const notes = safeStr(mappings.notes ? record[mappings.notes] : null);
-          const careerSummary = safeStr(mappings.careerSummary ? record[mappings.careerSummary] : null);
           const remunerationNotes = safeStr(mappings.remunerationNotes ? record[mappings.remunerationNotes] : null);
           const availability = safeStr(mappings.availability ? record[mappings.availability] : null);
           const level = safeStr(mappings.level ? record[mappings.level] : null);
@@ -1973,7 +1967,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
               phone,
               linkedin,
               notes,
-              careerSummary,
               remunerationNotes,
               availability,
               level,

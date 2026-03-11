@@ -121,7 +121,6 @@ export const generateMockData = (query: string): { companies: Company[], executi
       id,
       name: companyName,
       industry: sector,
-      hq_city: city.name,
       hq_country: city.country,
       lat: city.lat + latJitter,
       lng: city.lng + lngJitter,

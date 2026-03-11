@@ -39,10 +39,6 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'country of origin', 'home country', 'operating country', 'jurisdiction',
     'country/region', 'loc', 'city/country', 'headquartered'
   ],
-  city: [
-    'city', 'hq city', 'headquarters city', 'town', 'municipality', 'metro',
-    'metropolitan', 'urban area', 'city/town', 'office city', 'base city'
-  ],
   sector: [
     'sector', 'industry', 'vertical', 'segment', 'business type', 'business sector',
     'industry sector', 'field', 'domain', 'category', 'classification', 'niche',
@@ -207,14 +203,14 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
-  const [newCompany, setNewCompany] = useState({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
+  const [newCompany, setNewCompany] = useState({ name: '', hq_country: '', revenue_usd: '', employees: '' });
 
   useEffect(() => {
     if (!isOpen) {
       setImportText('');
       setImportPreview(null);
       setActiveTab(initialMode === 'add' ? 'add' : 'paste');
-      setNewCompany({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
+      setNewCompany({ name: '', hq_country: '', revenue_usd: '', employees: '' });
     }
   }, [isOpen, initialMode]);
 
@@ -354,7 +350,6 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCompany.name,
-          region: newCompany.hq_city || 'Unknown',
           country: normalizedCountry,
           revenue: newCompany.revenue_usd ? String(parseFloat(newCompany.revenue_usd)) : null,
           employees: parseInt(newCompany.employees) || 0,
@@ -372,7 +367,6 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
         id: String(created.id),
         name: created.name,
         industry: created.sector || '',
-        hq_city: created.region || 'Unknown',
         hq_country: normalizeCountryName(created.country || normalizedCountry),
         lat: parseFloat(created.latitude) || 0,
         lng: parseFloat(created.longitude) || 0,
@@ -382,7 +376,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
         color: created.color || '#1e3a8a'
       });
 
-      setNewCompany({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
+      setNewCompany({ name: '', hq_country: '', revenue_usd: '', employees: '' });
       toast.success(`Added ${created.name}`);
       onClose();
     } catch {
@@ -453,13 +447,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                 autoFocus
                 data-testid="input-new-company-name"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  placeholder="City"
-                  value={newCompany.hq_city}
-                  onChange={(e) => setNewCompany({ ...newCompany, hq_city: e.target.value })}
-                  className="h-9 text-sm"
-                />
+              <div>
                 <div className="relative" ref={countryDropdownRef}>
                   <Input
                     placeholder="Country"
@@ -588,7 +576,6 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                           <optgroup label="Company Fields">
                             <option value="company" disabled={!!importPreview.mappings.company && importPreview.mappings.company !== header}>Company</option>
                             <option value="country" disabled={!!importPreview.mappings.country && importPreview.mappings.country !== header}>Country</option>
-                            <option value="city" disabled={!!importPreview.mappings.city && importPreview.mappings.city !== header}>City</option>
                             <option value="sector" disabled={!!importPreview.mappings.sector && importPreview.mappings.sector !== header}>Sector / Industry</option>
                             <option value="revenue" disabled={!!importPreview.mappings.revenue && importPreview.mappings.revenue !== header}>Revenue</option>
                             <option value="employees" disabled={!!importPreview.mappings.employees && importPreview.mappings.employees !== header}>Employees</option>

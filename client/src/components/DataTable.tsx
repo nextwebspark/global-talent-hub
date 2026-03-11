@@ -494,6 +494,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyCountry, setNewCompanyCountry] = useState('');
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
+  const countryDropdownRef = useRef<HTMLDivElement>(null);
   const [newExecName, setNewExecName] = useState('');
   const [newExecTitle, setNewExecTitle] = useState('');
   const [newSector, setNewSector] = useState('');
@@ -512,6 +514,16 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   const [isSubmitting, setIsSubmitting] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(event.target as Node)) {
+        setCountryDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const searchCompanies = useCallback(async (name: string) => {
     if (name.length < 2) {
@@ -612,7 +624,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               name: matchedCompany.name,
               country: matchedCompany.hq_country || 'Unknown',
               sector: matchedCompany.industry || newSector.trim() || 'Unknown',
-              region: matchedCompany.hq_city || 'Unknown',
+              region: 'Unknown',
               latitude: String(matchedCompany.lat || 0),
               longitude: String(matchedCompany.lng || 0),
               revenue: String(matchedCompany.revenue_usd || (newRevenue.trim() ? parseRevenueInput(newRevenue) : 0)),
@@ -1300,16 +1312,40 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                 {!matchedCompany && (
                   <>
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
+                      <div className="relative" ref={countryDropdownRef}>
                         <Label htmlFor="company-country" className="text-xs font-medium">Country</Label>
                         <Input
                           id="company-country"
                           value={newCompanyCountry}
-                          onChange={(e) => setNewCompanyCountry(e.target.value)}
-                          placeholder="e.g. United Arab Emirates"
+                          onChange={(e) => {
+                            setNewCompanyCountry(e.target.value);
+                            setCountryDropdownOpen(true);
+                          }}
+                          onFocus={() => setCountryDropdownOpen(true)}
+                          placeholder="Search country..."
                           className="mt-1"
+                          autoComplete="off"
                           data-testid="input-company-country"
                         />
+                        {countryDropdownOpen && newCompanyCountry.length > 0 && (
+                          <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-auto">
+                            {COUNTRIES.filter(c =>
+                              c.toLowerCase().includes(newCompanyCountry.toLowerCase())
+                            ).slice(0, 10).map(country => (
+                              <button
+                                key={country}
+                                type="button"
+                                onClick={() => {
+                                  setNewCompanyCountry(country);
+                                  setCountryDropdownOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                              >
+                                {country}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {columnVisibility.sector !== false && (
                         <div>

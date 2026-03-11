@@ -426,7 +426,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
           
           <div className="flex items-center text-sm text-muted-foreground gap-1 mb-2" data-testid="text-location">
             <MapPin className="w-3 h-3 shrink-0" />
-            <span className="truncate">{company.hq_city && company.hq_city !== 'Unknown' ? `${company.hq_city}, ${company.hq_country}` : company.hq_country}</span>
+            <span className="truncate">{company.hq_country}</span>
           </div>
           
           <div className="flex flex-wrap gap-1.5">

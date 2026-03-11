@@ -21,7 +21,6 @@ interface CountryData {
     revenue_usd: number;
     employees: number;
     confidence: number;
-    hq_city: string;
     lat: number;
     lng: number;
     color?: string;
@@ -67,7 +66,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
   const countryDropdownRef = useRef<HTMLDivElement>(null);
   const [newCompany, setNewCompany] = useState({
     name: '',
-    hq_city: '',
     hq_country: '',
     revenue_usd: '',
     employees: ''
@@ -170,7 +168,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCompany.name,
-          region: newCompany.hq_city || 'Unknown',
           country: normalizedCountry,
           revenue: newCompany.revenue_usd ? String(parseFloat(newCompany.revenue_usd)) : null,
           employees: parseInt(newCompany.employees) || 0,
@@ -190,7 +187,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         id: String(created.id),
         name: created.name,
         industry: created.sector || '',
-        hq_city: created.region || 'Unknown',
         hq_country: newCompanyCountry,
         lat: parseFloat(created.latitude) || 0,
         lng: parseFloat(created.longitude) || 0,
@@ -202,7 +198,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
       
       setExpandedCountries(prev => new Set(prev).add(newCompanyCountry));
       
-      setNewCompany({ name: '', hq_city: '', hq_country: '', revenue_usd: '', employees: '' });
+      setNewCompany({ name: '', hq_country: '', revenue_usd: '', employees: '' });
       setShowAddForm(false);
       toast.success(`Added ${created.name}`);
     } catch (error) {
@@ -305,7 +301,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         revenue_usd: company.revenue_usd,
         employees: company.employees,
         confidence: company.confidence,
-        hq_city: company.hq_city,
         lat: company.lat,
         lng: company.lng,
         color: company.color,
@@ -887,13 +882,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                 className="h-8 text-xs"
                 data-testid="input-new-company-name"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  placeholder="City"
-                  value={newCompany.hq_city}
-                  onChange={(e) => setNewCompany({ ...newCompany, hq_city: e.target.value })}
-                  className="h-8 text-xs"
-                />
+              <div>
                 <div className="relative" ref={countryDropdownRef}>
                   <Input
                     placeholder="Country"

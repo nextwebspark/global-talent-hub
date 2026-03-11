@@ -15,7 +15,6 @@ async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.hq_country !== undefined) dbUpdates.country = updates.hq_country;
     if (updates.industry !== undefined) dbUpdates.sector = updates.industry;
-    if (updates.hq_city !== undefined) dbUpdates.region = updates.hq_city;
     
     if (Object.keys(dbUpdates).length > 0) {
       await fetch(`/api/companies/${id}`, {
@@ -80,7 +79,6 @@ export interface Company {
   id: string;
   name: string;
   industry: string;
-  hq_city: string;
   hq_country: string;
   streetAddress?: string;
   lat: number;
@@ -372,7 +370,6 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     id: String(apiCompany.id || '0'),
     name: String(apiCompany.name || 'Unknown Company').trim(),
     industry: String(apiCompany.sector || 'Unknown').trim(),
-    hq_city: String(apiCompany.region || 'Unknown').trim(),
     hq_country: country,
     streetAddress: ext.streetAddress ? String(ext.streetAddress).trim() : undefined,
     lat: isValidCoordinate(lat, lng) ? lat : 0,

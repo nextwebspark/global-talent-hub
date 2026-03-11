@@ -37,7 +37,7 @@ export default function CompanyList() {
         .map(e => ({ id: e.id, name: e.name, title: e.title, confidence: e.confidence, isEnriched: e.isEnriched, enrichmentSource: e.enrichmentSource }));
       countryMap.get(countryName)!.companies.push({
         id: company.id, name: company.name, revenue_usd: company.revenue_usd, employees: company.employees,
-        confidence: company.confidence, hq_city: company.hq_city, lat: company.lat, lng: company.lng,
+        confidence: company.confidence, lat: company.lat, lng: company.lng,
         color: company.color, executives: companyExecs
       });
     });

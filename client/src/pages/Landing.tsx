@@ -111,10 +111,6 @@ const ALL_FIELD_PATTERNS: Record<string, string[]> = {
     'country of origin', 'home country', 'operating country', 'jurisdiction',
     'country/region', 'loc', 'city/country', 'headquartered'
   ],
-  city: [
-    'city', 'hq city', 'headquarters city', 'town', 'municipality', 'metro',
-    'metropolitan', 'urban area', 'city/town', 'office city', 'base city'
-  ],
   sector: [
     'sector', 'industry', 'vertical', 'segment', 'business type', 'business sector',
     'industry sector', 'field', 'domain', 'category', 'classification', 'niche',
@@ -516,7 +512,7 @@ export default function Landing() {
 
   const FIELD_LABELS: Record<string, string> = {
     name: 'Name', company: 'Company', title: 'Title', country: 'Country',
-    city: 'City', sector: 'Sector', revenue: 'Revenue', employees: 'Employees',
+    sector: 'Sector', revenue: 'Revenue', employees: 'Employees',
     email: 'Email', phone: 'Phone', linkedin: 'LinkedIn', notes: 'Notes',
     remunerationNotes: 'Remuneration', availability: 'Status', level: 'Level',
   };
@@ -915,7 +911,7 @@ export default function Landing() {
                                   ))}
                                 </optgroup>
                                 <optgroup label="Company Fields">
-                                  {['company', 'country', 'city', 'sector', 'revenue', 'employees'].map(key => (
+                                  {['company', 'country', 'sector', 'revenue', 'employees'].map(key => (
                                     <option key={key} value={key} disabled={!!importPreview.mappings[key] && importPreview.mappings[key] !== header}>
                                       {FIELD_LABELS[key]}
                                     </option>

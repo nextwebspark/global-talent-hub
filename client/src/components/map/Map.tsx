@@ -298,24 +298,19 @@ export default function MapComponent() {
 
   const getRadius = (value: number | null | undefined) => {
     const neutralRadius = 20;
-    const minRadius = 15;
-    const maxRadius = 50;
+    const minRadius = 12;
+    const maxRadius = 55;
 
     if (!value || value === 0) return neutralRadius;
 
-    let normalized: number;
     if (scalingMetric === 'revenue') {
       const logVal = Math.log10(Math.max(value, 1));
-      normalized = (logVal - 6) / (12 - 6);
-    } else {
-      const sqrtVal = Math.sqrt(Math.max(value, 1));
-      const sqrtMin = Math.sqrt(10);
-      const sqrtMax = Math.sqrt(100000);
-      normalized = (sqrtVal - sqrtMin) / (sqrtMax - sqrtMin);
+      const normalized = Math.max(0, Math.min(1, (logVal - 6) / (12 - 6)));
+      return minRadius + (normalized * (maxRadius - minRadius));
     }
 
-    const clamped = Math.max(0, Math.min(1, normalized));
-    return minRadius + (clamped * (maxRadius - minRadius));
+    const radius = 0.2 * Math.sqrt(value);
+    return Math.max(minRadius, Math.min(maxRadius, radius));
   };
 
   const handleColorSelect = (color: string) => {

@@ -89,8 +89,8 @@ Company: ${companyName}
 Country: ${country}
 
 RULES:
-- Gender options: "Male", "Female", "Non-Binary"
-- Ethnicity: use broad categories like "South Asian", "Middle Eastern", "East Asian", "Southeast Asian", "European", "African", "Latin American", "Mixed/Other"
+- Gender options: "Male", "Female"
+- Ethnicity: MUST be one of these exact values: "African", "East Asian", "European", "Latin American", "Middle Eastern", "Native/Indigenous", "Pacific Islander", "South Asian", "Southeast Asian", "Mixed/Other"
 - ONLY provide a value if you are highly confident (8/10 or above)
 - If the name is ambiguous (e.g., "John Smith" could be many ethnicities), return null for ethnicity
 - Consider the full context: name origin, company location, career history
@@ -175,8 +175,8 @@ export async function inferDiversityBatch(executiveIds: number[]): Promise<{ upd
 ${execList}
 
 RULES:
-- Gender options: "Male", "Female", "Non-Binary"
-- Ethnicity: use broad categories like "South Asian", "Middle Eastern", "East Asian", "Southeast Asian", "European", "African", "Latin American", "Mixed/Other"
+- Gender options: "Male", "Female"
+- Ethnicity: MUST be one of these exact values: "African", "East Asian", "European", "Latin American", "Middle Eastern", "Native/Indigenous", "Pacific Islander", "South Asian", "Southeast Asian", "Mixed/Other"
 - ONLY provide a value if you are highly confident (8/10 or above)
 - If a name is ambiguous for ethnicity (e.g., "John Smith"), return null for ethnicity
 - Consider full context: name origin, company location, career history

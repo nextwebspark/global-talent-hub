@@ -1354,14 +1354,27 @@ function ExecutiveDetailView({
 
                 <div className="space-y-1.5">
                   <label className="text-xs text-muted-foreground ml-1">Ethnicity</label>
-                  <Input
+                  <select
                     value={ethnicity}
-                    onChange={(e) => setEthnicity(e.target.value)}
-                    onBlur={() => handleSaveTextField('ethnicity', ethnicity)}
-                    placeholder="e.g. South Asian, European, etc."
-                    className="text-sm"
-                    data-testid="input-ethnicity"
-                  />
+                    onChange={(e) => {
+                      setEthnicity(e.target.value);
+                      handleSaveTextField('ethnicity', e.target.value);
+                    }}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    data-testid="select-ethnicity"
+                  >
+                    <option value="">Select ethnicity</option>
+                    <option value="African">African</option>
+                    <option value="East Asian">East Asian</option>
+                    <option value="European">European</option>
+                    <option value="Latin American">Latin American</option>
+                    <option value="Middle Eastern">Middle Eastern</option>
+                    <option value="Native/Indigenous">Native/Indigenous</option>
+                    <option value="Pacific Islander">Pacific Islander</option>
+                    <option value="South Asian">South Asian</option>
+                    <option value="Southeast Asian">Southeast Asian</option>
+                    <option value="Mixed/Other">Mixed/Other</option>
+                  </select>
                 </div>
               </div>
             </div>

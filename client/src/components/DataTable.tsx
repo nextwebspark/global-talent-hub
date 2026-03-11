@@ -102,6 +102,7 @@ function parseRevenueInput(input: string): number {
 const STATUS_OPTIONS = ['Interested', 'Not Interested'] as const;
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
 const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
+const ETHNICITY_OPTIONS = ['African', 'East Asian', 'European', 'Latin American', 'Middle Eastern', 'Native/Indigenous', 'Pacific Islander', 'South Asian', 'Southeast Asian', 'Mixed/Other'] as const;
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -922,7 +923,23 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         size: 120,
         enableGrouping: true,
       }),
-      columnHelper.accessor('ethnicity', { header: 'Ethnicity', cell: editableCell('ethnicity'), size: 130, enableGrouping: true }),
+      columnHelper.accessor('ethnicity', {
+        header: 'Ethnicity',
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row || info.row.getIsGrouped()) return null;
+          return (
+            <SelectCell
+              value={String(info.getValue() || '')}
+              options={ETHNICITY_OPTIONS}
+              onSave={(val) => handleCellSave(row, 'ethnicity', val)}
+              placeholder="- Select Ethnicity -"
+            />
+          );
+        },
+        size: 140,
+        enableGrouping: true,
+      }),
     ];
 
     customFieldKeys.forEach(key => {

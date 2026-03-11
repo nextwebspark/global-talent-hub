@@ -296,32 +296,17 @@ export default function MapComponent() {
     return true;
   }), [companies, hasRevenueFilter, revenueMin, revenueMax, hasEmployeeFilter, employeeMin, employeeMax, hiddenCountries, hiddenCompanies]);
 
-  const bubbleScale = useMemo(() => {
-    const values = filteredCompanies
-      .map(c => scalingMetric === 'revenue' ? c.revenue_usd : c.employees)
-      .filter((v): v is number => v !== null && v !== undefined && v > 0);
-
-    if (values.length === 0) return null;
-
-    const minVal = Math.min(...values);
-    const maxVal = Math.max(...values);
-    const logMin = Math.log10(Math.max(minVal, 1));
-    const logMax = Math.log10(Math.max(maxVal, 1));
-
-    return { logMin, logMax, hasRange: logMax > logMin };
-  }, [filteredCompanies, scalingMetric]);
-
   const getRadius = (value: number | null | undefined) => {
     const neutralRadius = 20;
     const minRadius = 15;
     const maxRadius = 50;
 
     if (!value || value === 0) return neutralRadius;
-    if (!bubbleScale) return neutralRadius;
-    if (!bubbleScale.hasRange) return (minRadius + maxRadius) / 2;
 
     const logVal = Math.log10(Math.max(value, 1));
-    const normalized = (logVal - bubbleScale.logMin) / (bubbleScale.logMax - bubbleScale.logMin);
+    const logMin = scalingMetric === 'revenue' ? 6 : 1;
+    const logMax = scalingMetric === 'revenue' ? 12 : 6;
+    const normalized = (logVal - logMin) / (logMax - logMin);
     const clamped = Math.max(0, Math.min(1, normalized));
 
     return minRadius + (clamped * (maxRadius - minRadius));

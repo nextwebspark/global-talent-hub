@@ -504,7 +504,7 @@ export default function Landing() {
       const res = await fetch(`/api/companies/search?name=${encodeURIComponent(q)}`);
       if (!res.ok) return [];
       const data = await res.json();
-      return data.map((c: any) => c.name).filter(Boolean);
+      return [...new Set(data.map((c: any) => c.name).filter(Boolean) as string[])];
     } catch { return []; }
   }, []);
 

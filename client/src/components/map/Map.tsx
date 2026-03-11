@@ -285,51 +285,46 @@ export default function MapComponent() {
   const hasRevenueFilter = revenueFilterRange[0] > 0 || revenueFilterRange[1] < 100;
   const hasEmployeeFilter = employeeFilterRange[0] > 0 || employeeFilterRange[1] < 100;
   
-  const filteredCompanies = companies.filter(c => {
+  const filteredCompanies = useMemo(() => companies.filter(c => {
     const revenue = c.revenue_usd || 0;
     const employees = c.employees || 0;
     if (hasRevenueFilter && (revenue < revenueMin || revenue > revenueMax)) return false;
     if (hasEmployeeFilter && (employees < employeeMin || employees > employeeMax)) return false;
-    // Ensure valid coordinates (not 0,0 and within valid ranges)
     if (!isValidCoordinate(c.lat, c.lng)) return false;
-    // Check visibility - hidden by country or individually hidden
     if (hiddenCountries.has(c.hq_country)) return false;
     if (hiddenCompanies.has(c.id)) return false;
     return true;
-  });
+  }), [companies, hasRevenueFilter, revenueMin, revenueMax, hasEmployeeFilter, employeeMin, employeeMax, hiddenCountries, hiddenCompanies]);
 
-  // Scale revenue/employees to radius
-  // Unknown/null values get neutral sizing (no influence on scaling)
-  const getRadius = (value: number | null | undefined) => {
-    const neutralRadius = 20;
-    
-    // Unknown/null values get neutral sizing - they don't influence the scale
-    if (!value || value === 0) return neutralRadius;
-    if (filteredCompanies.length === 0) return neutralRadius;
-
-    // Only include companies with valid values for scaling calculation
+  const bubbleScale = useMemo(() => {
     const values = filteredCompanies
       .map(c => scalingMetric === 'revenue' ? c.revenue_usd : c.employees)
       .filter((v): v is number => v !== null && v !== undefined && v > 0);
-    
-    // If no valid values, use neutral sizing
-    if (values.length === 0) return neutralRadius;
-    
+
+    if (values.length === 0) return null;
+
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
-    
+    const logMin = Math.log10(Math.max(minVal, 1));
+    const logMax = Math.log10(Math.max(maxVal, 1));
+
+    return { logMin, logMax, hasRange: logMax > logMin };
+  }, [filteredCompanies, scalingMetric]);
+
+  const getRadius = (value: number | null | undefined) => {
+    const neutralRadius = 20;
     const minRadius = 15;
     const maxRadius = 50;
 
-    if (maxVal === minVal) return (minRadius + maxRadius) / 2;
+    if (!value || value === 0) return neutralRadius;
+    if (!bubbleScale) return neutralRadius;
+    if (!bubbleScale.hasRange) return (minRadius + maxRadius) / 2;
 
-    // Linear scaling relative to the current dataset
-    const normalized = (value - minVal) / (maxVal - minVal);
-    
-    // Apply a slight power scale to make smaller bubbles more visible but maintain relative difference
-    const scaled = Math.pow(normalized, 0.7);
-    
-    return minRadius + (scaled * (maxRadius - minRadius));
+    const logVal = Math.log10(Math.max(value, 1));
+    const normalized = (logVal - bubbleScale.logMin) / (bubbleScale.logMax - bubbleScale.logMin);
+    const clamped = Math.max(0, Math.min(1, normalized));
+
+    return minRadius + (clamped * (maxRadius - minRadius));
   };
 
   const handleColorSelect = (color: string) => {

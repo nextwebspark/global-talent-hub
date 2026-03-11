@@ -303,12 +303,18 @@ export default function MapComponent() {
 
     if (!value || value === 0) return neutralRadius;
 
-    const logVal = Math.log10(Math.max(value, 1));
-    const logMin = scalingMetric === 'revenue' ? 6 : 1;
-    const logMax = scalingMetric === 'revenue' ? 12 : 6;
-    const normalized = (logVal - logMin) / (logMax - logMin);
-    const clamped = Math.max(0, Math.min(1, normalized));
+    let normalized: number;
+    if (scalingMetric === 'revenue') {
+      const logVal = Math.log10(Math.max(value, 1));
+      normalized = (logVal - 6) / (12 - 6);
+    } else {
+      const sqrtVal = Math.sqrt(Math.max(value, 1));
+      const sqrtMin = Math.sqrt(10);
+      const sqrtMax = Math.sqrt(100000);
+      normalized = (sqrtVal - sqrtMin) / (sqrtMax - sqrtMin);
+    }
 
+    const clamped = Math.max(0, Math.min(1, normalized));
     return minRadius + (clamped * (maxRadius - minRadius));
   };
 

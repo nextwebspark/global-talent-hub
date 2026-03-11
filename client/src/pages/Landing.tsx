@@ -140,12 +140,10 @@ interface ManualRow {
   name: string;
   title: string;
   country: string;
-  email: string;
-  phone: string;
 }
 
 function createEmptyRow(): ManualRow {
-  return { id: crypto.randomUUID(), company: '', name: '', title: '', country: '', email: '', phone: '' };
+  return { id: crypto.randomUUID(), company: '', name: '', title: '', country: '' };
 }
 
 export default function Landing() {
@@ -409,22 +407,18 @@ export default function Landing() {
       return;
     }
 
-    const headers = ['Company', 'Name', 'Title', 'Country', 'Email', 'Phone'];
+    const headers = ['Country', 'Company', 'Name', 'Title'];
     const mappings: Record<string, string> = {
+      country: 'Country',
       company: 'Company',
       name: 'Name',
       title: 'Title',
-      country: 'Country',
-      email: 'Email',
-      phone: 'Phone',
     };
     const records = validRows.map(r => ({
+      'Country': r.country,
       'Company': r.company,
       'Name': r.name,
       'Title': r.title,
-      'Country': r.country,
-      'Email': r.email,
-      'Phone': r.phone,
     }));
 
     await submitImport(records, mappings);
@@ -720,12 +714,10 @@ export default function Landing() {
                         <thead>
                           <tr className="border-b border-border">
                             <th className="text-left py-2 px-2 font-medium text-muted-foreground w-8">#</th>
+                            <th className="text-left py-2 px-2 font-medium text-muted-foreground">Country</th>
                             <th className="text-left py-2 px-2 font-medium text-muted-foreground">Company</th>
                             <th className="text-left py-2 px-2 font-medium text-muted-foreground">Name</th>
                             <th className="text-left py-2 px-2 font-medium text-muted-foreground">Title</th>
-                            <th className="text-left py-2 px-2 font-medium text-muted-foreground">Country</th>
-                            <th className="text-left py-2 px-2 font-medium text-muted-foreground">Email</th>
-                            <th className="text-left py-2 px-2 font-medium text-muted-foreground">Phone</th>
                             <th className="w-8"></th>
                           </tr>
                         </thead>
@@ -733,7 +725,7 @@ export default function Landing() {
                           {manualRows.map((row, idx) => (
                             <tr key={row.id} className="border-b border-border/30 hover:bg-muted/20">
                               <td className="py-1 px-2 text-muted-foreground">{idx + 1}</td>
-                              {(['company', 'name', 'title', 'country', 'email', 'phone'] as const).map(field => (
+                              {(['country', 'company', 'name', 'title'] as const).map(field => (
                                 <td key={field} className="py-1 px-1">
                                   <input
                                     type="text"

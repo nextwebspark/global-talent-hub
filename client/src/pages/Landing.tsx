@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
 import { useSearch, useSearchHistory } from '@/lib/api';
@@ -8,6 +8,81 @@ import { Search, Loader2, ChevronDown, ChevronUp, History, Upload, Table2, Plus,
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { COUNTRIES } from '@/lib/countries';
+
+function ComboboxCell({ value, onChange, options, placeholder, testId, fetchOptions }: {
+  value: string;
+  onChange: (val: string) => void;
+  options?: string[];
+  placeholder?: string;
+  testId?: string;
+  fetchOptions?: (query: string) => Promise<string[]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [dynamicOptions, setDynamicOptions] = useState<string[]>([]);
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!fetchOptions || filter.length < 2) { setDynamicOptions([]); return; }
+    const timer = setTimeout(async () => {
+      const results = await fetchOptions(filter);
+      setDynamicOptions(results);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [filter, fetchOptions]);
+
+  const baseOptions = options || [];
+  const allOptions = fetchOptions ? dynamicOptions : baseOptions;
+  const filtered = filter
+    ? allOptions.filter(o => o.toLowerCase().includes(filter.toLowerCase()))
+    : allOptions;
+  const shown = filtered.slice(0, 30);
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        value={open ? filter : value}
+        onFocus={() => { setOpen(true); setFilter(value); }}
+        onChange={e => { setFilter(e.target.value); onChange(e.target.value); if (!open) setOpen(true); }}
+        className="w-full bg-transparent border border-transparent hover:border-border focus:border-primary/50 rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+        placeholder={placeholder}
+        data-testid={testId}
+        autoComplete="off"
+      />
+      {open && shown.length > 0 && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-popover border border-border rounded shadow-lg max-h-48 overflow-y-auto">
+          {shown.map(opt => (
+            <button
+              key={opt}
+              type="button"
+              className={`w-full text-left px-2 py-1 text-xs hover:bg-accent transition-colors ${opt === value ? 'bg-accent/50 font-medium' : ''}`}
+              onMouseDown={e => {
+                e.preventDefault();
+                onChange(opt);
+                setFilter(opt);
+                setOpen(false);
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 
 const ALL_FIELD_PATTERNS: Record<string, string[]> = {
@@ -424,6 +499,15 @@ export default function Landing() {
     await submitImport(records, mappings);
   }, [manualRows, submitImport]);
 
+  const fetchCompanyOptions = useCallback(async (q: string): Promise<string[]> => {
+    try {
+      const res = await fetch(`/api/companies/search?name=${encodeURIComponent(q)}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.map((c: any) => c.name).filter(Boolean);
+    } catch { return []; }
+  }, []);
+
   const updateManualRow = (id: string, field: keyof ManualRow, value: string) => {
     setManualRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
   };
@@ -725,7 +809,25 @@ export default function Landing() {
                           {manualRows.map((row, idx) => (
                             <tr key={row.id} className="border-b border-border/30 hover:bg-muted/20">
                               <td className="py-1 px-2 text-muted-foreground">{idx + 1}</td>
-                              {(['country', 'company', 'name', 'title'] as const).map(field => (
+                              <td className="py-1 px-1">
+                                <ComboboxCell
+                                  value={row.country}
+                                  onChange={val => updateManualRow(row.id, 'country', val)}
+                                  options={COUNTRIES}
+                                  placeholder="Country"
+                                  testId={`manual-input-country-${idx}`}
+                                />
+                              </td>
+                              <td className="py-1 px-1">
+                                <ComboboxCell
+                                  value={row.company}
+                                  onChange={val => updateManualRow(row.id, 'company', val)}
+                                  placeholder="Company"
+                                  testId={`manual-input-company-${idx}`}
+                                  fetchOptions={fetchCompanyOptions}
+                                />
+                              </td>
+                              {(['name', 'title'] as const).map(field => (
                                 <td key={field} className="py-1 px-1">
                                   <input
                                     type="text"

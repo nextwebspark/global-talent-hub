@@ -181,16 +181,14 @@ export async function registerRoutes(
       const hasExplicitCoords = patchData.latitude && patchData.longitude;
       if ((hasNoCoords || countryChanged) && !hasExplicitCoords && (patchData.country || existingCompany?.country)) {
         const fallback = applyCoordinateFallback({
-          latitude: existingCompany?.latitude || null,
-          longitude: existingCompany?.longitude || null,
+          latitude: countryChanged ? null : (existingCompany?.latitude || null),
+          longitude: countryChanged ? null : (existingCompany?.longitude || null),
           city: patchData.region || existingCompany?.region || undefined,
           country: patchData.country || existingCompany?.country || undefined,
         });
         if (fallback.latitude && fallback.longitude) {
-          if (hasNoCoords || countryChanged) {
-            patchData.latitude = String(fallback.latitude);
-            patchData.longitude = String(fallback.longitude);
-          }
+          patchData.latitude = String(fallback.latitude);
+          patchData.longitude = String(fallback.longitude);
         }
       }
       const company = await storage.updateCompanyManual(id, patchData);

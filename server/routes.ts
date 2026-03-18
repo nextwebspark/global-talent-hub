@@ -596,6 +596,8 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
           remunerationNotes: details.executive.remunerationNotes,
           availability: details.executive.availability,
           level: details.executive.level,
+          gender: details.executive.gender,
+          ethnicity: details.executive.ethnicity,
           sourceText: details.executive.sourceText,
           enrichmentSource: details.executive.enrichmentSource,
           enrichmentConfidence: details.executive.enrichmentConfidence,

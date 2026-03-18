@@ -354,25 +354,6 @@ function getCountryCentroid(country: string): { lat: number; lng: number } | nul
   return COUNTRY_CENTROIDS[country.toLowerCase().trim()] || null;
 }
 
-export function getNearestCountry(lat: number, lng: number): string | null {
-  let bestCountry: string | null = null;
-  let bestDist = Infinity;
-  const seen = new Set<string>();
-  for (const [name, centroid] of Object.entries(COUNTRY_CENTROIDS)) {
-    const key = `${centroid.lat},${centroid.lng}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const dLat = lat - centroid.lat;
-    const dLng = lng - centroid.lng;
-    const dist = dLat * dLat + dLng * dLng;
-    if (dist < bestDist) {
-      bestDist = dist;
-      bestCountry = name;
-    }
-  }
-  if (!bestCountry) return null;
-  return normalizeCountryName(bestCountry);
-}
 
 export function transformAPICompany(apiCompany: APICompany): Company {
   let lat = safeParseFloat(apiCompany.latitude, 0);

@@ -1,5 +1,5 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
-import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive, getNearestCountry } from '@/lib/store';
+import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import React, { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -465,15 +465,21 @@ export default function MapComponent() {
                   const position = marker.getLatLng();
                   draggingCompanyRef.current = null;
                   isMarkerDragging = false;
-                  const nearestCountry = getNearestCountry(position.lat, position.lng);
-                  const dragUpdates: Record<string, any> = {
+                  updateCompany(company.id, {
                     lat: position.lat,
                     lng: position.lng,
-                  };
-                  if (nearestCountry && nearestCountry !== company.hq_country) {
-                    dragUpdates.hq_country = nearestCountry;
-                  }
-                  updateCompany(company.id, dragUpdates);
+                  });
+                  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${position.lat}&lon=${position.lng}&format=json&zoom=3&addressdetails=1`, {
+                    headers: { 'Accept-Language': 'en' }
+                  })
+                    .then(res => res.json())
+                    .then(data => {
+                      const country = data?.address?.country;
+                      if (country && country !== company.hq_country) {
+                        updateCompany(company.id, { hq_country: country });
+                      }
+                    })
+                    .catch(() => {});
                 },
                 dblclick: (e) => {
                   e.originalEvent.stopPropagation();

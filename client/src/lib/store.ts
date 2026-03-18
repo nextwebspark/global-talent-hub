@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { Company as APICompany, Executive as APIExecutive } from './api';
 import { normalizeCountryName } from './countries';
 
-// Helper to persist company updates to the database
 async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<void> {
   try {
     const dbUpdates: Record<string, any> = {};
@@ -17,11 +16,18 @@ async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<
     if (updates.industry !== undefined) dbUpdates.sector = updates.industry;
     
     if (Object.keys(dbUpdates).length > 0) {
-      await fetch(`/api/companies/${id}`, {
+      const res = await fetch(`/api/companies/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dbUpdates),
       });
+      if (res.ok && dbUpdates.country && !dbUpdates.latitude) {
+        const apiCompany = await res.json();
+        const updated = transformAPICompany(apiCompany);
+        useAppStore.setState((state) => ({
+          companies: state.companies.map((c) => c.id === id ? { ...c, lat: updated.lat, lng: updated.lng, hq_country: updated.hq_country } : c)
+        }));
+      }
     }
   } catch (error) {
     console.error('Failed to persist company update:', error);
@@ -346,6 +352,26 @@ const COUNTRY_CENTROIDS: Record<string, { lat: number; lng: number }> = {
 function getCountryCentroid(country: string): { lat: number; lng: number } | null {
   if (!country || country === 'Unknown') return null;
   return COUNTRY_CENTROIDS[country.toLowerCase().trim()] || null;
+}
+
+export function getNearestCountry(lat: number, lng: number): string | null {
+  let bestCountry: string | null = null;
+  let bestDist = Infinity;
+  const seen = new Set<string>();
+  for (const [name, centroid] of Object.entries(COUNTRY_CENTROIDS)) {
+    const key = `${centroid.lat},${centroid.lng}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const dLat = lat - centroid.lat;
+    const dLng = lng - centroid.lng;
+    const dist = dLat * dLat + dLng * dLng;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestCountry = name;
+    }
+  }
+  if (!bestCountry) return null;
+  return normalizeCountryName(bestCountry);
 }
 
 export function transformAPICompany(apiCompany: APICompany): Company {

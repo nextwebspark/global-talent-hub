@@ -178,10 +178,11 @@ export async function registerRoutes(
       const existingCompany = await storage.getCompany(id);
       const hasNoCoords = !existingCompany?.latitude && !existingCompany?.longitude;
       const countryChanged = patchData.country && patchData.country !== existingCompany?.country;
-      if ((hasNoCoords || countryChanged) && (patchData.country || existingCompany?.country)) {
+      const hasExplicitCoords = patchData.latitude && patchData.longitude;
+      if ((hasNoCoords || countryChanged) && !hasExplicitCoords && (patchData.country || existingCompany?.country)) {
         const fallback = applyCoordinateFallback({
-          latitude: patchData.latitude || existingCompany?.latitude || null,
-          longitude: patchData.longitude || existingCompany?.longitude || null,
+          latitude: existingCompany?.latitude || null,
+          longitude: existingCompany?.longitude || null,
           city: patchData.region || existingCompany?.region || undefined,
           country: patchData.country || existingCompany?.country || undefined,
         });

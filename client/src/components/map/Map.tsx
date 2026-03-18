@@ -1,5 +1,5 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
-import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive } from '@/lib/store';
+import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive, getNearestCountry } from '@/lib/store';
 import React, { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -465,10 +465,15 @@ export default function MapComponent() {
                   const position = marker.getLatLng();
                   draggingCompanyRef.current = null;
                   isMarkerDragging = false;
-                  updateCompany(company.id, {
+                  const nearestCountry = getNearestCountry(position.lat, position.lng);
+                  const dragUpdates: Record<string, any> = {
                     lat: position.lat,
-                    lng: position.lng
-                  });
+                    lng: position.lng,
+                  };
+                  if (nearestCountry && nearestCountry !== company.hq_country) {
+                    dragUpdates.hq_country = nearestCountry;
+                  }
+                  updateCompany(company.id, dragUpdates);
                 },
                 dblclick: (e) => {
                   e.originalEvent.stopPropagation();

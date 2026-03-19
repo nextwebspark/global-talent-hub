@@ -486,7 +486,9 @@ export default function MapComponent() {
                       const rawCountry = data?.address?.country || company.hq_country;
                       const newCountry = normalizeCountryName(rawCountry) || rawCountry;
                       if (newCountry !== company.hq_country) {
-                        updateCompany(company.id, { hq_country: newCountry });
+                        // Include lat/lng so persistCompanyUpdate doesn't
+                        // re-geocode the position to the country centroid
+                        updateCompany(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
                       }
                     })
                     .catch(() => {});

@@ -1,5 +1,6 @@
 import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive } from '@/lib/store';
+import { normalizeCountryName } from '@/lib/countries';
 import React, { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -469,9 +470,24 @@ export default function MapComponent() {
                   const position = marker.getLatLng();
                   draggingCompanyRef.current = null;
                   isMarkerDragging = false;
-                  const dLat = position.lat - company.displayLat;
-                  const dLng = position.lng - company.displayLng;
-                  updateMapPosition(`company:${company.id}`, { dLat, dLng });
+                  const newLat = position.lat;
+                  const newLng = position.lng;
+                  // Reset visual offset — actual coords now reflect dropped position
+                  updateMapPosition(`company:${company.id}`, { dLat: 0, dLng: 0 });
+                  // Reverse geocode to get new country, then persist
+                  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&zoom=3&addressdetails=1`, {
+                    headers: { 'Accept-Language': 'en' }
+                  })
+                    .then(res => res.json())
+                    .then(data => {
+                      const rawCountry = data?.address?.country || company.hq_country;
+                      const newCountry = normalizeCountryName(rawCountry) || rawCountry;
+                      updateCompany(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
+                    })
+                    .catch(() => {
+                      // Persist coords even if geocoding fails
+                      updateCompany(company.id, { lat: newLat, lng: newLng });
+                    });
                 },
                 dblclick: (e) => {
                   e.originalEvent.stopPropagation();

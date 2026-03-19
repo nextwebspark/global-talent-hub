@@ -1961,10 +1961,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(404).json({ error: "Company not found" });
       }
 
-      const { revenue = true, employees = true, executives = true } = req.body;
+      const { revenue = true, employees = true, executives = true, profile = true } = req.body;
 
       console.log(`[Routes] Starting multi-pass enrichment for ${company.name}`);
-      const result = await runMultiPassEnrichment(companyId, { revenue, employees, executives });
+      const result = await runMultiPassEnrichment(companyId, { revenue, employees, executives, profile });
 
       const updatedCompany = await storage.getCompanyWithExecutives(companyId);
 

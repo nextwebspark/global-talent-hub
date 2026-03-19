@@ -179,10 +179,85 @@ ${context}`;
   return { value: null, sourceUrl: null, sourceDescription: null, confidence: 0, found: false };
 }
 
+interface CompanyProfileEnrichment {
+  summary: string | null;
+  coreActivity: string | null;
+  operatingModel: string | null;
+  revenueDrivers: string | null;
+  found: boolean;
+}
+
+async function enrichCompanyProfile(
+  companyName: string,
+  country: string | null
+): Promise<CompanyProfileEnrichment> {
+  try {
+    const prompt = `You are a business research analyst. Research and provide accurate, factual information about "${companyName}"${country ? ` (${country})` : ''}.
+
+Return ONLY valid JSON with these fields:
+- summary: A 2-4 sentence description of the company including what they do, their market position, and key facts
+- coreActivity: What the company primarily does (1-2 sentences describing their main business)
+- operatingModel: How the company operates - B2B, B2C, franchise, direct sales, etc. (1-2 sentences)
+- revenueDrivers: Main sources of revenue - products, services, subscriptions, etc. (1-2 sentences)
+
+Be accurate and factual. If you're not confident about specific information, provide what you know. Do not make up information.
+
+Return: {"found":true,"summary":"...","coreActivity":"...","operatingModel":"...","revenueDrivers":"..."} or {"found":false}`;
+
+    const response = await callLlm([{ role: "user", content: prompt }]);
+    const parsed = parseJsonFromResponse(response);
+
+    if (parsed && parsed.found) {
+      console.log(`[Enrichment] Got company profile for ${companyName}`);
+      return {
+        summary: parsed.summary || null,
+        coreActivity: parsed.coreActivity || null,
+        operatingModel: parsed.operatingModel || null,
+        revenueDrivers: parsed.revenueDrivers || null,
+        found: true,
+      };
+    }
+  } catch (error) {
+    console.error(`[Enrichment] Company profile failed for ${companyName}:`, error);
+  }
+  return { summary: null, coreActivity: null, operatingModel: null, revenueDrivers: null, found: false };
+}
+
+async function inferTargetRoles(searchQueryText: string): Promise<string[]> {
+  try {
+    const prompt = `You are an executive search consultant. Given this search query or project title, determine what executive role(s) the user is mapping/searching for.
+
+Search query: "${searchQueryText}"
+
+If the query explicitly mentions or strongly implies specific roles (e.g., "CFO search", "Head of Digital", "CTO mapping", "VP Sales"), return those roles.
+If the query is about a general industry/sector mapping with no specific role, return ["CEO", "CFO"] as defaults.
+
+Return ONLY valid JSON: {"roles": ["Role1", "Role2"]}
+
+Examples:
+- "CFO search Middle East construction" → {"roles": ["CFO"]}
+- "Head of Digital Transformation GCC" → {"roles": ["Chief Digital Officer", "Head of Digital Transformation"]}
+- "VP Sales FMCG companies in UAE" → {"roles": ["VP Sales", "Head of Sales"]}
+- "Top real estate companies Saudi Arabia" → {"roles": ["CEO", "CFO"]}
+- "CTO mapping fintech London" → {"roles": ["CTO", "Chief Technology Officer"]}`;
+
+    const response = await callLlm([{ role: "user", content: prompt }]);
+    const parsed = parseJsonFromResponse(response);
+
+    if (parsed && Array.isArray(parsed.roles) && parsed.roles.length > 0) {
+      console.log(`[Enrichment] Inferred target roles from query "${searchQueryText}": ${parsed.roles.join(', ')}`);
+      return parsed.roles.slice(0, 3);
+    }
+  } catch (error) {
+    console.error(`[Enrichment] Role inference failed:`, error);
+  }
+  return ['CEO', 'CFO'];
+}
+
 async function enrichSingleExecutive(
   companyName: string,
   country: string | null,
-  role: 'CEO' | 'CFO'
+  role: string
 ): Promise<ExecutiveEnrichment | null> {
   const searchProvider = createSerperAdapter();
   if (!searchProvider) return null;
@@ -226,7 +301,7 @@ ${context}`;
       return {
         name: parsed.name,
         title: parsed.title || role,
-        role,
+        role: role as any,
         sourceUrl: null,
         confidence: 6,
         gender: parsed.gender,
@@ -243,42 +318,47 @@ ${context}`;
 
 export async function enrichExecutives(
   companyName: string,
-  country: string | null
+  country: string | null,
+  targetRoles?: string[]
 ): Promise<ExecutiveEnrichment[]> {
-  const [ceo, cfo] = await Promise.all([
-    enrichSingleExecutive(companyName, country, 'CEO'),
-    enrichSingleExecutive(companyName, country, 'CFO'),
-  ]);
+  const roles = targetRoles && targetRoles.length > 0 ? targetRoles : ['CEO', 'CFO'];
+  const results = await Promise.all(
+    roles.map(role => enrichSingleExecutive(companyName, country, role))
+  );
   
-  return [ceo, cfo].filter((e): e is ExecutiveEnrichment => e !== null);
+  return results.filter((e): e is ExecutiveEnrichment => e !== null);
 }
 
 export async function runMultiPassEnrichment(
   companyId: number,
-  options: { revenue?: boolean; employees?: boolean; executives?: boolean } = { revenue: true, employees: true, executives: true }
+  options: { revenue?: boolean; employees?: boolean; executives?: boolean; profile?: boolean } = { revenue: true, employees: true, executives: true, profile: true },
+  targetRoles?: string[]
 ): Promise<{
   revenueUpdated: boolean;
   employeesUpdated: boolean;
   executivesAdded: number;
+  profileUpdated: boolean;
 }> {
   const company = await storage.getCompany(companyId);
   if (!company) {
     throw new Error(`Company ${companyId} not found`);
   }
 
-  const result = { revenueUpdated: false, employeesUpdated: false, executivesAdded: 0 };
+  const result = { revenueUpdated: false, employeesUpdated: false, executivesAdded: 0, profileUpdated: false };
   
   const needsRevenue = options.revenue && !company.revenue;
   const needsEmployees = options.employees && !company.employees;
   const existingExecs = await storage.getExecutivesByCompany(companyId);
   const needsExecutives = options.executives && existingExecs.length === 0;
+  const needsProfile = (options.profile !== false) && !company.summary;
 
-  console.log(`[MultiPass] Enriching ${company.name} (rev:${needsRevenue}, emp:${needsEmployees}, exec:${needsExecutives})...`);
+  console.log(`[MultiPass] Enriching ${company.name} (rev:${needsRevenue}, emp:${needsEmployees}, exec:${needsExecutives}, profile:${needsProfile})...`);
 
-  const [revenueData, employeesData, executives] = await Promise.all([
+  const [revenueData, employeesData, executives, profileData] = await Promise.all([
     needsRevenue ? enrichRevenue(company.name, company.country) : Promise.resolve(null),
     needsEmployees ? enrichEmployees(company.name, company.country) : Promise.resolve(null),
-    needsExecutives ? enrichExecutives(company.name, company.country) : Promise.resolve([]),
+    needsExecutives ? enrichExecutives(company.name, company.country, targetRoles) : Promise.resolve([]),
+    needsProfile ? enrichCompanyProfile(company.name, company.country) : Promise.resolve(null),
   ]);
 
   if (revenueData?.found && revenueData.value) {
@@ -301,6 +381,16 @@ export async function runMultiPassEnrichment(
       employeesConfidence: employeesData.confidence,
     });
     result.employeesUpdated = true;
+  }
+
+  if (profileData?.found) {
+    await storage.updateCompany(companyId, {
+      summary: profileData.summary,
+      coreActivity: profileData.coreActivity,
+      operatingModel: profileData.operatingModel,
+      revenueDrivers: profileData.revenueDrivers,
+    });
+    result.profileUpdated = true;
   }
 
   for (const exec of executives) {
@@ -331,24 +421,33 @@ export async function enrichSearchResults(searchQueryId: number): Promise<{
   revenueEnriched: number;
   employeesEnriched: number;
   executivesAdded: number;
+  profilesEnriched: number;
 }> {
   const companies = await storage.getCompaniesBySearchQuery(searchQueryId);
+  const searchQuery = await storage.getSearchQuery(searchQueryId);
   
   const result = {
     companiesProcessed: 0,
     revenueEnriched: 0,
     employeesEnriched: 0,
     executivesAdded: 0,
+    profilesEnriched: 0,
   };
 
-  console.log(`[MultiPass] Starting batch enrichment for ${companies.length} companies...`);
+  let targetRoles: string[] | undefined;
+  if (searchQuery?.query) {
+    console.log(`[MultiPass] Inferring target roles from search query: "${searchQuery.query}"`);
+    targetRoles = await inferTargetRoles(searchQuery.query);
+  }
+
+  console.log(`[MultiPass] Starting batch enrichment for ${companies.length} companies (roles: ${targetRoles?.join(', ') || 'CEO, CFO'})...`);
 
   const BATCH_SIZE = 3;
   for (let i = 0; i < companies.length; i += BATCH_SIZE) {
     const batch = companies.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
       batch.map(company => 
-        runMultiPassEnrichment(company.id).catch(err => {
+        runMultiPassEnrichment(company.id, { revenue: true, employees: true, executives: true, profile: true }, targetRoles).catch(err => {
           console.error(`[MultiPass] Failed ${company.name}:`, err);
           return null;
         })
@@ -360,6 +459,7 @@ export async function enrichSearchResults(searchQueryId: number): Promise<{
         result.companiesProcessed++;
         if (enrichmentResult.revenueUpdated) result.revenueEnriched++;
         if (enrichmentResult.employeesUpdated) result.employeesEnriched++;
+        if (enrichmentResult.profileUpdated) result.profilesEnriched++;
         result.executivesAdded += enrichmentResult.executivesAdded;
       }
     }

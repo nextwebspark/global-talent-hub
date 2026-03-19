@@ -7,7 +7,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plus, X, CheckCircle2, Sparkles, Eye, EyeOff, AlertTriangle, Info, Zap, Loader2, DollarSign, Users, Table, Map as MapIcon, Download, Upload, Check, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
-import logoImage from '@/assets/images/logo.png';
 import DataTable, { TableRowData } from '@/components/DataTable';
 import L from 'leaflet';
 import * as XLSX from 'xlsx';
@@ -767,7 +766,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         <div className="p-4 border-b border-border min-w-[280px]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <img src={logoImage} alt="Logo" className="h-6 w-auto" />
               <h2 className="text-lg font-serif font-bold text-foreground">Results</h2>
               {onToggleFullscreen && (
                 <TooltipProvider delayDuration={0}>
@@ -1285,7 +1283,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
 
             {filteredCountries.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No results found</p>
                 <p className="text-xs mt-1">Try a different search term</p>
               </div>
@@ -1332,7 +1329,6 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                 />
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
-                  <img src={logoImage} alt="Logo" className="h-10 w-auto mx-auto mb-2 opacity-50" />
                   <p className="text-sm">No executives found</p>
                   <p className="text-xs mt-1">Add companies and executives to see them here</p>
                 </div>

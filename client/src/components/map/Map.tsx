@@ -5,7 +5,6 @@ import 'leaflet/dist/leaflet.css';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import logoImage from '@/assets/images/logo.png';
 import { toast } from 'sonner';
 import ExecutiveSatellites, { satelliteAnchors } from './ExecutiveSatellites';
 
@@ -553,11 +552,6 @@ export default function MapComponent() {
           );
         })()}
       </MapContainer>
-
-      {/* Logo in bottom right */}
-      <div className="absolute bottom-4 right-4 z-[400]">
-        <img src={logoImage} alt="ALAC Partners" className="h-48 w-auto opacity-20 dark:brightness-200 dark:contrast-50" />
-      </div>
 
       {addCompanyDialog && (
         <div

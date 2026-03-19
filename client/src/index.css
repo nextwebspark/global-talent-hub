@@ -163,3 +163,8 @@
   background: transparent !important;
   border: none !important;
 }
+
+@keyframes unlockPulse {
+  0%, 100% { box-shadow: 0 0 0 2px hsl(35 92% 50% / 0.3), 0 0 8px hsl(35 92% 50% / 0.15); }
+  50% { box-shadow: 0 0 0 4px hsl(35 92% 50% / 0.5), 0 0 20px hsl(35 92% 50% / 0.35); }
+}

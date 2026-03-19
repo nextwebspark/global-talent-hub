@@ -57,6 +57,9 @@ export default function ExecutiveSatellites({
   const [snapTargetId, setSnapTargetId] = useState<string | null>(null);
   const [selectedExecId, setSelectedExecId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [unlockReadyId, setUnlockReadyId] = useState<string | null>(null);
+  const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapTargetRef = useRef<string | null>(null);
   const draggingRef = useRef<{ id: string; startX: number; startY: number; origDx: number; origDy: number } | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
@@ -64,6 +67,7 @@ export default function ExecutiveSatellites({
   const isZoomingRef = useRef(false);
   const didDragRef = useRef(false);
   const thresholdPassedRef = useRef(false);
+  const unlockReadyRef = useRef(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const anchorMarkerRef = useRef<L.Marker | null>(null);
 
@@ -284,10 +288,12 @@ export default function ExecutiveSatellites({
     cancelDismiss();
     didDragRef.current = false;
     thresholdPassedRef.current = false;
+    unlockReadyRef.current = false;
     const currentDisplay = displayPositionsRef.current[execId];
     const base = basePositionsRef.current[execId];
     const origDx = currentDisplay && base ? currentDisplay.x - base.x : 0;
     const origDy = currentDisplay && base ? currentDisplay.y - base.y : 0;
+    const isSubordinate = !!hierarchyRef.current[execId];
     draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx, origDy };
 
     const handleDragMove = (e: MouseEvent) => {
@@ -307,6 +313,8 @@ export default function ExecutiveSatellites({
       const dx = draggingRef.current.origDx + totalDx;
       const dy = draggingRef.current.origDy + totalDy;
       setDragOffsets(prev => ({ ...prev, [execId]: { dx, dy } }));
+
+      if (isSubordinate && !unlockReadyRef.current) return;
 
       const currentBase = basePositionsRef.current[execId];
       if (!currentBase) return;
@@ -337,9 +345,16 @@ export default function ExecutiveSatellites({
     const handleDragEnd = () => {
       const currentSnap = snapTargetRef.current;
       const wasDragged = thresholdPassedRef.current;
-      const currentDragState = draggingRef.current;
+      const wasUnlockReady = unlockReadyRef.current;
       draggingRef.current = null;
       dragCleanupRef.current = null;
+      unlockReadyRef.current = false;
+      if (unlockTimerRef.current) {
+        clearTimeout(unlockTimerRef.current);
+        unlockTimerRef.current = null;
+      }
+      setUnlockingId(null);
+      setUnlockReadyId(null);
       if (wasDragged) map.dragging.enable();
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('mouseup', handleDragEnd);
@@ -348,7 +363,20 @@ export default function ExecutiveSatellites({
       setSnapTargetId(null);
       setDraggingId(null);
 
-      if (wasDragged && currentSnap) {
+      if (isSubordinate && !wasUnlockReady) {
+        const currentBase = basePositionsRef.current[execId];
+        const finalOffset = dragOffsetsRef.current[execId];
+        if (wasDragged && currentBase && finalOffset) {
+          const finalX = currentBase.x + finalOffset.dx;
+          const finalY = currentBase.y + finalOffset.dy;
+          updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
+        }
+        setDragOffsets(prev => {
+          const next = { ...prev };
+          delete next[execId];
+          return next;
+        });
+      } else if (wasDragged && currentSnap) {
         setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
         setDragOffsets(prev => {
           const next = { ...prev };
@@ -364,12 +392,14 @@ export default function ExecutiveSatellites({
           const finalY = currentBase.y + finalOffset.dy;
           updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
         }
-        setHierarchy(prev => {
-          if (!prev[execId]) return prev;
-          const next = { ...prev };
-          delete next[execId];
-          return next;
-        });
+        if (wasUnlockReady) {
+          setHierarchy(prev => {
+            if (!prev[execId]) return prev;
+            const next = { ...prev };
+            delete next[execId];
+            return next;
+          });
+        }
         setDragOffsets(prev => {
           const next = { ...prev };
           delete next[execId];
@@ -387,6 +417,13 @@ export default function ExecutiveSatellites({
       window.removeEventListener('mouseup', handleDragEnd);
       draggingRef.current = null;
       snapTargetRef.current = null;
+      unlockReadyRef.current = false;
+      if (unlockTimerRef.current) {
+        clearTimeout(unlockTimerRef.current);
+        unlockTimerRef.current = null;
+      }
+      setUnlockingId(null);
+      setUnlockReadyId(null);
       setSnapTargetId(null);
       setDraggingId(null);
       map.dragging.enable();
@@ -483,6 +520,8 @@ export default function ExecutiveSatellites({
         const isSnapTarget = snapTargetId === exec.id;
         const isConnected = !!hierarchy[exec.id];
         const isSelected = selectedExecId === exec.id;
+        const isUnlocking = unlockingId === exec.id;
+        const isUnlockReady = unlockReadyId === exec.id;
 
         return (
           <div
@@ -503,11 +542,28 @@ export default function ExecutiveSatellites({
               e.preventDefault();
               e.stopPropagation();
               cancelDismiss();
+              if (isConnected) {
+                if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
+                setUnlockingId(exec.id);
+                setUnlockReadyId(null);
+                unlockReadyRef.current = false;
+                unlockTimerRef.current = setTimeout(() => {
+                  unlockReadyRef.current = true;
+                  setUnlockReadyId(exec.id);
+                  setUnlockingId(null);
+                }, 3000);
+              }
               handleDragStart(exec.id, e.clientX, e.clientY);
             }}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
+              if (unlockTimerRef.current) {
+                clearTimeout(unlockTimerRef.current);
+                unlockTimerRef.current = null;
+              }
+              setUnlockingId(null);
+              setUnlockReadyId(null);
               if (didDragRef.current) {
                 didDragRef.current = false;
                 return;
@@ -527,15 +583,23 @@ export default function ExecutiveSatellites({
             <div
               className="flex items-center gap-1.5 backdrop-blur-sm border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
               style={{
-                backgroundColor: isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
-                borderColor: isSelected
+                backgroundColor: isUnlockReady
+                  ? 'hsl(0 84% 60% / 0.12)'
+                  : isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
+                borderColor: isUnlockReady
+                  ? 'hsl(0 84% 60%)'
+                  : isSelected
                   ? 'hsl(var(--primary))'
                   : isSnapTarget
                   ? 'hsl(35 92% 50%)'
                   : isConnected
                   ? 'hsl(35 92% 50% / 0.4)'
                   : 'hsl(var(--border))',
-                boxShadow: isSelected
+                boxShadow: isUnlockReady
+                  ? '0 0 0 3px hsl(0 84% 60% / 0.4), 0 0 16px hsl(0 84% 60% / 0.3), 0 4px 12px rgba(0,0,0,0.15)'
+                  : isUnlocking
+                  ? '0 0 0 2px hsl(35 92% 50% / 0.3), 0 0 12px hsl(35 92% 50% / 0.2), 0 4px 12px rgba(0,0,0,0.15)'
+                  : isSelected
                   ? '0 0 0 2px hsl(var(--primary) / 0.3), 0 4px 12px rgba(0,0,0,0.15)'
                   : isSnapTarget
                   ? '0 0 0 3px hsl(35 92% 50% / 0.3), 0 4px 16px hsl(35 92% 50% / 0.25)'
@@ -543,6 +607,7 @@ export default function ExecutiveSatellites({
                   ? '0 8px 24px rgba(0,0,0,0.2), 0 0 0 1px hsl(var(--border))'
                   : '0 2px 8px rgba(0,0,0,0.1)',
                 transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s',
+                ...(isUnlocking ? { animation: 'unlockPulse 1s ease-in-out infinite' } : {}),
               }}
             >
               <div

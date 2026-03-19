@@ -22,7 +22,7 @@ const EMPTY_HIERARCHY: Record<string, string> = {};
 const MAX_SATELLITES = 8;
 
 export const satelliteAnchors = new Map<string, L.Marker>();
-const SNAP_DISTANCE = 50;
+const SNAP_DISTANCE = 22;
 const DRAG_THRESHOLD = 4;
 const CHILD_VERTICAL_OFFSET = 38;
 const CHILD_HORIZONTAL_STAGGER = 75;

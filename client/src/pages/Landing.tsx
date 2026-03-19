@@ -567,7 +567,7 @@ export default function Landing() {
         </div>
 
         {mode === 'search' && (
-          <form onSubmit={handleSearch} className="max-w-3xl mx-auto text-left flex-1 flex flex-col">
+          <form onSubmit={handleSearch} className="w-full text-left flex-1 flex flex-col">
             <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col flex-1">
               <div className="flex items-center gap-4 px-5 py-3 border-b border-border/40 bg-muted/20">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
@@ -605,7 +605,7 @@ export default function Landing() {
         )}
 
         {mode === 'import' && (
-          <div className="max-w-3xl mx-auto text-left flex-1 flex flex-col">
+          <div className="w-full text-left flex-1 flex flex-col">
             <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col flex-1">
               <div className="flex items-center gap-4 px-5 py-3 border-b border-border/40 bg-muted/20">
                 <input

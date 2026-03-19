@@ -179,7 +179,7 @@ const EXECUTIVE_COLORS = [
 ];
 
 export default function MapComponent() {
-  const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites } = useAppStore();
+  const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites, mapPositions, updateMapPosition } = useAppStore();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -416,10 +416,14 @@ export default function MapComponent() {
             iconAnchor: [radius, radius], // Center the icon
           });
 
+          const companyOffset = mapPositions[`company:${company.id}`];
+          const markerLat = company.displayLat + (companyOffset?.dLat || 0);
+          const markerLng = company.displayLng + (companyOffset?.dLng || 0);
+
           return (
             <Marker
               key={company.id}
-              position={[company.displayLat, company.displayLng]}
+              position={[markerLat, markerLng]}
               icon={customIcon}
               draggable={true}
               zIndexOffset={1000}
@@ -465,21 +469,9 @@ export default function MapComponent() {
                   const position = marker.getLatLng();
                   draggingCompanyRef.current = null;
                   isMarkerDragging = false;
-                  updateCompany(company.id, {
-                    lat: position.lat,
-                    lng: position.lng,
-                  });
-                  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${position.lat}&lon=${position.lng}&format=json&zoom=3&addressdetails=1`, {
-                    headers: { 'Accept-Language': 'en' }
-                  })
-                    .then(res => res.json())
-                    .then(data => {
-                      const country = data?.address?.country;
-                      if (country && country !== company.hq_country) {
-                        updateCompany(company.id, { hq_country: country });
-                      }
-                    })
-                    .catch(() => {});
+                  const dLat = position.lat - company.displayLat;
+                  const dLng = position.lng - company.displayLng;
+                  updateMapPosition(`company:${company.id}`, { dLat, dLng });
                 },
                 dblclick: (e) => {
                   e.originalEvent.stopPropagation();
@@ -517,12 +509,13 @@ export default function MapComponent() {
           if (companyExecs.length === 0) return null;
           const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
           const r = getRadius(val);
+          const cOffset = mapPositions[`company:${company.id}`];
           return (
             <ExecutiveSatellites
               key={`sat-${company.id}`}
               companyId={company.id}
-              companyLat={company.displayLat}
-              companyLng={company.displayLng}
+              companyLat={company.displayLat + (cOffset?.dLat || 0)}
+              companyLng={company.displayLng + (cOffset?.dLng || 0)}
               companyRadius={r}
               executives={companyExecs}
               persistent
@@ -541,11 +534,12 @@ export default function MapComponent() {
           if (hoveredExecs.length === 0) return null;
           const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
           const hoveredRadius = getRadius(hoveredValue);
+          const hOffset = mapPositions[`company:${hoveredCompanyId}`];
           return (
             <ExecutiveSatellites
               companyId={hoveredCompanyId}
-              companyLat={hovered.displayLat}
-              companyLng={hovered.displayLng}
+              companyLat={hovered.displayLat + (hOffset?.dLat || 0)}
+              companyLng={hovered.displayLng + (hOffset?.dLng || 0)}
               companyRadius={hoveredRadius}
               executives={hoveredExecs}
               onSelectExecutive={(execId, companyId) => {

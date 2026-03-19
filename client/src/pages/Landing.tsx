@@ -522,7 +522,7 @@ export default function Landing() {
         />
       )}
 
-      <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="flex-1 flex flex-col relative overflow-y-auto">
         <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
           <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
         </div>
@@ -531,7 +531,7 @@ export default function Landing() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
-          className="z-10 w-full max-w-3xl px-6 text-center"
+          className="z-10 w-full max-w-3xl mx-auto px-6 pt-12 pb-16 text-center flex-1 flex flex-col"
         >
         <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-foreground mb-3">
           Global Talent Map
@@ -568,8 +568,8 @@ export default function Landing() {
         </div>
 
         {mode === 'search' && (
-          <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto">
-            <div className="flex flex-col gap-4">
+          <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto flex-1 flex flex-col">
+            <div className="flex flex-col gap-4 flex-1">
               <div className="relative">
                 <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
                   <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
@@ -599,7 +599,7 @@ export default function Landing() {
                         : "Describe what you're looking for... (e.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia')"
                       }
                       className={`border-0 shadow-none focus-visible:ring-0 text-base leading-relaxed bg-transparent resize-none transition-all duration-300 placeholder:text-muted-foreground/50 ${
-                        isPromptExpanded ? 'min-h-[280px] max-h-[500px]' : 'min-h-[72px] max-h-[120px]'
+                        isPromptExpanded ? 'min-h-[280px] max-h-[60vh]' : 'min-h-[100px] max-h-[200px]'
                       }`}
                       disabled={searchMutation.isPending}
                       data-testid="input-search-query"
@@ -629,8 +629,8 @@ export default function Landing() {
         )}
 
         {mode === 'import' && (
-          <div className="max-w-3xl mx-auto text-left">
-            <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+          <div className="max-w-3xl mx-auto text-left flex-1 flex flex-col">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col flex-1">
               <div className="flex items-center gap-4 px-5 py-3 border-b border-border/40 bg-muted/20">
                 <input
                   type="text"
@@ -668,7 +668,7 @@ export default function Landing() {
                 </div>
               </div>
 
-              <div className="p-5">
+              <div className="p-5 flex-1 overflow-y-auto">
                 {importTab === 'file' && !importPreview && (
                   <div
                     className="border-2 border-dashed border-border/60 rounded-xl p-10 text-center cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"

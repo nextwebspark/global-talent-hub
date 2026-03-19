@@ -115,6 +115,39 @@ export default function Dashboard() {
     };
   }, []);
 
+  const mapPositionsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevMapPositionsRef = useRef<Record<string, any>>({});
+  const prevMapPositionsProjectRef = useRef<string | undefined>(useAppStore.getState().currentProject?.id);
+  useEffect(() => {
+    prevMapPositionsRef.current = useAppStore.getState().mapPositions;
+    prevMapPositionsProjectRef.current = useAppStore.getState().currentProject?.id;
+    const unsub = useAppStore.subscribe((state) => {
+      const projectId = state.currentProject?.id;
+      if (projectId !== prevMapPositionsProjectRef.current) {
+        if (mapPositionsSaveTimerRef.current) clearTimeout(mapPositionsSaveTimerRef.current);
+        prevMapPositionsProjectRef.current = projectId;
+        prevMapPositionsRef.current = state.mapPositions;
+        return;
+      }
+      const positions = state.mapPositions;
+      if (positions === prevMapPositionsRef.current) return;
+      prevMapPositionsRef.current = positions;
+      if (!projectId) return;
+      if (mapPositionsSaveTimerRef.current) clearTimeout(mapPositionsSaveTimerRef.current);
+      mapPositionsSaveTimerRef.current = setTimeout(() => {
+        fetch(`/api/search/${projectId}/map-positions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ positions }),
+        }).catch(() => {});
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      if (mapPositionsSaveTimerRef.current) clearTimeout(mapPositionsSaveTimerRef.current);
+    };
+  }, []);
+
   const tableConfigSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevTableConfigRef = useRef<Record<string, any> | null>(useAppStore.getState().tableConfig);
   const prevTableConfigProjectRef = useRef<string | undefined>(useAppStore.getState().currentProject?.id);

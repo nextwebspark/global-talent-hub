@@ -1356,7 +1356,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         results: formattedCompanies,
         searchQueryId: searchId,
         satelliteHierarchies: data.searchQuery.satelliteHierarchies || {},
-        tableConfig: data.searchQuery.tableConfig || null
+        tableConfig: data.searchQuery.tableConfig || null,
+        mapPositions: data.searchQuery.mapPositions || {}
       });
     } catch (error) {
       console.error("Error loading search history:", error);
@@ -1379,6 +1380,24 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     } catch (error) {
       console.error("Error saving satellite hierarchies:", error);
       res.status(500).json({ error: "Failed to save satellite hierarchies" });
+    }
+  });
+
+  app.put("/api/search/:id/map-positions", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.id);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+      const positions = req.body.positions;
+      if (typeof positions !== 'object' || positions === null) {
+        return res.status(400).json({ error: "Invalid positions data" });
+      }
+      await storage.saveMapPositions(searchId, positions);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving map positions:", error);
+      res.status(500).json({ error: "Failed to save map positions" });
     }
   });
 

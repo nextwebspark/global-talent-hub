@@ -109,6 +109,7 @@ export const searchQueries = pgTable("search_queries", {
   clockworkProjectId: text("clockwork_project_id"),
   satelliteHierarchies: jsonb("satellite_hierarchies").default({}),
   tableConfig: jsonb("table_config"),
+  mapPositions: jsonb("map_positions").default({}),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

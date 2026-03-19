@@ -247,7 +247,7 @@ export default function Landing() {
       return;
     }
 
-    loadFromAPI([], {}, null);
+    loadFromAPI([], {}, null, {});
     
     try {
       toast.loading('Searching...', { id: 'search' });
@@ -266,7 +266,7 @@ export default function Landing() {
         created_at: new Date()
       });
 
-      loadFromAPI(result.results, {}, null);
+      loadFromAPI(result.results, {}, null, {});
       toast.success(`Found ${result.results.length} companies matching your criteria`);
       setLocation('/dashboard');
     } catch (error: any) {
@@ -348,7 +348,7 @@ export default function Landing() {
   const submitImport = useCallback(async (records: Record<string, string>[], mappings: Record<string, string>) => {
     setIsImporting(true);
     try {
-      loadFromAPI([], {}, null);
+      loadFromAPI([], {}, null, {});
       toast.loading('Creating project and importing data...', { id: 'import' });
 
       const response = await fetch('/api/import-project', {
@@ -376,7 +376,7 @@ export default function Landing() {
         created_at: new Date()
       });
 
-      loadFromAPI(result.results || [], {}, null);
+      loadFromAPI(result.results || [], {}, null, {});
       toast.success(`Imported ${result.recordsImported} records across ${result.companiesCreated} companies. Enrichment is running in the background.`);
       setLocation('/dashboard');
     } catch (error: any) {

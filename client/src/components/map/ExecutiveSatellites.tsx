@@ -69,6 +69,8 @@ export default function ExecutiveSatellites({
 
   const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] ?? EMPTY_HIERARCHY);
   const setSatelliteHierarchy = useAppStore((s) => s.setSatelliteHierarchy);
+  const mapPositions = useAppStore((s) => s.mapPositions);
+  const updateMapPosition = useAppStore((s) => s.updateMapPosition);
 
   const hierarchy = storeHierarchy;
   const setHierarchy = useCallback((updater: (prev: Record<string, string>) => Record<string, string>) => {
@@ -260,13 +262,20 @@ export default function ExecutiveSatellites({
       const base = basePositions[exec.id];
       if (!base) continue;
       const offset = dragOffsets[exec.id];
-      result[exec.id] = {
-        x: base.x + (offset?.dx || 0),
-        y: base.y + (offset?.dy || 0),
-      };
+      const saved = mapPositions[`exec:${exec.id}`];
+      if (offset) {
+        result[exec.id] = {
+          x: base.x + offset.dx,
+          y: base.y + offset.dy,
+        };
+      } else if (saved) {
+        result[exec.id] = { x: saved.x, y: saved.y };
+      } else {
+        result[exec.id] = { x: base.x, y: base.y };
+      }
     }
     return result;
-  }, [execs, basePositions, dragOffsets]);
+  }, [execs, basePositions, dragOffsets, mapPositions]);
 
   const displayPositionsRef = useRef(displayPositions);
   displayPositionsRef.current = displayPositions;
@@ -275,8 +284,11 @@ export default function ExecutiveSatellites({
     cancelDismiss();
     didDragRef.current = false;
     thresholdPassedRef.current = false;
-    const currentOffset = dragOffsetsRef.current[execId] || { dx: 0, dy: 0 };
-    draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx: currentOffset.dx, origDy: currentOffset.dy };
+    const currentDisplay = displayPositionsRef.current[execId];
+    const base = basePositionsRef.current[execId];
+    const origDx = currentDisplay && base ? currentDisplay.x - base.x : 0;
+    const origDy = currentDisplay && base ? currentDisplay.y - base.y : 0;
+    draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx, origDy };
 
     const handleDragMove = (e: MouseEvent) => {
       if (!draggingRef.current || draggingRef.current.id !== execId) return;
@@ -296,10 +308,10 @@ export default function ExecutiveSatellites({
       const dy = draggingRef.current.origDy + totalDy;
       setDragOffsets(prev => ({ ...prev, [execId]: { dx, dy } }));
 
-      const base = basePositionsRef.current[execId];
-      if (!base) return;
-      const draggedX = base.x + dx;
-      const draggedY = base.y + dy;
+      const currentBase = basePositionsRef.current[execId];
+      if (!currentBase) return;
+      const draggedX = currentBase.x + dx;
+      const draggedY = currentBase.y + dy;
 
       const currentHierarchy = hierarchyRef.current;
       const descendants = getDescendants(execId, currentHierarchy);
@@ -325,6 +337,7 @@ export default function ExecutiveSatellites({
     const handleDragEnd = () => {
       const currentSnap = snapTargetRef.current;
       const wasDragged = thresholdPassedRef.current;
+      const currentDragState = draggingRef.current;
       draggingRef.current = null;
       dragCleanupRef.current = null;
       if (wasDragged) map.dragging.enable();
@@ -342,7 +355,15 @@ export default function ExecutiveSatellites({
           delete next[execId];
           return next;
         });
+        updateMapPosition(`exec:${execId}`, null);
       } else if (wasDragged && didDragRef.current) {
+        const currentBase = basePositionsRef.current[execId];
+        const finalOffset = dragOffsetsRef.current[execId];
+        if (currentBase && finalOffset) {
+          const finalX = currentBase.x + finalOffset.dx;
+          const finalY = currentBase.y + finalOffset.dy;
+          updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
+        }
         setHierarchy(prev => {
           if (!prev[execId]) return prev;
           const next = { ...prev };
@@ -373,7 +394,7 @@ export default function ExecutiveSatellites({
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [cancelDismiss, setHierarchy, map, persistent]);
+  }, [cancelDismiss, setHierarchy, map, persistent, updateMapPosition]);
 
   if (execs.length === 0 || !anchorEl) return null;
 

@@ -9,9 +9,11 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface ProjectsPanelProps {
   onClose: () => void;
+  onProjectLoaded?: () => void;
+  offsetTop?: number;
 }
 
-export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
+export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56 }: ProjectsPanelProps) {
   const { data: history, isLoading } = useSearchHistory();
   const { currentProject, setProject, loadFromAPI } = useAppStore();
   const [, setLocation] = useLocation();
@@ -92,6 +94,7 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
         toast.success(`Loaded ${results.length} companies`);
       }
       onClose();
+      onProjectLoaded?.();
     } catch {
       toast.dismiss('load-project');
       toast.error('Failed to load project');
@@ -159,7 +162,7 @@ export default function ProjectsPanel({ onClose }: ProjectsPanelProps) {
     <div
       ref={panelRef}
       className="absolute left-12 top-0 z-50 w-72 max-h-[80vh] bg-popover border border-border rounded-lg shadow-xl flex flex-col overflow-hidden"
-      style={{ marginTop: 56, marginLeft: 4 }}
+      style={{ marginTop: offsetTop, marginLeft: 4 }}
       data-testid="projects-panel"
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">

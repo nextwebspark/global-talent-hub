@@ -1,14 +1,16 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
-import { useSearch, useSearchHistory } from '@/lib/api';
+import { useSearch } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Search, Loader2, ChevronDown, ChevronUp, History, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon } from 'lucide-react';
+import { Search, Loader2, ChevronDown, ChevronUp, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon, FolderOpen } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { COUNTRIES } from '@/lib/countries';
+import ProjectsPanel from '@/components/panels/ProjectsPanel';
 
 function ComboboxCell({ value, onChange, options, placeholder, testId, fetchOptions }: {
   value: string;
@@ -213,16 +215,14 @@ function createEmptyRow(): ManualRow {
 
 export default function Landing() {
   const [input, setInput] = useState('');
-  const [showHistory, setShowHistory] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const historyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { setProject, loadFromAPI } = useAppStore();
   const searchMutation = useSearch();
-  const { data: searchHistory } = useSearchHistory();
 
   const [mode, setMode] = useState<LandingMode>('search');
   const [importTab, setImportTab] = useState<'file' | 'paste' | 'manual'>('file');
@@ -241,56 +241,6 @@ export default function Landing() {
     Array.from({ length: 5 }, createEmptyRow)
   );
 
-  const handleLoadHistory = async (item: any) => {
-    try {
-      loadFromAPI([]);
-      toast.loading('Loading previous search results...', { id: 'load-history' });
-      const response = await fetch(`/api/search-history/${item.id}/load`);
-      if (!response.ok) throw new Error('Failed to load history');
-      const data = await response.json();
-      toast.dismiss('load-history');
-
-      if (!data.results || data.results.length === 0) {
-        toast.error('No results found for this search.');
-        return;
-      }
-
-      setProject({
-        id: String(item.id),
-        name: item.query,
-        search_string: item.query,
-        created_at: new Date(item.createdAt)
-      });
-      loadFromAPI(data.results, data.satelliteHierarchies || {});
-      toast.success(`Loaded ${data.results.length} companies from history`);
-      setLocation('/dashboard');
-    } catch (error) {
-      toast.dismiss('load-history');
-      toast.error('Failed to load search history');
-      console.error(error);
-    }
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (historyRef.current && !historyRef.current.contains(e.target as Node)) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const selectHistoryItem = (query: string) => {
-    setInput(query);
-    setShowHistory(false);
-    inputRef.current?.focus();
-  };
-
-  const filteredHistory = searchHistory?.filter((item: any) => 
-    item.query.toLowerCase().includes(input.toLowerCase())
-  ).sort((a: any, b: any) => a.query.localeCompare(b.query)) || [];
-
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) {
@@ -298,7 +248,6 @@ export default function Landing() {
       return;
     }
 
-    setShowHistory(false);
     loadFromAPI([]);
     
     try {
@@ -530,24 +479,60 @@ export default function Landing() {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col items-center justify-center bg-background relative overflow-hidden">
-      <button
-        onClick={toggleTheme}
-        className="absolute top-4 right-4 z-20 w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-        data-testid="landing-theme-toggle"
-      >
-        {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-      </button>
-      <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
-      </div>
+    <div className="h-screen w-screen flex bg-background relative overflow-hidden">
+      <TooltipProvider delayDuration={300}>
+        <div className="h-full w-12 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-2 shrink-0" data-testid="landing-sidebar">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => setShowProjectsPanel(prev => !prev)}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1 transition-colors ${
+                  showProjectsPanel
+                    ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm'
+                    : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'
+                }`}
+                data-testid="sidebar-projects"
+              >
+                <FolderOpen className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">Projects</TooltipContent>
+          </Tooltip>
+          <div className="flex-1" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggleTheme}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+                data-testid="landing-theme-toggle"
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">{isDark ? 'Light mode' : 'Dark mode'}</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-        className="z-10 w-full max-w-3xl px-6 text-center"
-      >
+      {showProjectsPanel && (
+        <ProjectsPanel
+          onClose={() => setShowProjectsPanel(false)}
+          onProjectLoaded={() => setLocation('/dashboard')}
+          offsetTop={8}
+        />
+      )}
+
+      <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
+        </div>
+
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="z-10 w-full max-w-3xl px-6 text-center"
+        >
         <h1 className="text-4xl md:text-5xl font-serif font-bold tracking-tight text-foreground mb-3">
           Global Talent Map
         </h1>
@@ -585,7 +570,7 @@ export default function Landing() {
         {mode === 'search' && (
           <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto">
             <div className="flex flex-col gap-4">
-              <div className="relative" ref={historyRef}>
+              <div className="relative">
                 <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
                   <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
@@ -593,36 +578,22 @@ export default function Landing() {
                       <span className="text-xs font-medium text-primary">AI Search</span>
                     </div>
                     <div className="flex-1" />
-                    <div className="flex items-center gap-1">
-                      <button 
-                        type="button"
-                        onClick={() => setIsPromptExpanded(!isPromptExpanded)}
-                        className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
-                        title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
-                        data-testid="button-toggle-prompt-expand"
-                      >
-                        {isPromptExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                        <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setShowHistory(!showHistory)}
-                        className="p-1.5 hover:bg-muted rounded-md transition-colors"
-                        title="Search history"
-                        data-testid="button-toggle-history"
-                      >
-                        <History className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+                      className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
+                      title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
+                      data-testid="button-toggle-prompt-expand"
+                    >
+                      {isPromptExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                      <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
+                    </button>
                   </div>
                   <div className="px-5 py-4">
                     <Textarea 
                       ref={inputRef}
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      onFocus={() => {
-                        if (!isPromptExpanded && input.length < 50) setShowHistory(true);
-                      }}
                       placeholder={isPromptExpanded 
                         ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies involved in renewable power transmission...\n\nInclusion criteria:\n- Entity must be a company, not a project or SPV\n- Must have operational involvement in target sector\n\nExclusion criteria:\n- Exclude pure contractors with no operating assets\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
                         : "Describe what you're looking for... (e.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia')"
@@ -635,53 +606,6 @@ export default function Landing() {
                     />
                   </div>
                 </div>
-                
-                {showHistory && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-2xl max-h-72 overflow-hidden z-50">
-                    <div className="p-3 border-b border-border bg-muted/30">
-                      <span className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <History className="h-4 w-4" /> {input ? 'Matching Searches' : 'Recent Searches'}
-                      </span>
-                    </div>
-                    {filteredHistory.length > 0 ? (
-                      <div className="overflow-y-auto max-h-56">
-                        {filteredHistory.slice(0, 10).map((item: any, index: number) => (
-                          <div
-                            key={`${item.id}-${index}`}
-                            className="w-full text-left px-4 py-3 hover:bg-primary/5 transition-colors border-b border-border/30 last:border-0 group cursor-pointer"
-                            data-testid={`button-history-item-${index}`}
-                            onClick={() => selectHistoryItem(item.query)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <Search className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium truncate group-hover:text-primary transition-colors">{item.query}</div>
-                                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                                  <span>{new Date(item.createdAt).toLocaleDateString()}</span>
-                                  {(item.companyCount || item.resultCount) > 0 && (
-                                    <span className="text-primary/70">{item.companyCount || item.resultCount} companies</span>
-                                  )}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); handleLoadHistory(item); }}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity bg-transparent hover:bg-primary/10 hover:text-primary px-3 py-1.5 rounded-md text-sm font-medium"
-                              >
-                                Load
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-6 text-center text-muted-foreground">
-                        <p className="text-sm">{input ? 'No matching searches' : 'No previous searches yet'}</p>
-                        <p className="text-xs mt-1">{input ? 'Try a different search term' : 'Your search history will appear here'}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
               
               <div className="flex items-center justify-center gap-3">
@@ -965,10 +889,11 @@ export default function Landing() {
             </div>
           </div>
         )}
-      </motion.div>
+        </motion.div>
       
-      <div className="absolute bottom-6 text-xs text-muted-foreground opacity-50">
-        &copy; 2026 Global Talent Map
+        <div className="absolute bottom-6 text-xs text-muted-foreground opacity-50">
+          &copy; 2026 Global Talent Map
+        </div>
       </div>
     </div>
   );

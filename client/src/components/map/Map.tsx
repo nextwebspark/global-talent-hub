@@ -472,9 +472,12 @@ export default function MapComponent() {
                   isMarkerDragging = false;
                   const newLat = position.lat;
                   const newLng = position.lng;
-                  // Reset visual offset — actual coords now reflect dropped position
+                  // Optimistically commit lat/lng to store immediately so the marker
+                  // stays at the drop position — prevents snap-back on re-render.
+                  // Both calls are batched by React 18 into a single render pass.
+                  updateCompany(company.id, { lat: newLat, lng: newLng });
                   updateMapPosition(`company:${company.id}`, { dLat: 0, dLng: 0 });
-                  // Reverse geocode to get new country, then persist
+                  // Reverse geocode country in the background (does not affect position)
                   fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&zoom=3&addressdetails=1`, {
                     headers: { 'Accept-Language': 'en' }
                   })
@@ -482,12 +485,11 @@ export default function MapComponent() {
                     .then(data => {
                       const rawCountry = data?.address?.country || company.hq_country;
                       const newCountry = normalizeCountryName(rawCountry) || rawCountry;
-                      updateCompany(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
+                      if (newCountry !== company.hq_country) {
+                        updateCompany(company.id, { hq_country: newCountry });
+                      }
                     })
-                    .catch(() => {
-                      // Persist coords even if geocoding fails
-                      updateCompany(company.id, { lat: newLat, lng: newLng });
-                    });
+                    .catch(() => {});
                 },
                 dblclick: (e) => {
                   e.originalEvent.stopPropagation();

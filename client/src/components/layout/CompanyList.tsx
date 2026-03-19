@@ -246,7 +246,7 @@ export default function CompanyList() {
                   <div className="flex-1 min-w-0">
                     <span className="text-xs font-semibold truncate block">{country.name}</span>
                     <span className="text-[10px] text-muted-foreground">
-                      {country.companies.length} co · {totalRev > 0 ? `$${(totalRev / 1e9).toFixed(1)}B` : 'Unknown'}
+                      {country.companies.length} co{totalRev > 0 ? ` · $${(totalRev / 1e9).toFixed(1)}B` : ''}
                     </span>
                   </div>
                   <button onClick={e => { e.stopPropagation(); toggleCountryVisibility(country.name); }}
@@ -276,7 +276,7 @@ export default function CompanyList() {
                             <div className="flex-1 min-w-0">
                               <div className={`font-medium truncate ${isSelected ? 'text-primary' : ''}`}>{company.name}</div>
                               <div className="text-[10px] text-muted-foreground truncate">
-                                {company.revenue_usd ? `$${(company.revenue_usd / 1e9).toFixed(1)}B` : 'Unknown'} · {company.employees ? `${company.employees.toLocaleString()} emp` : '—'} · {company.executives.length} exec
+                                {company.revenue_usd ? `$${(company.revenue_usd / 1e9).toFixed(1)}B · ` : ''}{company.employees ? `${company.employees.toLocaleString()} emp · ` : ''}{company.executives.length} exec
                               </div>
                             </div>
                             <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/company:opacity-100">

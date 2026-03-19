@@ -115,6 +115,42 @@ export default function Dashboard() {
     };
   }, []);
 
+  const tableConfigSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevTableConfigRef = useRef<Record<string, any> | null>(useAppStore.getState().tableConfig);
+  const prevTableConfigProjectRef = useRef<string | undefined>(useAppStore.getState().currentProject?.id);
+  useEffect(() => {
+    prevTableConfigRef.current = useAppStore.getState().tableConfig;
+    prevTableConfigProjectRef.current = useAppStore.getState().currentProject?.id;
+    const unsub = useAppStore.subscribe((state) => {
+      const config = state.tableConfig;
+      const currentPid = state.currentProject?.id;
+      if (currentPid !== prevTableConfigProjectRef.current) {
+        prevTableConfigProjectRef.current = currentPid;
+        prevTableConfigRef.current = config;
+        if (tableConfigSaveTimerRef.current) {
+          clearTimeout(tableConfigSaveTimerRef.current);
+          tableConfigSaveTimerRef.current = null;
+        }
+        return;
+      }
+      if (config === prevTableConfigRef.current) return;
+      prevTableConfigRef.current = config;
+      if (!currentPid || !config) return;
+      if (tableConfigSaveTimerRef.current) clearTimeout(tableConfigSaveTimerRef.current);
+      tableConfigSaveTimerRef.current = setTimeout(() => {
+        fetch(`/api/search/${currentPid}/table-config`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config }),
+        }).catch(() => {});
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      if (tableConfigSaveTimerRef.current) clearTimeout(tableConfigSaveTimerRef.current);
+    };
+  }, []);
+
   const tableData = useMemo(() => {
     const data: any[] = [];
     companies.forEach(company => {

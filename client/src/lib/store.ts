@@ -232,6 +232,7 @@ interface AppState {
   hiddenCompanies: Set<string>;
   showAllSatellites: boolean;
   satelliteHierarchies: Record<string, Record<string, string>>;
+  tableConfig: Record<string, any> | null;
   
   setProject: (project: Project) => void;
   renameProject: (name: string) => void;
@@ -265,8 +266,9 @@ interface AppState {
   toggleAllSatellites: () => void;
   setSatelliteHierarchy: (companyId: string, hierarchy: Record<string, string>) => void;
   resetVisibility: () => void;
+  setTableConfig: (config: Record<string, any> | null) => void;
   
-  loadFromAPI: (apiCompanies: APICompany[], satelliteHierarchies?: Record<string, Record<string, string>>) => void;
+  loadFromAPI: (apiCompanies: APICompany[], satelliteHierarchies?: Record<string, Record<string, string>>, tableConfig?: Record<string, any> | null) => void;
   reset: () => void;
 }
 
@@ -467,6 +469,7 @@ export const useAppStore = create<AppState>((set) => ({
   hiddenCompanies: new Set<string>(),
   showAllSatellites: false,
   satelliteHierarchies: {},
+  tableConfig: null,
 
   setProject: (project) => set({ currentProject: project }),
   renameProject: (name) => set((state) => ({
@@ -550,12 +553,14 @@ export const useAppStore = create<AppState>((set) => ({
     satelliteHierarchies: { ...state.satelliteHierarchies, [companyId]: hierarchy }
   })),
 
+  setTableConfig: (config) => set({ tableConfig: config }),
+
   resetVisibility: () => set({
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>()
   }),
 
-  loadFromAPI: (apiCompanies: APICompany[], savedHierarchies?: Record<string, Record<string, string>>) => {
+  loadFromAPI: (apiCompanies: APICompany[], savedHierarchies?: Record<string, Record<string, string>>, savedTableConfig?: Record<string, any> | null) => {
     const companies: Company[] = [];
     const executives: Executive[] = [];
 
@@ -573,6 +578,9 @@ export const useAppStore = create<AppState>((set) => ({
     const updates: Partial<AppState> = { companies, executives };
     if (savedHierarchies !== undefined) {
       updates.satelliteHierarchies = savedHierarchies;
+    }
+    if (savedTableConfig !== undefined) {
+      updates.tableConfig = savedTableConfig ?? null;
     }
     set(updates);
   },
@@ -595,6 +603,7 @@ export const useAppStore = create<AppState>((set) => ({
     hiddenCountries: new Set<string>(),
     hiddenCompanies: new Set<string>(),
     showAllSatellites: false,
-    satelliteHierarchies: {}
+    satelliteHierarchies: {},
+    tableConfig: null
   })
 }));

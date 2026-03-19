@@ -428,9 +428,9 @@ function ResizableHeader({ header, density, onDragStart, onDragOver, onDrop, isD
 }
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
-  const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, addCompany, addExecutive, executives: allExecutives, currentProject, companies } = useAppStore();
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'country', desc: false }]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+  const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, addCompany, addExecutive, executives: allExecutives, currentProject, companies, tableConfig, setTableConfig } = useAppStore();
+
+  const defaultVisibility: VisibilityState = {
     sector: false,
     email: false,
     phone: false,
@@ -440,11 +440,48 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     level: false,
     gender: false,
     ethnicity: false,
-  });
+  };
+
+  const [sorting, setSorting] = useState<SortingState>(() =>
+    tableConfig?.sorting || [{ id: 'country', desc: false }]
+  );
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+    tableConfig?.columnVisibility || defaultVisibility
+  );
+
+  const projectId = currentProject?.id;
+  const prevProjectIdRef = useRef(projectId);
+  const suppressConfigSaveRef = useRef(false);
+  useEffect(() => {
+    if (prevProjectIdRef.current === projectId) return;
+    prevProjectIdRef.current = projectId;
+    const cfg = useAppStore.getState().tableConfig;
+    suppressConfigSaveRef.current = true;
+    if (cfg) {
+      setSorting(cfg.sorting || [{ id: 'country', desc: false }]);
+      setColumnVisibility(cfg.columnVisibility || defaultVisibility);
+      setColumnOrder(cfg.columnOrder || defaultColumnOrder);
+      setColumnSizing(cfg.columnSizing || {});
+      setDensity(cfg.density || 'comfortable');
+    } else {
+      setSorting([{ id: 'country', desc: false }]);
+      setColumnVisibility(defaultVisibility);
+      setColumnOrder(defaultColumnOrder);
+      setColumnSizing({});
+      setDensity('comfortable');
+    }
+    requestAnimationFrame(() => { suppressConfigSaveRef.current = false; });
+  }, [projectId]);
 
   const prevDataCountRef = useRef(0);
+  const configInitializedRef = useRef(!!tableConfig);
   useEffect(() => {
     if (data.length === 0) return;
+    if (configInitializedRef.current) {
+      configInitializedRef.current = false;
+      prevDataCountRef.current = data.length;
+      return;
+    }
     const prevCount = prevDataCountRef.current;
     prevDataCountRef.current = data.length;
     if (prevCount > 0 && data.length === prevCount) return;
@@ -690,15 +727,22 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       setIsSubmitting(false);
     }
   }, [newCompanyName, newCompanyCountry, newExecName, newExecTitle, newSector, newRevenue, newEmployees, newNotes, newEmail, newPhone, newLinkedin, newRemunerationNotes, newAvailability, newLevel, matchedCompany, currentProject, addCompany, addExecutive, companies, resetDialogFields]);
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>([
+  const defaultColumnOrder = [
     'country', 'companyName', 'name', 'title', 'level', 'availability', 'linkedin',
     'sector', 'revenue', 'employees', 'notes', 'email', 'phone',
     'remunerationNotes',
-  ]);
+  ];
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() =>
+    tableConfig?.columnOrder || defaultColumnOrder
+  );
   const [grouping, setGrouping] = useState<GroupingState>([]);
   const [expanded, setExpanded] = useState<ExpandedState>(true);
-  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
-  const [density, setDensity] = useState<DensityMode>('comfortable');
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() =>
+    tableConfig?.columnSizing || {}
+  );
+  const [density, setDensity] = useState<DensityMode>(() =>
+    tableConfig?.density || 'comfortable'
+  );
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
   const [dragTargetColumnId, setDragTargetColumnId] = useState<string | null>(null);
@@ -998,6 +1042,29 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   });
 
   tableRef.current = table;
+
+  const configSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const configSaveInitRef = useRef(true);
+  useEffect(() => {
+    if (configSaveInitRef.current) {
+      configSaveInitRef.current = false;
+      return;
+    }
+    if (suppressConfigSaveRef.current) return;
+    if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+    configSaveTimerRef.current = setTimeout(() => {
+      setTableConfig({
+        columnVisibility,
+        columnOrder,
+        columnSizing,
+        sorting,
+        density,
+      });
+    }, 500);
+    return () => {
+      if (configSaveTimerRef.current) clearTimeout(configSaveTimerRef.current);
+    };
+  }, [columnVisibility, columnOrder, columnSizing, sorting, density, setTableConfig]);
 
   const allRowIds = useMemo(() => {
     return table.getRowModel().rows

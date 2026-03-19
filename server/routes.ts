@@ -1235,7 +1235,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       res.json({
         results: formattedCompanies,
         searchQueryId: searchId,
-        satelliteHierarchies: data.searchQuery.satelliteHierarchies || {}
+        satelliteHierarchies: data.searchQuery.satelliteHierarchies || {},
+        tableConfig: data.searchQuery.tableConfig || null
       });
     } catch (error) {
       console.error("Error loading search history:", error);
@@ -1258,6 +1259,24 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     } catch (error) {
       console.error("Error saving satellite hierarchies:", error);
       res.status(500).json({ error: "Failed to save satellite hierarchies" });
+    }
+  });
+
+  app.put("/api/search/:id/table-config", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.id);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+      const config = req.body.config;
+      if (typeof config !== 'object' || config === null) {
+        return res.status(400).json({ error: "Invalid config data" });
+      }
+      await storage.saveTableConfig(searchId, config);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving table config:", error);
+      res.status(500).json({ error: "Failed to save table config" });
     }
   });
 

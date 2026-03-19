@@ -91,6 +91,7 @@ export interface IStorage {
   getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>>;
   getFullSearchResults(searchQueryId: number): Promise<{ searchQuery: SearchQuery; companies: Array<Company & { executives: Executive[] }> } | null>;
   saveSatelliteHierarchies(searchQueryId: number, hierarchies: Record<string, Record<string, string>>): Promise<void>;
+  saveTableConfig(searchQueryId: number, config: Record<string, any>): Promise<void>;
   
   // Executive Details
   getCareerHistory(executiveId: number): Promise<CareerHistory[]>;
@@ -881,6 +882,12 @@ export class DatabaseStorage implements IStorage {
   async saveSatelliteHierarchies(searchQueryId: number, hierarchies: Record<string, Record<string, string>>): Promise<void> {
     await db.update(searchQueries)
       .set({ satelliteHierarchies: hierarchies, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(searchQueries.id, searchQueryId));
+  }
+
+  async saveTableConfig(searchQueryId: number, config: Record<string, any>): Promise<void> {
+    await db.update(searchQueries)
+      .set({ tableConfig: config, updatedAt: sql`CURRENT_TIMESTAMP` })
       .where(eq(searchQueries.id, searchQueryId));
   }
 

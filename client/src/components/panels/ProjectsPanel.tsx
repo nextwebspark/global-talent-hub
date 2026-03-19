@@ -87,7 +87,7 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
       });
 
       const results = data.results || [];
-      loadFromAPI(results, data.satelliteHierarchies || {});
+      loadFromAPI(results, data.satelliteHierarchies || {}, data.tableConfig || null);
       if (results.length === 0) {
         toast.info('This project has no companies yet.');
       } else {

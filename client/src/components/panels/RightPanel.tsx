@@ -430,9 +430,11 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
           </div>
           
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant="outline" className="text-xs" data-testid="badge-sector">
-              {company.industry || 'Unknown Sector'}
-            </Badge>
+            {company.industry && company.industry !== 'Unknown' && (
+              <Badge variant="outline" className="text-xs" data-testid="badge-sector">
+                {company.industry}
+              </Badge>
+            )}
             {company.ownershipType && (
               <Badge variant="secondary" className="text-xs" data-testid="badge-ownership">
                 {company.ownershipType}

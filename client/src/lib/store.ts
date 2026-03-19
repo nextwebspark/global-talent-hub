@@ -381,7 +381,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
   return {
     id: String(apiCompany.id || '0'),
     name: String(apiCompany.name || 'Unknown Company').trim(),
-    industry: String(apiCompany.sector || 'Unknown').trim(),
+    industry: String(apiCompany.sector || '').trim(),
     hq_country: country,
     streetAddress: ext.streetAddress ? String(ext.streetAddress).trim() : undefined,
     lat: isValidCoordinate(lat, lng) ? lat : 0,

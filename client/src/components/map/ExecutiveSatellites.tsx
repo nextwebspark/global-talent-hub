@@ -228,15 +228,12 @@ export default function ExecutiveSatellites({
   }, [map, cancelDismiss]);
 
   const orbitRadius = companyRadius + 65;
-  const arcStart = Math.PI / 6;
-  const arcEnd = (5 * Math.PI) / 6;
-  const arcSpan = arcEnd - arcStart;
 
   const basePositions = useMemo(() => {
     const positions: Record<string, { x: number; y: number }> = {};
     const rootExecs = execs.filter(e => !hierarchy[e.id] || !execIdSet.has(hierarchy[e.id]));
     const totalRoots = rootExecs.length + (overflow > 0 ? 1 : 0);
-    const rootAngleStep = totalRoots > 1 ? arcSpan / (totalRoots - 1) : 0;
+    const angleStep = totalRoots > 1 ? (2 * Math.PI) / totalRoots : 0;
 
     const computeForExec = (exec: typeof execs[0], bx: number, by: number) => {
       positions[exec.id] = { x: bx, y: by };
@@ -250,12 +247,12 @@ export default function ExecutiveSatellites({
     };
 
     rootExecs.forEach((exec, i) => {
-      const angle = totalRoots > 1 ? arcStart + i * rootAngleStep : Math.PI / 2;
+      const angle = totalRoots > 1 ? -(i * angleStep) : 0;
       computeForExec(exec, Math.cos(angle) * orbitRadius, Math.sin(angle) * orbitRadius);
     });
 
     return positions;
-  }, [execs, execIdSet, hierarchy, orbitRadius, arcStart, arcSpan, overflow]);
+  }, [execs, execIdSet, hierarchy, orbitRadius, overflow]);
 
   const basePositionsRef = useRef(basePositions);
   basePositionsRef.current = basePositions;
@@ -639,8 +636,8 @@ export default function ExecutiveSatellites({
       {overflow > 0 && (() => {
         const rootCount = execs.filter(e => !hierarchy[e.id]).length;
         const totalRoots = rootCount + 1;
-        const rootAngleStep = totalRoots > 1 ? arcSpan / (totalRoots - 1) : 0;
-        const angle = totalRoots > 1 ? arcStart + rootCount * rootAngleStep : Math.PI / 2;
+        const angleStep = totalRoots > 1 ? (2 * Math.PI) / totalRoots : 0;
+        const angle = totalRoots > 1 ? -(rootCount * angleStep) : 0;
         const x = Math.cos(angle) * orbitRadius;
         const y = Math.sin(angle) * orbitRadius;
         return (

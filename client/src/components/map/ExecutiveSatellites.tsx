@@ -166,7 +166,7 @@ export default function ExecutiveSatellites({
     const marker = L.marker([companyLat, companyLng], {
       icon,
       interactive: false,
-      zIndexOffset: -1000,
+      zIndexOffset: 2000,
     });
 
     anchorMarkerRef.current = marker;

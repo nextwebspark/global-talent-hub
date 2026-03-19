@@ -367,6 +367,7 @@ export default function MapComponent() {
         style={{ height: '100%', width: '100%' }}
         className="outline-none"
         zoomControl={false}
+        attributionControl={false}
         doubleClickZoom={false}
         minZoom={2}
         worldCopyJump={true}

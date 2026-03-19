@@ -597,7 +597,20 @@ export const useAppStore = create<AppState>((set) => ({
       updates.tableConfig = savedTableConfig ?? null;
     }
     if (savedMapPositions !== undefined) {
-      updates.mapPositions = savedMapPositions ?? {};
+      const raw = savedMapPositions ?? {};
+      const companyIds = new Set(companies.map(c => c.id));
+      const execIds = new Set(executives.map(e => e.id));
+      const pruned: Record<string, any> = {};
+      for (const [key, val] of Object.entries(raw)) {
+        if (key.startsWith('exec:')) {
+          if (execIds.has(key.slice(5))) pruned[key] = val;
+        } else if (key.startsWith('company:')) {
+          if (companyIds.has(key.slice(8))) pruned[key] = val;
+        } else {
+          pruned[key] = val;
+        }
+      }
+      updates.mapPositions = pruned;
     }
     set(updates);
   },

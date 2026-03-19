@@ -4,7 +4,7 @@ import { useAppStore } from '@/lib/store';
 import { useSearch } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Search, Loader2, ChevronDown, ChevronUp, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon, FolderOpen } from 'lucide-react';
+import { Search, Loader2, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon, FolderOpen } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -215,7 +215,6 @@ function createEmptyRow(): ManualRow {
 
 export default function Landing() {
   const [input, setInput] = useState('');
-  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [, setLocation] = useLocation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -568,61 +567,38 @@ export default function Landing() {
         </div>
 
         {mode === 'search' && (
-          <form onSubmit={handleSearch} className="relative max-w-3xl mx-auto flex-1 flex flex-col">
-            <div className="flex flex-col gap-4 flex-1">
-              <div className="relative">
-                <div className={`bg-gradient-to-b from-background to-background/95 backdrop-blur-xl shadow-2xl shadow-primary/5 border border-border/80 overflow-hidden transition-all duration-300 ring-1 ring-black/5 ${isPromptExpanded ? 'rounded-2xl' : 'rounded-3xl'}`}>
-                  <div className="flex items-center px-5 py-3 border-b border-border/40 bg-muted/20">
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
-                      <Search className="h-3.5 w-3.5 text-primary shrink-0" />
-                      <span className="text-xs font-medium text-primary">AI Search</span>
-                    </div>
-                    <div className="flex-1" />
-                    <button 
-                      type="button"
-                      onClick={() => setIsPromptExpanded(!isPromptExpanded)}
-                      className="p-1.5 hover:bg-muted rounded-md transition-colors flex items-center gap-1"
-                      title={isPromptExpanded ? "Collapse prompt" : "Expand for detailed prompt"}
-                      data-testid="button-toggle-prompt-expand"
-                    >
-                      {isPromptExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-                      <span className="text-xs text-muted-foreground">{isPromptExpanded ? 'Collapse' : 'Expand'}</span>
-                    </button>
-                  </div>
-                  <div className="px-5 py-4">
-                    <Textarea 
-                      ref={inputRef}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder={isPromptExpanded 
-                        ? `Enter a detailed search prompt...\n\nExample:\nTask: List exactly 10 operating companies involved in renewable power transmission...\n\nInclusion criteria:\n- Entity must be a company, not a project or SPV\n- Must have operational involvement in target sector\n\nExclusion criteria:\n- Exclude pure contractors with no operating assets\n\nData rules:\n- Revenue must only be included if explicitly stated\n- If data is unclear, return "Unknown"`
-                        : "Describe what you're looking for... (e.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia')"
-                      }
-                      className={`border-0 shadow-none focus-visible:ring-0 text-base leading-relaxed bg-transparent resize-none transition-all duration-300 placeholder:text-muted-foreground/50 ${
-                        isPromptExpanded ? 'min-h-[280px] max-h-[60vh]' : 'min-h-[100px] max-h-[200px]'
-                      }`}
-                      disabled={searchMutation.isPending}
-                      data-testid="input-search-query"
-                    />
-                  </div>
+          <form onSubmit={handleSearch} className="max-w-3xl mx-auto text-left flex-1 flex flex-col">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col flex-1">
+              <div className="flex items-center gap-4 px-5 py-3 border-b border-border/40 bg-muted/20">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
+                  <Search className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="text-xs font-medium text-primary">AI Search</span>
                 </div>
               </div>
-              
-              <div className="flex items-center justify-center gap-3">
-                <Button 
-                  type="submit" 
-                  size="lg" 
+              <div className="p-5 flex-1 flex flex-col">
+                <Textarea 
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={"Describe what you're looking for...\n\ne.g., 'Top 5 banks in UAE' or 'FMCG distributors in Saudi Arabia'\n\nYou can also write detailed prompts with inclusion/exclusion criteria and data rules."}
+                  className="border-0 shadow-none focus-visible:ring-0 text-base leading-relaxed bg-transparent resize-none flex-1 min-h-[200px] placeholder:text-muted-foreground/50"
                   disabled={searchMutation.isPending}
-                  className="h-12 rounded-full px-8 text-sm font-semibold shadow-xl shadow-primary/20 bg-gradient-to-r from-primary to-primary/90 hover:shadow-primary/30 hover:scale-[1.02] transition-all duration-200"
-                  data-testid="button-submit-search"
-                >
-                  {searchMutation.isPending ? (
-                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                  ) : (
-                    <Search className="h-5 w-5 mr-2" />
-                  )}
-                  {searchMutation.isPending ? 'Searching...' : 'Search'}
-                </Button>
+                  data-testid="input-search-query"
+                />
+                <div className="flex items-center justify-end pt-4">
+                  <Button 
+                    type="submit" 
+                    disabled={searchMutation.isPending}
+                    data-testid="button-submit-search"
+                  >
+                    {searchMutation.isPending ? (
+                      <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                    ) : (
+                      <Search className="h-4 w-4 mr-2" />
+                    )}
+                    {searchMutation.isPending ? 'Searching...' : 'Search'}
+                  </Button>
+                </div>
               </div>
             </div>
           </form>

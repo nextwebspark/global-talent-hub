@@ -71,7 +71,10 @@ export default function MapComponent() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const markerDataRef = useRef<Map<string, { name: string; revenue_usd: number; employees: number }>>(new Map());
   const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const scalingMetricRef = useRef(scalingMetric);
+  scalingMetricRef.current = scalingMetric;
   const prevIdSignatureRef = useRef('');
   const lastFitTimeRef = useRef(0);
   const isUserInteractingRef = useRef(false);
@@ -391,10 +394,16 @@ export default function MapComponent() {
       if (!currentIds.has(id)) {
         marker.remove();
         markersRef.current.delete(id);
+        markerDataRef.current.delete(id);
       }
     });
 
     scatteredCompanies.forEach((company) => {
+      markerDataRef.current.set(company.id, {
+        name: company.name,
+        revenue_usd: company.revenue_usd,
+        employees: company.employees,
+      });
       const isSelected = selectedCompanyId === company.id;
       const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
       const radius = getRadius(value);
@@ -471,11 +480,15 @@ export default function MapComponent() {
           hoverTimerRef.current = setTimeout(() => setHoveredCompanyId(company.id), 300);
           const tooltipEl = tooltipRef.current;
           if (tooltipEl) {
-            const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
-            const metricStr = scalingMetric === 'revenue'
-              ? `$${(company.revenue_usd / 1000000).toFixed(0)}M`
-              : `${company.employees.toLocaleString()} Empl.`;
-            tooltipEl.innerHTML = `<div style="font-weight:600;color:hsl(var(--foreground))">${company.name}</div><div style="color:hsl(var(--muted-foreground))">${metricStr}</div>`;
+            const data = markerDataRef.current.get(company.id);
+            const metric = scalingMetricRef.current;
+            const name = data?.name || company.name;
+            const rev = data?.revenue_usd ?? company.revenue_usd;
+            const empl = data?.employees ?? company.employees;
+            const metricStr = metric === 'revenue'
+              ? `$${(rev / 1000000).toFixed(0)}M`
+              : `${empl.toLocaleString()} Empl.`;
+            tooltipEl.innerHTML = `<div style="font-weight:600;color:hsl(var(--foreground))">${name}</div><div style="color:hsl(var(--muted-foreground))">${metricStr}</div>`;
             tooltipEl.style.display = 'block';
           }
         });

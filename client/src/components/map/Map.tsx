@@ -438,9 +438,9 @@ export default function MapComponent() {
           })
             .then(res => res.json())
             .then(data => {
-              const rawCountry = data?.address?.country || company.hq_country;
-              const newCountry = normalizeCountryName(rawCountry) || rawCountry;
-              if (newCountry !== company.hq_country) {
+              const rawCountry = data?.address?.country;
+              if (rawCountry) {
+                const newCountry = normalizeCountryName(rawCountry) || rawCountry;
                 updateCompanyRef.current(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
               }
             })

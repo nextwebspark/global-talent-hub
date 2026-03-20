@@ -408,23 +408,39 @@ export class DiscoveryPipeline {
     const persistedWithContext: Array<{ companyId: number; canonicalName: string; country?: string }> = [];
     let newCount = 0;
 
-    for (const enriched of allEnrichedCompanies) {
-      try {
-        const companyData = await this.transformToInsertCompany(enriched);
+    const PERSIST_BATCH_SIZE = 5;
+    for (let i = 0; i < allEnrichedCompanies.length; i += PERSIST_BATCH_SIZE) {
+      const batch = allEnrichedCompanies.slice(i, i + PERSIST_BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (enriched) => {
+          try {
+            const companyData = await this.transformToInsertCompany(enriched);
 
-        const fieldConfidences: Record<string, number> = {};
-        if (enriched.revenue.confidence > 0) fieldConfidences['revenue'] = enriched.revenue.confidence;
-        if (enriched.employees.confidence > 0) fieldConfidences['employees'] = enriched.employees.confidence;
-        if (enriched.country.confidence > 0) fieldConfidences['country'] = enriched.country.confidence;
-        if (enriched.sector.confidence > 0) fieldConfidences['sector'] = enriched.sector.confidence;
-        if (enriched.summary.confidence > 0) fieldConfidences['summary'] = enriched.summary.confidence;
-        if (enriched.website.confidence > 0) fieldConfidences['website'] = enriched.website.confidence;
+            const fieldConfidences: Record<string, number> = {};
+            if (enriched.revenue.confidence > 0) fieldConfidences['revenue'] = enriched.revenue.confidence;
+            if (enriched.employees.confidence > 0) fieldConfidences['employees'] = enriched.employees.confidence;
+            if (enriched.country.confidence > 0) fieldConfidences['country'] = enriched.country.confidence;
+            if (enriched.sector.confidence > 0) fieldConfidences['sector'] = enriched.sector.confidence;
+            if (enriched.summary.confidence > 0) fieldConfidences['summary'] = enriched.summary.confidence;
+            if (enriched.website.confidence > 0) fieldConfidences['website'] = enriched.website.confidence;
 
-        const { company, isNew } = await storage.upsertCompanyNonDestructive(
-          companyData,
-          searchQueryId,
-          fieldConfidences
-        );
+            const { company, isNew } = await storage.upsertCompanyNonDestructive(
+              companyData,
+              searchQueryId,
+              fieldConfidences
+            );
+
+            return { company, isNew, enriched, error: null as Error | null };
+          } catch (error: any) {
+            console.error(`[Pipeline] Failed to persist "${enriched.canonicalName}":`, error);
+            return { company: null, isNew: false, enriched, error };
+          }
+        })
+      );
+
+      for (const result of batchResults) {
+        if (!result.company || result.error) continue;
+        const { company, isNew, enriched } = result;
 
         if (isNew) newCount++;
 
@@ -448,9 +464,6 @@ export class DiscoveryPipeline {
             latitude: company.latitude, longitude: company.longitude, isNew,
           }
         };
-
-      } catch (error) {
-        console.error(`[Pipeline] Failed to persist "${enriched.canonicalName}":`, error);
       }
     }
 

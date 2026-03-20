@@ -205,7 +205,7 @@ export function streamingSearch(
   query: string,
   callbacks: StreamingSearchCallbacks
 ): () => void {
-  // Always use Tavily Research API directly (no LLM layer)
+  // Use Serper-based pipeline for search
   const params = new URLSearchParams({ query, research: 'true' });
   const url = `/api/search/stream?${params.toString()}`;
   const eventSource = new EventSource(url);

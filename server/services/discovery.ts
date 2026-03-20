@@ -346,10 +346,9 @@ function normalizeBusinessType(rawType: string): string {
 }
 
 // ============================================================================
-// SIMPLIFIED NORMALIZATION FOR TAVILY RESEARCH
+// SIMPLIFIED NORMALIZATION FOR RESEARCH DATA
 // ============================================================================
-// This function normalizes Tavily Research data WITHOUT strict validation.
-// Tavily returns structured data, so we trust it and just transform fields.
+// This function normalizes research data WITHOUT strict validation.
 // Minimal requirements: name + country. Everything else is optional.
 // ============================================================================
 
@@ -483,7 +482,7 @@ export function normalizeCompanyDataSimple(data: {
   const summary = data.summary ? String(data.summary).trim() : null;
   const website = data.website ? String(data.website).trim() : null;
   const confidence = Math.min(10, Math.max(1, data.confidence ?? 5));
-  const relevanceReason = data.relevanceReason || 'Found via Tavily Research';
+  const relevanceReason = data.relevanceReason || 'Found via research';
   
   // Detect entity type (simplified)
   let entityType = 'operating_company';

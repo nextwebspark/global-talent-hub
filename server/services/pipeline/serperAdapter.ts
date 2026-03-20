@@ -1,101 +1,11 @@
 import type { ISearchProvider, DiscoveredCompany, SearchIntent } from './types';
 import type { QueryIntent } from './queryIntent';
-import OpenAI from "openai";
 
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const FREE_MODELS = [
-  "anthropic/claude-opus-4.5",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-];
-
-async function callLLMForQuery(prompt: string): Promise<string | null> {
-  for (const model of FREE_MODELS) {
-    try {
-      const response = await openrouter.chat.completions.create({
-        model,
-        messages: [{ role: "user", content: prompt }] as any,
-        temperature: 0.1,
-        max_tokens: 300,
-      });
-      const content = response.choices[0]?.message?.content?.trim() || '';
-      if (content) return content;
-    } catch (error: any) {
-      console.warn(`[SerperAdapter] Query LLM ${model} failed: ${error.message}`);
-    }
-  }
-  return null;
-}
-
-export async function buildOptimisedQueries(
+export function buildOptimisedQueries(
   originalQuery: string,
   intent: QueryIntent
-): Promise<string[]> {
-  const countries = intent.countries.length > 0 ? intent.countries : [];
-
-  const prompt = `You are building Google search queries to find companies matching a user's intent.
-
-User query: "${originalQuery}"
-Target countries: ${countries.join(', ')}
-What to include: ${intent.exampleInclusions.join(', ')}
-What to exclude: ${intent.exampleExclusions.join(', ')}
-
-CRITICAL PRINCIPLE: Identify what TYPE of company the user wants, then build queries 
-that find THAT TYPE — not the products or brands those companies deal in.
-
-Examples of this distinction:
-- "luxury fashion retailers in UAE" → find RETAIL GROUPS (Al Tayer, Chalhoub, Apparel Group), 
-  NOT fashion brands (Gucci, Chanel). Queries should use "retail group", "franchise operator", 
-  "fashion holding company".
-- "FMCG distributors in Saudi Arabia" → find DISTRIBUTION COMPANIES, NOT food/drink brands. 
-  Queries should use "FMCG distributor", "consumer goods distribution company".
-- "pharma distributors in Egypt" → find DISTRIBUTION COMPANIES, NOT drug brands. 
-  Queries should use "pharmaceutical distributor", "pharma wholesale".
-
-Apply this principle to the user's query. Ask yourself: what TYPE of company is wanted? 
-Then build queries that surface companies OF THAT TYPE, not the products/brands they handle.
-
-Generate exactly 3 Google search queries:
-1. Direct company type search with country: use the operator/distributor/group terminology 
-   relevant to this sector + country names
-2. Curated list article search: start with "top", "leading", or "largest" + company type 
-   + region or country  
-3. Regional/local variation: use regional synonyms (GCC, Middle East, MENA, Gulf) 
-   if relevant, otherwise a third angle on the same company type
-
-Return ONLY a JSON array of 3 query strings, nothing else.
-["query one", "query two", "query three"]`;
-
-  try {
-    const response = await callLLMForQuery(prompt);
-    if (!response) throw new Error('No response');
-
-    const cleaned = response.trim().replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim();
-    const start = cleaned.indexOf('[');
-    const end = cleaned.lastIndexOf(']');
-    if (start === -1 || end === -1) throw new Error('No array found');
-
-    const parsed = JSON.parse(cleaned.substring(start, end + 1));
-    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Empty array');
-
-    const queries = parsed
-      .map((q: any) => String(q).trim())
-      .filter((q: string) => q.length > 3 && q.length < 150);
-
-    console.log(`[SerperAdapter] Optimised queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
-    return queries;
-
-  } catch (error: any) {
-    console.warn(`[SerperAdapter] Query optimisation failed, using heuristic fallback: ${error.message}`);
-    return buildHeuristicQueries(originalQuery, intent);
-  }
+): string[] {
+  return buildHeuristicQueries(originalQuery, intent);
 }
 
 const BUSINESS_TYPE_KEYWORDS: Record<string, string[]> = {
@@ -499,30 +409,22 @@ export class SerperAdapter implements ISearchProvider {
     const allRawResults: Array<{ title: string; link: string; snippet: string }> = [];
 
     if (intent) {
-      const { pass1, pass2, pass3 } = build3PassQueries(query, intent);
+      const { pass1, pass2 } = build3PassQueries(query, intent);
       
-      console.log(`[SerperAdapter] Pass 1 (Curated lists): "${pass1}"`);
-      console.log(`[SerperAdapter] Pass 2 (Official sources): "${pass2}"`);
-      console.log(`[SerperAdapter] Pass 3 (News/trade press): "${pass3}"`);
+      console.log(`[SerperAdapter] Query 1 (Curated lists): "${pass1}"`);
+      console.log(`[SerperAdapter] Query 2 (Official sources): "${pass2}"`);
 
-      for (const q of [pass1, pass2, pass3]) {
+      const queryPromises = [pass1, pass2].map(async (q) => {
         try {
-          const results = await this.callSerper(q, gl, numResults);
-          allRawResults.push(...results);
+          return await this.callSerper(q, gl, numResults);
         } catch (err: any) {
-          console.warn(`[SerperAdapter] Pass query failed: "${q}" — ${err.message}`);
+          console.warn(`[SerperAdapter] Query failed: "${q}" — ${err.message}`);
+          return [];
         }
-      }
-
-      const llmQueries = await buildOptimisedQueries(query, intent);
-      for (const q of llmQueries) {
-        try {
-          console.log(`[SerperAdapter] LLM query: "${q}"`);
-          const results = await this.callSerper(q, gl, numResults);
-          allRawResults.push(...results);
-        } catch (err: any) {
-          console.warn(`[SerperAdapter] LLM query failed: "${q}" — ${err.message}`);
-        }
+      });
+      const queryResults = await Promise.all(queryPromises);
+      for (const results of queryResults) {
+        allRawResults.push(...results);
       }
     } else {
       try {

@@ -525,10 +525,15 @@ export async function preProcessListArticles(
   if (listArticles.length === 0) return [];
 
   const allNames: string[] = [];
-  for (const article of listArticles.slice(0, 3)) {
-    console.log(`[NonDropExtraction] Processing: ${article.url}`);
-    const names = await extractCompaniesFromListArticle(article.url, query, intent, article.snippet);
-    console.log(`[NonDropExtraction] Got ${names.length} names from: ${article.url}`);
+  const articleResults = await Promise.all(
+    listArticles.slice(0, 3).map(async (article) => {
+      console.log(`[NonDropExtraction] Processing: ${article.url}`);
+      const names = await extractCompaniesFromListArticle(article.url, query, intent, article.snippet);
+      console.log(`[NonDropExtraction] Got ${names.length} names from: ${article.url}`);
+      return names;
+    })
+  );
+  for (const names of articleResults) {
     allNames.push(...names);
   }
 

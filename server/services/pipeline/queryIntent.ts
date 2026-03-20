@@ -255,16 +255,36 @@ export async function checkCompanyAgainstIntent(
   companyName: string,
   intent: QueryIntent
 ): Promise<boolean> {
-  // Fast-path: if no exclusion rules, everything passes
   if (intent.excludeTypes.length === 0) return true;
+  const results = await checkCompaniesAgainstIntentBatch([companyName], intent);
+  return results.get(companyName) ?? true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// checkCompaniesAgainstIntentBatch — validates multiple companies in a single
+// LLM call instead of one call per company. Returns a Map of name → isValid.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function checkCompaniesAgainstIntentBatch(
+  companyNames: string[],
+  intent: QueryIntent
+): Promise<Map<string, boolean>> {
+  const resultMap = new Map<string, boolean>();
+
+  if (intent.excludeTypes.length === 0) {
+    for (const name of companyNames) resultMap.set(name, true);
+    return resultMap;
+  }
+
+  if (companyNames.length === 0) return resultMap;
 
   const intentBlock = buildInclusionPromptBlock(intent);
+  const companiesList = companyNames.map((name, i) => `${i + 1}. "${name}"`).join('\n');
 
-  const prompt = `You are deciding whether a company is a valid result for a search query.
+  const prompt = `You are deciding whether each company is a valid result for a search query.
 
 ${intentBlock}
 
-CRITICAL: Apply the entity type test. Ask yourself:
+CRITICAL: Apply the entity type test for each company. Ask yourself:
 - What TYPE of company does the query want? (e.g. distributor, retail group, operator)
 - Is this extracted company OF THAT TYPE, or is it a product/brand SOLD BY that type?
 
@@ -280,23 +300,46 @@ This applies to any sector:
 The test: does this company DISTRIBUTE/OPERATE/RETAIL the sector's products, 
 or does it MAKE/OWN the products?
 
-COMPANY TO EVALUATE: "${companyName}"
+COMPANIES TO EVALUATE:
+${companiesList}
 
-Question: Is "${companyName}" a valid result based on the intent above?
+For EACH company, decide if it is valid.
 
 Answer with ONLY a JSON object:
-{ "isValid": true/false, "reason": "one sentence explanation" }`;
+{ "results": [{ "name": "Company Name", "isValid": true/false, "reason": "one sentence" }, ...] }`;
 
   try {
     const response = await callLLMForIntent(prompt);
-    if (!response) return true; // Fail open — don't block on LLM failure
-    const parsed = parseJsonSafe(response);
-    if (!parsed || typeof parsed.isValid !== 'boolean') return true;
-    if (!parsed.isValid) {
-      console.log(`[QueryIntent] Rejected "${companyName}": ${parsed.reason}`);
+    if (!response) {
+      for (const name of companyNames) resultMap.set(name, true);
+      return resultMap;
     }
-    return parsed.isValid;
+    const parsed = parseJsonSafe(response);
+    if (!parsed || !Array.isArray(parsed.results)) {
+      for (const name of companyNames) resultMap.set(name, true);
+      return resultMap;
+    }
+
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const responseMap = new Map<string, boolean>();
+    for (const item of parsed.results) {
+      if (item.name && typeof item.isValid === 'boolean') {
+        responseMap.set(normalize(item.name), item.isValid);
+        if (!item.isValid) {
+          console.log(`[QueryIntent] Rejected "${item.name}": ${item.reason}`);
+        }
+      }
+    }
+
+    for (const name of companyNames) {
+      const isValid = responseMap.get(normalize(name));
+      resultMap.set(name, isValid ?? true);
+    }
+
+    return resultMap;
   } catch {
-    return true; // Fail open
+    for (const name of companyNames) resultMap.set(name, true);
+    return resultMap;
   }
 }

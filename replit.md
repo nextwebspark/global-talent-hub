@@ -46,8 +46,8 @@ Executive satellite parent-child hierarchies (created by drag-and-drop on the ma
 
 ### Layered Architecture
 The backend employs a strict layered architecture:
-- **Serper Search Layer**: 3-pass search (curated lists → official sources → news/trade press) with URL scoring (Score 2: list articles & official company domains, Score 1: news & directories, Score 0: social/job sites — filtered out). Up to 8 pages fetched for full content extraction.
-- **Discovery Pipeline**: 3-pass Serper search → URL scoring → page fetching → LLM extraction with field-level confidence → confidence-based merge → persistence to DB.
+- **Serper Search Layer**: 2 parallel heuristic queries (curated lists + official sources) with URL scoring (Score 2: list articles & official company domains, Score 1: news & directories, Score 0: social/job sites — filtered out). Up to 8 pages fetched for full content extraction. Tavily adapter removed — Serper is the only search provider.
+- **Discovery Pipeline**: 2-query parallel Serper search → URL scoring → parallel page fetching + list article pre-processing → LLM extraction with field-level confidence → batched intent validation (single LLM call for all companies) → persistence to DB → parallel executive extraction (batches of 4).
 - **Enrichment Pipeline**: Targeted Serper searches for revenue, employees, and executives with LLM extraction from search results.
 - **Enrichment Layer**: Integrates with Clockwork API for fuzzy matching and data enrichment, populating empty fields without overwriting existing data.
 - **Persistence Layer**: Enforces write restrictions, confidence-based merging, manual edit protection, and audit logging. Single source of truth.

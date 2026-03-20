@@ -2,7 +2,7 @@ import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
 import { SerperAdapter, createSerperAdapter } from './serperAdapter';
 import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany, preProcessListArticles, fetchAndClassifyPages } from './nonDropExtraction';
-import { extractQueryIntent, checkCompanyAgainstIntent } from './queryIntent';
+import { extractQueryIntent, checkCompanyAgainstIntent, checkCompaniesAgainstIntentBatch } from './queryIntent';
 import type { QueryIntent } from './queryIntent';
 import { applyCoordinateFallback } from '../coordinateFallback';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
@@ -209,15 +209,26 @@ export class DiscoveryPipeline {
       return { companies: [], searchContext: '', llmAvailable: true };
     }
 
-    let preExtractedNames: string[] = [];
-    try {
-      preExtractedNames = await preProcessListArticles(searchResponse.results, query, regionIntent);
-      if (preExtractedNames.length > 0) {
-        console.log(`[Pipeline:${regionLabel}] Pre-extracted: ${preExtractedNames.join(', ')}`);
-      }
-    } catch (preError: any) {
-      console.warn(`[Pipeline:${regionLabel}] Pre-processing failed: ${preError.message}`);
-    }
+    const [preExtractedNames, fetchedPages] = await Promise.all([
+      preProcessListArticles(searchResponse.results, query, regionIntent)
+        .then(names => {
+          if (names.length > 0) console.log(`[Pipeline:${regionLabel}] Pre-extracted: ${names.join(', ')}`);
+          return names;
+        })
+        .catch((preError: any) => {
+          console.warn(`[Pipeline:${regionLabel}] Pre-processing failed: ${preError.message}`);
+          return [] as string[];
+        }),
+      fetchAndClassifyPages(searchResponse.results as any, 8)
+        .then(pages => {
+          console.log(`[Pipeline:${regionLabel}] Fetched ${pages.length} pages for extraction`);
+          return pages;
+        })
+        .catch((fetchError: any) => {
+          console.warn(`[Pipeline:${regionLabel}] Page fetching failed: ${fetchError.message}`);
+          return [] as Array<{ url: string; content: string; sourceType: string; score: number }>;
+        }),
+    ]);
 
     const heuristicCompanies = extractCompaniesFromSearchResults(
       searchResponse.results,
@@ -227,14 +238,6 @@ export class DiscoveryPipeline {
       searchResponse.answer,
       preExtractedNames
     );
-
-    let fetchedPages: Array<{ url: string; content: string; sourceType: string; score: number }> = [];
-    try {
-      fetchedPages = await fetchAndClassifyPages(searchResponse.results as any, 8);
-      console.log(`[Pipeline:${regionLabel}] Fetched ${fetchedPages.length} pages for extraction`);
-    } catch (fetchError: any) {
-      console.warn(`[Pipeline:${regionLabel}] Page fetching failed: ${fetchError.message}`);
-    }
 
     let searchContext = '';
     if (preExtractedNames.length > 0) {
@@ -360,24 +363,36 @@ export class DiscoveryPipeline {
     if (intent.excludeTypes.length > 0 && llmAvailable) {
       yield { type: 'status', data: { message: 'Validating results...', progress: 55 } };
 
-      const validated: EnrichedCompany[] = [];
+      const highConfidence: EnrichedCompany[] = [];
+      const toValidate: EnrichedCompany[] = [];
       for (const company of allEnrichedCompanies) {
         if (company.overallConfidence >= 7) {
-          validated.push(company);
-          continue;
-        }
-        try {
-          const isValid = await checkCompanyAgainstIntent(company.canonicalName, intent);
-          if (isValid) {
-            validated.push(company);
-          } else {
-            console.log(`[Pipeline] Final validation rejected: ${company.canonicalName}`);
-          }
-        } catch {
-          validated.push(company);
+          highConfidence.push(company);
+        } else {
+          toValidate.push(company);
         }
       }
-      allEnrichedCompanies = validated;
+
+      if (toValidate.length > 0) {
+        try {
+          const validationResults = await checkCompaniesAgainstIntentBatch(
+            toValidate.map(c => c.canonicalName),
+            intent
+          );
+          for (const company of toValidate) {
+            const isValid = validationResults.get(company.canonicalName) ?? true;
+            if (isValid) {
+              highConfidence.push(company);
+            } else {
+              console.log(`[Pipeline] Final validation rejected: ${company.canonicalName}`);
+            }
+          }
+        } catch {
+          highConfidence.push(...toValidate);
+        }
+      }
+
+      allEnrichedCompanies = highConfidence;
     }
 
     if (allEnrichedCompanies.length === 0) {
@@ -390,6 +405,7 @@ export class DiscoveryPipeline {
     yield { type: 'status', data: { message: 'Saving results...', progress: 60 } };
 
     const persistedCompanies: CompanyPersistResult[] = [];
+    const persistedWithContext: Array<{ companyId: number; canonicalName: string; country?: string }> = [];
     let newCount = 0;
 
     for (const enriched of allEnrichedCompanies) {
@@ -418,6 +434,12 @@ export class DiscoveryPipeline {
           company: { name: company.name, country: company.country, sector: company.sector }
         });
 
+        persistedWithContext.push({
+          companyId: company.id,
+          canonicalName: enriched.canonicalName,
+          country: enriched.country.value || undefined,
+        });
+
         yield {
           type: 'company',
           data: {
@@ -427,26 +449,40 @@ export class DiscoveryPipeline {
           }
         };
 
-        if (llmAvailable) {
-          try {
-            const executives = await this.extractAndPersistExecutives(
-              company.id,
-              enriched.canonicalName,
-              combinedSearchContext,
-              intent,
-              enriched.country.value || undefined
-            );
-            if (executives.length > 0) {
-              yield { type: 'executives', data: { companyId: company.id, count: executives.length } };
-            }
-          } catch (execError: any) {
-            llmAvailable = false;
-            console.warn(`[Pipeline] Executive extraction failed: ${execError.message}`);
-          }
-        }
-
       } catch (error) {
         console.error(`[Pipeline] Failed to persist "${enriched.canonicalName}":`, error);
+      }
+    }
+
+    if (llmAvailable && persistedWithContext.length > 0) {
+      yield { type: 'status', data: { message: 'Finding executives...', progress: 75 } };
+
+      const EXEC_BATCH_SIZE = 4;
+      for (let i = 0; i < persistedWithContext.length; i += EXEC_BATCH_SIZE) {
+        const batch = persistedWithContext.slice(i, i + EXEC_BATCH_SIZE);
+        const execResults = await Promise.all(
+          batch.map(async (ctx) => {
+            try {
+              const executives = await this.extractAndPersistExecutives(
+                ctx.companyId,
+                ctx.canonicalName,
+                combinedSearchContext,
+                intent,
+                ctx.country
+              );
+              return { companyId: ctx.companyId, count: executives.length };
+            } catch (execError: any) {
+              console.warn(`[Pipeline] Executive extraction failed for "${ctx.canonicalName}": ${execError.message}`);
+              return { companyId: ctx.companyId, count: 0 };
+            }
+          })
+        );
+
+        for (const result of execResults) {
+          if (result.count > 0) {
+            yield { type: 'executives', data: { companyId: result.companyId, count: result.count } };
+          }
+        }
       }
     }
 

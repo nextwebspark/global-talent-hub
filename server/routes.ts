@@ -4,7 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema } from "@shared/schema";
+import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema, type InsertExecutive } from "@shared/schema";
 import { applyCoordinateFallback } from "./services/coordinateFallback";
 
 const CITY_TO_COUNTRY: Record<string, string> = {
@@ -499,7 +499,7 @@ export async function registerRoutes(
             if (existingExec) {
               skipped++;
               console.log(`[BulkImport] Duplicate executive "${execName}" at company ${companyId} — merging empty fields`);
-              const mergeData: Partial<typeof existingExec> = {};
+              const mergeData: Partial<InsertExecutive> = {};
               if (title && title !== 'Executive') mergeData.title = title;
               if (email) mergeData.email = email;
               if (phone) mergeData.phone = phone;
@@ -511,7 +511,7 @@ export async function registerRoutes(
               if (availability) mergeData.availability = availability;
               if (level) mergeData.level = level;
               if (Object.keys(mergeData).length > 0) {
-                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData as any, { source: 'import', confidence: 5 });
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, { source: 'import', confidence: 5 });
               }
               exec = existingExec;
             } else {
@@ -2152,7 +2152,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
             if (existingExec) {
               skipped++;
               console.log(`[ImportProject] Duplicate executive "${resolvedExecName}" at company ${companyId} — merging empty fields`);
-              const mergeData: Partial<typeof existingExec> = {};
+              const mergeData: Partial<InsertExecutive> = {};
               if (title && title !== 'Executive') mergeData.title = title;
               if (email) mergeData.email = email;
               if (phone) mergeData.phone = phone;
@@ -2162,7 +2162,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
               if (availability) mergeData.availability = availability;
               if (level) mergeData.level = level;
               if (Object.keys(mergeData).length > 0) {
-                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData as any, { source: 'import', confidence: 5 });
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, { source: 'import', confidence: 5 });
               }
               exec = existingExec;
             } else {

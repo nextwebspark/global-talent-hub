@@ -481,7 +481,7 @@ export class DatabaseStorage implements IStorage {
       .from(executives)
       .where(and(
         eq(executives.companyId, companyId),
-        sql`lower(${executives.name}) = lower(${trimmedName})`
+        sql`lower(trim(${executives.name})) = lower(${trimmedName})`
       ))
       .limit(1);
     return existing || undefined;

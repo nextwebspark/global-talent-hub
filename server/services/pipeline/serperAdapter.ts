@@ -1,12 +1,6 @@
 import type { ISearchProvider, DiscoveredCompany, SearchIntent } from './types';
 import type { QueryIntent } from './queryIntent';
 
-export function buildOptimisedQueries(
-  originalQuery: string,
-  intent: QueryIntent
-): string[] {
-  return buildHeuristicQueries(originalQuery, intent);
-}
 
 const BUSINESS_TYPE_KEYWORDS: Record<string, string[]> = {
   'distributor': ['distributor', 'distribution company', 'wholesale distributor'],

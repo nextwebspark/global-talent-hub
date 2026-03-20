@@ -162,6 +162,7 @@ export default function MapComponent() {
     if (!map || !styleLoadedRef.current) return;
     map.setStyle(isDark ? DARK_STYLE : LIGHT_STYLE);
     map.once('style.load', () => {
+      map.setProjection('globe');
       map.setFog({
         color: isDark ? 'rgb(10, 10, 20)' : 'rgb(220, 230, 240)',
         'high-color': isDark ? 'rgb(20, 20, 40)' : 'rgb(180, 200, 220)',

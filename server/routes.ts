@@ -1324,6 +1324,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
             message: `Found ${companyCount} companies...`, 
             progress: Math.min(20 + companyCount * 5, 90) 
           });
+        } else if (event.type === 'status') {
+          sendEvent('status', event.data);
+        } else if (event.type === 'executives') {
+          sendEvent('executives', event.data);
+        } else if (event.type === 'source') {
+          sendEvent('source', event.data);
         } else if (event.type === 'error' && event.data?.message) {
           sendEvent('error', event.data);
         }

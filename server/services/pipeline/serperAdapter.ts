@@ -185,6 +185,7 @@ export interface ScoredResult {
   score: number;
   sourceType: 'official' | 'industry_list' | 'news' | 'directory' | 'other';
   domain: string;
+  rawContent?: string;
 }
 
 function scoreUrl(url: string, title: string): { score: number; sourceType: ScoredResult['sourceType'] } {

@@ -1,8 +1,7 @@
 import OpenAI from "openai";
-import type { EnrichedCompany, ExtractedExecutive, FieldValue } from './types';
+import type { EnrichedCompany, ExtractedExecutive, FieldValue, SearchWithAnswerResult } from './types';
 import type { QueryIntent } from './queryIntent';
 import { buildInclusionPromptBlock } from './queryIntent';
-import type { ScoredResult } from './serperAdapter';
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -444,7 +443,7 @@ function extractNamesFromNumberedList(text: string): string[] {
 }
 
 export async function fetchAndClassifyPages(
-  scoredResults: ScoredResult[],
+  scoredResults: SearchWithAnswerResult[],
   maxPages: number = 8
 ): Promise<Array<{ url: string; content: string; sourceType: string; score: number }>> {
   const toFetch = scoredResults

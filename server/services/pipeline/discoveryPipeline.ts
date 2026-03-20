@@ -197,7 +197,7 @@ export class DiscoveryPipeline {
 
     let searchResponse;
     try {
-      searchResponse = await (this.searchProvider as any).searchWithAnswer?.(focusedQuery, 15, regionIntent);
+      searchResponse = await this.searchProvider.searchWithAnswer?.(focusedQuery, 15, regionIntent);
       if (!searchResponse) throw new Error('Search provider does not support searchWithAnswer');
       console.log(`[Pipeline:${regionLabel}] Search returned ${searchResponse.results.length} results`);
     } catch (error: any) {
@@ -219,7 +219,7 @@ export class DiscoveryPipeline {
           console.warn(`[Pipeline:${regionLabel}] Pre-processing failed: ${preError.message}`);
           return [] as string[];
         }),
-      fetchAndClassifyPages(searchResponse.results as any, 8)
+      fetchAndClassifyPages(searchResponse.results, 8)
         .then(pages => {
           console.log(`[Pipeline:${regionLabel}] Fetched ${pages.length} pages for extraction`);
           return pages;

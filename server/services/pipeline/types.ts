@@ -1,3 +1,5 @@
+import type { QueryIntent } from './queryIntent';
+
 export interface DiscoveredCompany {
   companyNameRaw: string;
   sourceUrl: string;
@@ -66,19 +68,23 @@ export interface SearchIntent {
   originalQuery: string;
 }
 
+export interface SearchWithAnswerResult {
+  url: string;
+  title: string;
+  snippet: string;
+  score: number;
+  sourceType: string;
+  domain: string;
+  rawContent?: string;
+  rank?: number;
+  provider?: string;
+}
+
 export interface ISearchProvider {
   name: string;
   discoverCompanies(intent: SearchIntent): Promise<DiscoveredCompany[]>;
-  searchWithAnswer?(query: string, numResults?: number): Promise<{
-    results: Array<{
-      url: string;
-      title: string;
-      snippet: string;
-      rawContent?: string;
-      domain: string;
-      rank: number;
-      provider: string;
-    }>;
+  searchWithAnswer?(query: string, numResults?: number, intent?: QueryIntent): Promise<{
+    results: SearchWithAnswerResult[];
     answer?: string;
   }>;
 }

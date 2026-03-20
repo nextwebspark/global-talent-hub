@@ -690,7 +690,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         // Pan and zoom map to this country
         const country = countriesData.find(c => c.name === countryName);
         if (country && country.companies.length > 0) {
-          const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
+          const map = window.mapboxMap as mapboxgl.Map | undefined;
           if (map) {
             const validCoords = country.companies
               .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)
@@ -712,7 +712,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
       }
       
       if (next.size === 0) {
-        const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
+        const map = window.mapboxMap as mapboxgl.Map | undefined;
         if (map && companies.length > 0) {
           const validCoords = companies
             .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)

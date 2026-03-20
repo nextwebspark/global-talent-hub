@@ -8,6 +8,12 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import ExecutiveSatellites, { satelliteAnchors } from './ExecutiveSatellites';
 
+declare global {
+  interface Window {
+    mapboxMap?: mapboxgl.Map | null;
+  }
+}
+
 function useIsDarkMode() {
   return useSyncExternalStore(
     (cb) => {
@@ -66,7 +72,7 @@ export default function MapComponent() {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const tooltipRef = useRef<HTMLDivElement | null>(null);
-  const prevCountRef = useRef(0);
+  const prevIdSignatureRef = useRef('');
   const lastFitTimeRef = useRef(0);
   const isUserInteractingRef = useRef(false);
   const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -109,7 +115,7 @@ export default function MapComponent() {
     });
 
     mapRef.current = map;
-    (window as any).mapboxMap = map;
+    window.mapboxMap = map;
 
     map.on('load', () => {
       setMapReady(true);
@@ -151,7 +157,7 @@ export default function MapComponent() {
       tooltipEl.remove();
       map.remove();
       mapRef.current = null;
-      (window as any).mapboxMap = null;
+      window.mapboxMap = null;
       setMapReady(false);
       styleLoadedRef.current = false;
     };
@@ -334,6 +340,11 @@ export default function MapComponent() {
   const startHoverDismissRef = useRef(startHoverDismiss);
   startHoverDismissRef.current = startHoverDismiss;
 
+  const visibleIdSignature = useMemo(
+    () => scatteredCompanies.map(c => c.id).sort().join(','),
+    [scatteredCompanies]
+  );
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
@@ -342,13 +353,13 @@ export default function MapComponent() {
     const now = Date.now();
 
     if (isUserInteractingRef.current || isMarkerDragging) {
-      prevCountRef.current = visibleCompanies.length;
+      prevIdSignatureRef.current = visibleIdSignature;
       return;
     }
 
-    if (visibleCompanies.length > 0 && visibleCompanies.length !== prevCountRef.current) {
+    if (visibleCompanies.length > 0 && visibleIdSignature !== prevIdSignatureRef.current) {
       const timeSinceLastFit = now - lastFitTimeRef.current;
-      if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
+      if (prevIdSignatureRef.current === '' || timeSinceLastFit > 500) {
         let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
         visibleCompanies.forEach(c => {
           if (c.displayLng < minLng) minLng = c.displayLng;
@@ -365,10 +376,10 @@ export default function MapComponent() {
         );
         lastFitTimeRef.current = now;
       }
-      prevCountRef.current = visibleCompanies.length;
+      prevIdSignatureRef.current = visibleIdSignature;
     }
 
-    if (visibleCompanies.length === 0) prevCountRef.current = 0;
+    if (visibleCompanies.length === 0) prevIdSignatureRef.current = '';
   }, [scatteredCompanies, mapReady]);
 
   useEffect(() => {

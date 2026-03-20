@@ -95,7 +95,7 @@ export default function CompanyList() {
         next.add(countryName);
         const country = countriesData.find(c => c.name === countryName);
         if (country?.companies.length) {
-          const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
+          const map = window.mapboxMap as mapboxgl.Map | undefined;
           if (map) {
             const coords = country.companies.filter((c: any) => c.lat !== 0 || c.lng !== 0).map((c: any) => [Number(c.lng), Number(c.lat)] as [number, number]);
             if (coords.length > 0) { try { const bounds = coords.reduce((b: mapboxgl.LngLatBounds, c: [number, number]) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0])); map.fitBounds(bounds, { padding: 50, maxZoom: 8, animate: true }); } catch {} }

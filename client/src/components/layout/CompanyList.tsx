@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Search, ChevronRight, Building2, User, Eye, EyeOff, Trash2, X, CheckCircle2, Sparkles, AlertTriangle, Info, DollarSign, Users, MapPin, ChevronDown, Filter, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import L from 'leaflet';
+import mapboxgl from 'mapbox-gl';
 
 export default function CompanyList() {
   const {
@@ -95,10 +95,10 @@ export default function CompanyList() {
         next.add(countryName);
         const country = countriesData.find(c => c.name === countryName);
         if (country?.companies.length) {
-          const map = (window as any).leafletMap;
+          const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
           if (map) {
-            const coords = country.companies.filter((c: any) => c.lat !== 0 || c.lng !== 0).map((c: any) => [Number(c.lat), Number(c.lng)] as [number, number]);
-            if (coords.length > 0) { try { map.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 8, animate: true }); } catch {} }
+            const coords = country.companies.filter((c: any) => c.lat !== 0 || c.lng !== 0).map((c: any) => [Number(c.lng), Number(c.lat)] as [number, number]);
+            if (coords.length > 0) { try { const bounds = coords.reduce((b: mapboxgl.LngLatBounds, c: [number, number]) => b.extend(c), new mapboxgl.LngLatBounds(coords[0], coords[0])); map.fitBounds(bounds, { padding: 50, maxZoom: 8, animate: true }); } catch {} }
           }
         }
       }

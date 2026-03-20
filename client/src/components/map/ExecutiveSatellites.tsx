@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useMap } from 'react-leaflet';
-import L from 'leaflet';
+import mapboxgl from 'mapbox-gl';
 import type { Executive } from '@/lib/store';
 import { useAppStore } from '@/lib/store';
 
 interface ExecutiveSatellitesProps {
+  map: mapboxgl.Map;
   companyId: string;
   companyLat: number;
   companyLng: number;
@@ -21,7 +21,7 @@ interface ExecutiveSatellitesProps {
 const EMPTY_HIERARCHY: Record<string, string> = {};
 const MAX_SATELLITES = 8;
 
-export const satelliteAnchors = new Map<string, L.Marker>();
+export const satelliteAnchors = new Map<string, mapboxgl.Marker>();
 const SNAP_DISTANCE = 22;
 const DRAG_THRESHOLD = 4;
 const CHILD_VERTICAL_OFFSET = 38;
@@ -39,6 +39,7 @@ function getDescendants(id: string, hier: Record<string, string>): Set<string> {
 }
 
 export default function ExecutiveSatellites({
+  map,
   companyId,
   companyLat,
   companyLng,
@@ -50,7 +51,6 @@ export default function ExecutiveSatellites({
   onPillEnter: onPillEnterProp,
   onPillLeave: onPillLeaveProp,
 }: ExecutiveSatellitesProps) {
-  const map = useMap();
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [dragOffsets, setDragOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
@@ -69,7 +69,7 @@ export default function ExecutiveSatellites({
   const thresholdPassedRef = useRef(false);
   const unlockReadyRef = useRef(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const anchorMarkerRef = useRef<L.Marker | null>(null);
+  const anchorMarkerRef = useRef<mapboxgl.Marker | null>(null);
 
   const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] ?? EMPTY_HIERARCHY);
   const setSatelliteHierarchy = useAppStore((s) => s.setSatelliteHierarchy);
@@ -104,9 +104,7 @@ export default function ExecutiveSatellites({
         changed = true;
       }
     }
-    if (changed) {
-      setSatelliteHierarchy(companyId, pruned);
-    }
+    if (changed) setSatelliteHierarchy(companyId, pruned);
     hoverCountRef.current = 0;
     setSelectedExecId(null);
     setDragOffsets({});
@@ -156,37 +154,19 @@ export default function ExecutiveSatellites({
   }, [persistent]);
 
   useEffect(() => {
-    const icon = L.divIcon({
-      className: 'satellite-anchor',
-      html: '<div></div>',
-      iconSize: [1, 1],
-      iconAnchor: [0, 0],
-    });
+    const anchorDiv = document.createElement('div');
+    anchorDiv.style.cssText = 'width:1px;height:1px;pointer-events:none;overflow:visible;';
 
-    const marker = L.marker([companyLat, companyLng], {
-      icon,
-      interactive: false,
-      zIndexOffset: 2000,
-    });
+    const marker = new mapboxgl.Marker({ element: anchorDiv, anchor: 'center' })
+      .setLngLat([companyLng, companyLat])
+      .addTo(map);
 
     anchorMarkerRef.current = marker;
-
-    const onAdd = () => {
-      const el = marker.getElement();
-      if (el) {
-        el.style.pointerEvents = 'none';
-        el.style.overflow = 'visible';
-        setAnchorEl(el);
-      }
-    };
-
-    marker.on('add', onAdd);
-    marker.addTo(map);
+    setAnchorEl(anchorDiv);
     satelliteAnchors.set(companyId, marker);
 
     return () => {
       satelliteAnchors.delete(companyId);
-      marker.off('add', onAdd);
       marker.remove();
       anchorMarkerRef.current = null;
       setAnchorEl(null);
@@ -195,7 +175,7 @@ export default function ExecutiveSatellites({
 
   useEffect(() => {
     if (anchorMarkerRef.current) {
-      anchorMarkerRef.current.setLatLng([companyLat, companyLng]);
+      anchorMarkerRef.current.setLngLat([companyLng, companyLat]);
     }
   }, [companyLat, companyLng]);
 
@@ -265,10 +245,7 @@ export default function ExecutiveSatellites({
       const offset = dragOffsets[exec.id];
       const saved = mapPositions[`exec:${exec.id}`];
       if (offset) {
-        result[exec.id] = {
-          x: base.x + offset.dx,
-          y: base.y + offset.dy,
-        };
+        result[exec.id] = { x: base.x + offset.dx, y: base.y + offset.dy };
       } else if (saved) {
         result[exec.id] = { x: saved.x, y: saved.y };
       } else {
@@ -295,17 +272,15 @@ export default function ExecutiveSatellites({
 
     const handleDragMove = (e: MouseEvent) => {
       if (!draggingRef.current || draggingRef.current.id !== execId) return;
-
       const totalDx = e.clientX - draggingRef.current.startX;
       const totalDy = e.clientY - draggingRef.current.startY;
-
       if (!thresholdPassedRef.current) {
         if (Math.sqrt(totalDx * totalDx + totalDy * totalDy) < DRAG_THRESHOLD) return;
         thresholdPassedRef.current = true;
-        map.dragging.disable();
+        map.dragPan.disable();
+        map.dragRotate.disable();
         setDraggingId(execId);
       }
-
       didDragRef.current = true;
       const dx = draggingRef.current.origDx + totalDx;
       const dy = draggingRef.current.origDy + totalDy;
@@ -317,7 +292,6 @@ export default function ExecutiveSatellites({
       if (!currentBase) return;
       const draggedX = currentBase.x + dx;
       const draggedY = currentBase.y + dy;
-
       const currentHierarchy = hierarchyRef.current;
       const descendants = getDescendants(execId, currentHierarchy);
       const currentExecs = execsRef.current;
@@ -352,7 +326,10 @@ export default function ExecutiveSatellites({
       }
       setUnlockingId(null);
       setUnlockReadyId(null);
-      if (wasDragged) map.dragging.enable();
+      if (wasDragged) {
+        map.dragPan.enable();
+        map.dragRotate.enable();
+      }
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('mouseup', handleDragEnd);
 
@@ -368,18 +345,10 @@ export default function ExecutiveSatellites({
           const finalY = currentBase.y + finalOffset.dy;
           updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
         }
-        setDragOffsets(prev => {
-          const next = { ...prev };
-          delete next[execId];
-          return next;
-        });
+        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
       } else if (wasDragged && currentSnap) {
         setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
-        setDragOffsets(prev => {
-          const next = { ...prev };
-          delete next[execId];
-          return next;
-        });
+        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
         updateMapPosition(`exec:${execId}`, null);
       } else if (wasDragged && didDragRef.current) {
         const currentBase = basePositionsRef.current[execId];
@@ -392,21 +361,13 @@ export default function ExecutiveSatellites({
         if (wasUnlockReady) {
           setHierarchy(prev => {
             if (!prev[execId]) return prev;
-            const next = { ...prev };
-            delete next[execId];
-            return next;
+            const next = { ...prev }; delete next[execId]; return next;
           });
         }
-        setDragOffsets(prev => {
-          const next = { ...prev };
-          delete next[execId];
-          return next;
-        });
+        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
       }
 
-      if (!persistent && hoverCountRef.current === 0) {
-        startDismissRef.current();
-      }
+      if (!persistent && hoverCountRef.current === 0) startDismissRef.current();
     };
 
     dragCleanupRef.current = () => {
@@ -415,15 +376,13 @@ export default function ExecutiveSatellites({
       draggingRef.current = null;
       snapTargetRef.current = null;
       unlockReadyRef.current = false;
-      if (unlockTimerRef.current) {
-        clearTimeout(unlockTimerRef.current);
-        unlockTimerRef.current = null;
-      }
+      if (unlockTimerRef.current) { clearTimeout(unlockTimerRef.current); unlockTimerRef.current = null; }
       setUnlockingId(null);
       setUnlockReadyId(null);
       setSnapTargetId(null);
       setDraggingId(null);
-      map.dragging.enable();
+      map.dragPan.enable();
+      map.dragRotate.enable();
     };
 
     window.addEventListener('mousemove', handleDragMove);
@@ -465,13 +424,9 @@ export default function ExecutiveSatellites({
             return (
               <line
                 key={`h-${exec.id}`}
-                x1={parentPos.x}
-                y1={parentPos.y}
-                x2={pos.x}
-                y2={pos.y}
-                stroke="hsl(35 92% 50%)"
-                strokeWidth={2}
-                strokeOpacity={0.6}
+                x1={parentPos.x} y1={parentPos.y}
+                x2={pos.x} y2={pos.y}
+                stroke="hsl(35 92% 50%)" strokeWidth={2} strokeOpacity={0.6}
               />
             );
           }
@@ -479,13 +434,9 @@ export default function ExecutiveSatellites({
           return (
             <line
               key={`c-${exec.id}`}
-              x1={0}
-              y1={0}
-              x2={pos.x}
-              y2={pos.y}
-              stroke="currentColor"
-              strokeWidth={1.5}
-              strokeOpacity={0.25}
+              x1={0} y1={0}
+              x2={pos.x} y2={pos.y}
+              stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.25}
               className="text-muted-foreground"
             />
           );
@@ -497,14 +448,10 @@ export default function ExecutiveSatellites({
           if (!dragPos || !targetPos) return null;
           return (
             <line
-              x1={targetPos.x}
-              y1={targetPos.y}
-              x2={dragPos.x}
-              y2={dragPos.y}
-              stroke="hsl(35 92% 50%)"
-              strokeWidth={2}
-              strokeDasharray="4 3"
-              strokeOpacity={0.8}
+              x1={targetPos.x} y1={targetPos.y}
+              x2={dragPos.x} y2={dragPos.y}
+              stroke="hsl(35 92% 50%)" strokeWidth={2}
+              strokeDasharray="4 3" strokeOpacity={0.8}
             />
           );
         })()}
@@ -555,16 +502,10 @@ export default function ExecutiveSatellites({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (unlockTimerRef.current) {
-                clearTimeout(unlockTimerRef.current);
-                unlockTimerRef.current = null;
-              }
+              if (unlockTimerRef.current) { clearTimeout(unlockTimerRef.current); unlockTimerRef.current = null; }
               setUnlockingId(null);
               setUnlockReadyId(null);
-              if (didDragRef.current) {
-                didDragRef.current = false;
-                return;
-              }
+              if (didDragRef.current) { didDragRef.current = false; return; }
               if (isSelected) {
                 setSelectedExecId(null);
                 onSelectExecutive(null, companyId);
@@ -585,12 +526,9 @@ export default function ExecutiveSatellites({
                   : isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
                 borderColor: isUnlockReady
                   ? 'hsl(0 84% 60%)'
-                  : isSelected
-                  ? 'hsl(var(--primary))'
-                  : isSnapTarget
-                  ? 'hsl(35 92% 50%)'
-                  : isConnected
-                  ? 'hsl(35 92% 50% / 0.4)'
+                  : isSelected ? 'hsl(var(--primary))'
+                  : isSnapTarget ? 'hsl(35 92% 50%)'
+                  : isConnected ? 'hsl(35 92% 50% / 0.4)'
                   : 'hsl(var(--border))',
                 boxShadow: isUnlockReady
                   ? '0 0 0 3px hsl(0 84% 60% / 0.4), 0 0 16px hsl(0 84% 60% / 0.3), 0 4px 12px rgba(0,0,0,0.15)'
@@ -612,8 +550,7 @@ export default function ExecutiveSatellites({
                 style={{
                   backgroundColor: isSelected
                     ? 'hsl(var(--primary) / 0.2)'
-                    : isSnapTarget
-                    ? 'hsl(35 92% 50% / 0.3)'
+                    : isSnapTarget ? 'hsl(35 92% 50% / 0.3)'
                     : 'hsl(var(--primary) / 0.15)',
                   transition: 'background-color 0.2s',
                 }}

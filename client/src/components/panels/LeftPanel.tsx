@@ -8,7 +8,7 @@ import { Search, ChevronLeft, ChevronRight, Building2, User, MapPin, Trash2, Plu
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import DataTable, { TableRowData } from '@/components/DataTable';
-import L from 'leaflet';
+import mapboxgl from 'mapbox-gl';
 import * as XLSX from 'xlsx';
 import { COUNTRIES, getCountryCentroid, normalizeCountryName } from '@/lib/countries';
 
@@ -690,16 +690,19 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         // Pan and zoom map to this country
         const country = countriesData.find(c => c.name === countryName);
         if (country && country.companies.length > 0) {
-          const map = (window as any).leafletMap;
+          const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
           if (map) {
             const validCoords = country.companies
               .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)
-              .map(c => [Number(c.lat), Number(c.lng)] as [number, number]);
+              .map(c => [Number(c.lng), Number(c.lat)] as [number, number]);
               
             if (validCoords.length > 0) {
               try {
-                const bounds = L.latLngBounds(validCoords);
-                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 8, animate: true });
+                const bounds = validCoords.reduce(
+                  (b, coord) => b.extend(coord as [number, number]),
+                  new mapboxgl.LngLatBounds(validCoords[0], validCoords[0])
+                );
+                map.fitBounds(bounds, { padding: 50, maxZoom: 8, animate: true });
               } catch (e) {
                 console.error('Error fitting bounds:', e);
               }
@@ -708,18 +711,20 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         }
       }
       
-      // If no countries are expanded, zoom out to fit all companies
       if (next.size === 0) {
-        const map = (window as any).leafletMap;
+        const map = (window as any).mapboxMap as mapboxgl.Map | undefined;
         if (map && companies.length > 0) {
           const validCoords = companies
             .filter(c => (c.lat !== 0 || c.lng !== 0) && c.lat !== undefined && c.lng !== undefined)
-            .map(c => [Number(c.lat), Number(c.lng)] as [number, number]);
+            .map(c => [Number(c.lng), Number(c.lat)] as [number, number]);
             
           if (validCoords.length > 0) {
             try {
-              const bounds = L.latLngBounds(validCoords);
-              map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true });
+              const bounds = validCoords.reduce(
+                (b, coord) => b.extend(coord as [number, number]),
+                new mapboxgl.LngLatBounds(validCoords[0], validCoords[0])
+              );
+              map.fitBounds(bounds, { padding: 50, maxZoom: 12, animate: true });
             } catch (e) {
               console.error('Error fitting bounds:', e);
             }

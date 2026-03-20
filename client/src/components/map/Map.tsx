@@ -1,15 +1,12 @@
-import { MapContainer, TileLayer, Marker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import { useAppStore, type Executive, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import { normalizeCountryName } from '@/lib/countries';
 import React, { useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from 'react';
-import 'leaflet/dist/leaflet.css';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import ExecutiveSatellites, { satelliteAnchors } from './ExecutiveSatellites';
-
-import L from 'leaflet';
 
 function useIsDarkMode() {
   return useSyncExternalStore(
@@ -22,29 +19,9 @@ function useIsDarkMode() {
   );
 }
 
-const DARK_TILES = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const LIGHT_TILES = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const DARK_STYLE = 'mapbox://styles/mapbox/dark-v11';
+const LIGHT_STYLE = 'mapbox://styles/mapbox/light-v11';
 
-function ReactiveTileLayer() {
-  const isDark = useIsDarkMode();
-  const map = useMap();
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
-
-  useEffect(() => {
-    if (tileLayerRef.current) {
-      map.removeLayer(tileLayerRef.current);
-    }
-    const layer = L.tileLayer(isDark ? DARK_TILES : LIGHT_TILES, { attribution: TILE_ATTRIBUTION });
-    layer.addTo(map);
-    tileLayerRef.current = layer;
-    return () => { if (tileLayerRef.current) map.removeLayer(tileLayerRef.current); };
-  }, [isDark, map]);
-
-  return null;
-}
-
-// Helper to check if coordinates are valid
 function isValidCoordinate(lat: number, lng: number): boolean {
   return (
     !isNaN(lat) && !isNaN(lng) &&
@@ -55,131 +32,22 @@ function isValidCoordinate(lat: number, lng: number): boolean {
   );
 }
 
-// Global flag to track marker dragging (shared between MapUpdater and Markers)
 let isMarkerDragging = false;
 
-// Component to handle map bounds updates
-function MapUpdater() {
-  const companies = useAppStore(state => state.companies);
-  const hiddenCountries = useAppStore(state => state.hiddenCountries);
-  const hiddenCompanies = useAppStore(state => state.hiddenCompanies);
-  const map = useMap();
-  const prevCountRef = useRef(0);
-  const lastFitTimeRef = useRef(0);
-  const isUserInteractingRef = useRef(false);
-  const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    // Expose map to window for panel access
-    (window as any).leafletMap = map;
-    
-    // Track user interactions to pause auto-fit
-    const handleInteractionStart = () => {
-      isUserInteractingRef.current = true;
-      if (interactionTimeoutRef.current) {
-        clearTimeout(interactionTimeoutRef.current);
-      }
-    };
-    
-    const handleInteractionEnd = () => {
-      // Resume auto-fit after 2 seconds of no interaction
-      interactionTimeoutRef.current = setTimeout(() => {
-        isUserInteractingRef.current = false;
-      }, 2000);
-    };
-    
-    map.on('dragstart', handleInteractionStart);
-    map.on('zoomstart', handleInteractionStart);
-    map.on('dragend', handleInteractionEnd);
-    map.on('zoomend', handleInteractionEnd);
-    
-    return () => {
-      map.off('dragstart', handleInteractionStart);
-      map.off('zoomstart', handleInteractionStart);
-      map.off('dragend', handleInteractionEnd);
-      map.off('zoomend', handleInteractionEnd);
-      if (interactionTimeoutRef.current) {
-        clearTimeout(interactionTimeoutRef.current);
-      }
-    };
-  }, [map]);
-
-  useEffect(() => {
-    // Filter companies by visibility and valid coordinates
-    const visibleCompanies = companies.filter(c => {
-      if (!isValidCoordinate(c.lat, c.lng)) return false;
-      if (hiddenCountries.has(c.hq_country)) return false;
-      if (hiddenCompanies.has(c.id)) return false;
-      return true;
-    });
-    const now = Date.now();
-    
-    // Skip auto-fit if user is actively interacting with the map or dragging a marker
-    if (isUserInteractingRef.current || isMarkerDragging) {
-      prevCountRef.current = visibleCompanies.length;
-      return;
-    }
-    
-    // Auto-fit bounds when:
-    // 1. New companies are added (streaming search)
-    // 2. At least 500ms since last fit (debounce)
-    // 3. Company count changed
-    if (visibleCompanies.length > 0 && visibleCompanies.length !== prevCountRef.current) {
-      const timeSinceLastFit = now - lastFitTimeRef.current;
-      
-      // For the first company, fit immediately. For subsequent, debounce to 500ms
-      if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
-        // Add slight padding to bounds to account for potential scatter offsets
-        const bounds = L.latLngBounds(visibleCompanies.map(c => [c.lat, c.lng]));
-        bounds.pad(0.1); // 10% padding to ensure scattered markers stay visible
-        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, animate: true, duration: 0.5 });
-        lastFitTimeRef.current = now;
-      }
-      
-      prevCountRef.current = visibleCompanies.length;
-    }
-    
-    // Reset when companies are cleared (new search starting)
-    if (visibleCompanies.length === 0) {
-      prevCountRef.current = 0;
-    }
-  }, [companies, hiddenCountries, hiddenCompanies, map]);
-
-  return null;
-}
-
-function MapClickHandler({ onDoubleClick }: { onDoubleClick: (lat: number, lng: number) => void }) {
-  useMapEvents({
-    dblclick(e) {
-      e.originalEvent.preventDefault();
-      onDoubleClick(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return null;
-}
-
-function ZoomDismissGuard({ onCancelDismiss }: { onCancelDismiss: () => void }) {
-  useMapEvents({
-    zoomstart() {
-      onCancelDismiss();
-    },
-  });
-  return null;
-}
-
 const EXECUTIVE_COLORS = [
-  'hsl(35 92% 50%)', // Gold (Default Accent)
-  'hsl(222 47% 11%)', // Navy (Default Primary)
-  'hsl(0 84% 60%)', // Red
-  'hsl(142 71% 45%)', // Green
-  'hsl(262 83% 58%)', // Purple
-  'hsl(316 73% 52%)', // Pink
-  'hsl(25 95% 53%)', // Orange
-  'hsl(199 89% 48%)', // Blue
+  'hsl(35 92% 50%)',
+  'hsl(222 47% 11%)',
+  'hsl(0 84% 60%)',
+  'hsl(142 71% 45%)',
+  'hsl(262 83% 58%)',
+  'hsl(316 73% 52%)',
+  'hsl(25 95% 53%)',
+  'hsl(199 89% 48%)',
 ];
 
 export default function MapComponent() {
   const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites, mapPositions, updateMapPosition } = useAppStore();
+  const isDark = useIsDarkMode();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
   const [addCompanyDialog, setAddCompanyDialog] = useState<{ lat: number, lng: number } | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -193,6 +61,116 @@ export default function MapComponent() {
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draggingCompanyRef = useRef<string | null>(null);
+
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const prevCountRef = useRef(0);
+  const lastFitTimeRef = useRef(0);
+  const isUserInteractingRef = useRef(false);
+  const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapboxToken, setMapboxToken] = useState<string>('');
+  const styleLoadedRef = useRef(false);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.mapboxToken) setMapboxToken(data.mapboxToken);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!mapContainerRef.current || !mapboxToken) return;
+
+    mapboxgl.accessToken = mapboxToken;
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: isDark ? DARK_STYLE : LIGHT_STYLE,
+      center: [0, 20],
+      zoom: 1.5,
+      projection: 'globe',
+      doubleClickZoom: false,
+      attributionControl: false,
+    });
+
+    map.on('style.load', () => {
+      styleLoadedRef.current = true;
+      map.setFog({
+        color: isDark ? 'rgb(10, 10, 20)' : 'rgb(220, 230, 240)',
+        'high-color': isDark ? 'rgb(20, 20, 40)' : 'rgb(180, 200, 220)',
+        'horizon-blend': 0.02,
+        'space-color': isDark ? 'rgb(5, 5, 15)' : 'rgb(200, 210, 225)',
+        'star-intensity': isDark ? 0.6 : 0.0,
+      });
+    });
+
+    mapRef.current = map;
+    (window as any).mapboxMap = map;
+
+    map.on('load', () => {
+      setMapReady(true);
+    });
+
+    const handleInteractionStart = () => {
+      isUserInteractingRef.current = true;
+      if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
+    };
+    const handleInteractionEnd = () => {
+      interactionTimeoutRef.current = setTimeout(() => {
+        isUserInteractingRef.current = false;
+      }, 2000);
+    };
+
+    map.on('dragstart', handleInteractionStart);
+    map.on('zoomstart', handleInteractionStart);
+    map.on('dragend', handleInteractionEnd);
+    map.on('zoomend', handleInteractionEnd);
+
+    map.on('dblclick', (e) => {
+      e.preventDefault();
+      const { lng, lat } = e.lngLat;
+      handleMapDoubleClickRef.current(lat, lng);
+    });
+
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'mapbox-tooltip';
+    tooltipEl.style.cssText = 'position:absolute;pointer-events:none;z-index:999;display:none;background:hsl(var(--popover)/0.95);backdrop-filter:blur(8px);border:1px solid hsl(var(--border));border-radius:6px;padding:4px 8px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.15);transform:translate(-50%,-100%) translateY(-8px);white-space:nowrap;';
+    mapContainerRef.current.appendChild(tooltipEl);
+    tooltipRef.current = tooltipEl;
+
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (hoverDismissTimerRef.current) clearTimeout(hoverDismissTimerRef.current);
+      if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current.clear();
+      tooltipEl.remove();
+      map.remove();
+      mapRef.current = null;
+      (window as any).mapboxMap = null;
+      setMapReady(false);
+      styleLoadedRef.current = false;
+    };
+  }, [mapboxToken]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleLoadedRef.current) return;
+    map.setStyle(isDark ? DARK_STYLE : LIGHT_STYLE);
+    map.once('style.load', () => {
+      map.setFog({
+        color: isDark ? 'rgb(10, 10, 20)' : 'rgb(220, 230, 240)',
+        'high-color': isDark ? 'rgb(20, 20, 40)' : 'rgb(180, 200, 220)',
+        'horizon-blend': 0.02,
+        'space-color': isDark ? 'rgb(5, 5, 15)' : 'rgb(200, 210, 225)',
+        'star-intensity': isDark ? 0.6 : 0.0,
+      });
+    });
+  }, [isDark]);
 
   const cancelHoverDismiss = useCallback(() => {
     if (hoverDismissTimerRef.current) {
@@ -222,12 +200,13 @@ export default function MapComponent() {
       .then(res => res.json())
       .then(data => {
         const country = data?.address?.country;
-        if (country) {
-          setNewMapCountry(country);
-        }
+        if (country) setNewMapCountry(country);
       })
       .catch(() => {});
   }, []);
+
+  const handleMapDoubleClickRef = useRef(handleMapDoubleClick);
+  handleMapDoubleClickRef.current = handleMapDoubleClick;
 
   const handleCreateCompanyOnMap = useCallback(async () => {
     if (!addCompanyDialog || !newCompanyName.trim()) return;
@@ -277,14 +256,13 @@ export default function MapComponent() {
     }
   }, [addCompanyDialog, newCompanyName, newMapCountry, newMapExecName, newMapExecTitle, addCompany, addExecutive, currentProject]);
 
-  // Filter companies based on revenue/employee range sliders, valid coordinates, and visibility
   const revenueMin = revenueFilterRange[0] * 50000000;
   const revenueMax = revenueFilterRange[1] * 50000000;
   const employeeMin = employeeFilterRange[0] * 100;
   const employeeMax = employeeFilterRange[1] * 100;
   const hasRevenueFilter = revenueFilterRange[0] > 0 || revenueFilterRange[1] < 100;
   const hasEmployeeFilter = employeeFilterRange[0] > 0 || employeeFilterRange[1] < 100;
-  
+
   const filteredCompanies = useMemo(() => companies.filter(c => {
     const revenue = c.revenue_usd || 0;
     const employees = c.employees || 0;
@@ -296,22 +274,19 @@ export default function MapComponent() {
     return true;
   }), [companies, hasRevenueFilter, revenueMin, revenueMax, hasEmployeeFilter, employeeMin, employeeMax, hiddenCountries, hiddenCompanies]);
 
-  const getRadius = (value: number | null | undefined) => {
+  const getRadius = useCallback((value: number | null | undefined) => {
     const neutralRadius = 20;
     const minRadius = 12;
     const maxRadius = 55;
-
     if (!value || value === 0) return neutralRadius;
-
     if (scalingMetric === 'revenue') {
       const logVal = Math.log10(Math.max(value, 1));
       const normalized = Math.max(0, Math.min(1, (logVal - 6) / (12 - 6)));
       return minRadius + (normalized * (maxRadius - minRadius));
     }
-
     const radius = 0.2 * Math.sqrt(value);
     return Math.max(minRadius, Math.min(maxRadius, radius));
-  };
+  }, [scalingMetric]);
 
   const handleColorSelect = (color: string) => {
     if (colorPickerTarget) {
@@ -320,259 +295,306 @@ export default function MapComponent() {
     }
   };
 
-  // Apply scatter offsets to prevent overlapping bubbles in the same location
   const scatteredCompanies = useMemo(() => {
     const locationGroups = new Map<string, typeof filteredCompanies>();
-    
-    // Group companies by rounded coordinates (same general location)
     filteredCompanies.forEach(company => {
-      // Round to 1 decimal place to detect nearby companies
       const key = `${Math.round(company.lat * 10) / 10},${Math.round(company.lng * 10) / 10}`;
-      if (!locationGroups.has(key)) {
-        locationGroups.set(key, []);
-      }
+      if (!locationGroups.has(key)) locationGroups.set(key, []);
       locationGroups.get(key)!.push(company);
     });
-    
-    // Apply scatter offset to groups with multiple companies
     const result: Array<typeof filteredCompanies[0] & { displayLat: number; displayLng: number }> = [];
     locationGroups.forEach((group) => {
       if (group.length === 1) {
         result.push({ ...group[0], displayLat: group[0].lat, displayLng: group[0].lng });
       } else {
-        // Scatter companies in a circle around their center
         const angleStep = (2 * Math.PI) / group.length;
-        const scatterRadius = 0.15 + (group.length * 0.03); // Small offset in degrees (max ~0.5 degrees)
+        const scatterRadius = 0.15 + (group.length * 0.03);
         group.forEach((company, index) => {
           const angle = index * angleStep;
-          const offsetLat = Math.sin(angle) * scatterRadius;
-          const offsetLng = Math.cos(angle) * scatterRadius;
           result.push({
             ...company,
-            displayLat: company.lat + offsetLat,
-            displayLng: company.lng + offsetLng
+            displayLat: company.lat + Math.sin(angle) * scatterRadius,
+            displayLng: company.lng + Math.cos(angle) * scatterRadius
           });
         });
       }
     });
-    
     return result;
   }, [filteredCompanies]);
 
+  const updateCompanyRef = useRef(updateCompany);
+  updateCompanyRef.current = updateCompany;
+  const updateMapPositionRef = useRef(updateMapPosition);
+  updateMapPositionRef.current = updateMapPosition;
+  const selectCompanyRef = useRef(selectCompany);
+  selectCompanyRef.current = selectCompany;
+  const cancelHoverDismissRef = useRef(cancelHoverDismiss);
+  cancelHoverDismissRef.current = cancelHoverDismiss;
+  const startHoverDismissRef = useRef(startHoverDismiss);
+  startHoverDismissRef.current = startHoverDismiss;
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const visibleCompanies = scatteredCompanies;
+    const now = Date.now();
+
+    if (isUserInteractingRef.current || isMarkerDragging) {
+      prevCountRef.current = visibleCompanies.length;
+      return;
+    }
+
+    if (visibleCompanies.length > 0 && visibleCompanies.length !== prevCountRef.current) {
+      const timeSinceLastFit = now - lastFitTimeRef.current;
+      if (prevCountRef.current === 0 || timeSinceLastFit > 500) {
+        let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+        visibleCompanies.forEach(c => {
+          if (c.displayLng < minLng) minLng = c.displayLng;
+          if (c.displayLat < minLat) minLat = c.displayLat;
+          if (c.displayLng > maxLng) maxLng = c.displayLng;
+          if (c.displayLat > maxLat) maxLat = c.displayLat;
+        });
+        const pad = 0.1;
+        const dLng = (maxLng - minLng) * pad;
+        const dLat = (maxLat - minLat) * pad;
+        map.fitBounds(
+          [[minLng - dLng, minLat - dLat], [maxLng + dLng, maxLat + dLat]],
+          { padding: 50, maxZoom: 12, animate: true, duration: 500 }
+        );
+        lastFitTimeRef.current = now;
+      }
+      prevCountRef.current = visibleCompanies.length;
+    }
+
+    if (visibleCompanies.length === 0) prevCountRef.current = 0;
+  }, [scatteredCompanies, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const currentIds = new Set(scatteredCompanies.map(c => c.id));
+    markersRef.current.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
+    });
+
+    scatteredCompanies.forEach((company) => {
+      const isSelected = selectedCompanyId === company.id;
+      const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+      const radius = getRadius(value);
+      const diameter = radius * 2;
+      const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
+      const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
+      const fillColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
+      const companyOffset = mapPositions[`company:${company.id}`];
+      const markerLat = company.displayLat + (companyOffset?.dLat || 0);
+      const markerLng = company.displayLng + (companyOffset?.dLng || 0);
+
+      let marker = markersRef.current.get(company.id);
+      let el: HTMLDivElement;
+
+      if (marker) {
+        el = marker.getElement() as HTMLDivElement;
+        marker.setLngLat([markerLng, markerLat]);
+      } else {
+        el = document.createElement('div');
+        el.className = 'mapbox-company-marker';
+        el.style.cursor = 'grab';
+        marker = new mapboxgl.Marker({ element: el, draggable: true, anchor: 'center' })
+          .setLngLat([markerLng, markerLat])
+          .addTo(map);
+        markersRef.current.set(company.id, marker);
+
+        marker.on('dragstart', () => {
+          isMarkerDragging = true;
+          draggingCompanyRef.current = company.id;
+          if (hoverTimerRef.current) {
+            clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+          }
+        });
+
+        marker.on('drag', () => {
+          const lngLat = marker!.getLngLat();
+          const anchor = satelliteAnchors.get(company.id);
+          if (anchor) anchor.setLngLat([lngLat.lng, lngLat.lat]);
+        });
+
+        marker.on('dragend', () => {
+          draggingCompanyRef.current = null;
+          isMarkerDragging = false;
+          const lngLat = marker!.getLngLat();
+          const newLat = lngLat.lat;
+          const newLng = lngLat.lng;
+          updateCompanyRef.current(company.id, { lat: newLat, lng: newLng });
+          updateMapPositionRef.current(`company:${company.id}`, { dLat: 0, dLng: 0 });
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&zoom=3&addressdetails=1`, {
+            headers: { 'Accept-Language': 'en' }
+          })
+            .then(res => res.json())
+            .then(data => {
+              const rawCountry = data?.address?.country || company.hq_country;
+              const newCountry = normalizeCountryName(rawCountry) || rawCountry;
+              if (newCountry !== company.hq_country) {
+                updateCompanyRef.current(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
+              }
+            })
+            .catch(() => {});
+        });
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!isMarkerDragging) selectCompanyRef.current(company.id);
+        });
+
+        el.addEventListener('mouseenter', () => {
+          if (isMarkerDragging) return;
+          cancelHoverDismissRef.current();
+          if (hoveredCompanyIdRef.current === company.id) return;
+          if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+          hoverTimerRef.current = setTimeout(() => setHoveredCompanyId(company.id), 300);
+          const tooltipEl = tooltipRef.current;
+          if (tooltipEl) {
+            const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+            const metricStr = scalingMetric === 'revenue'
+              ? `$${(company.revenue_usd / 1000000).toFixed(0)}M`
+              : `${company.employees.toLocaleString()} Empl.`;
+            tooltipEl.innerHTML = `<div style="font-weight:600;color:hsl(var(--foreground))">${company.name}</div><div style="color:hsl(var(--muted-foreground))">${metricStr}</div>`;
+            tooltipEl.style.display = 'block';
+          }
+        });
+
+        el.addEventListener('mousemove', (e) => {
+          const tooltipEl = tooltipRef.current;
+          if (tooltipEl && tooltipEl.style.display === 'block') {
+            const container = mapContainerRef.current;
+            if (container) {
+              const rect = container.getBoundingClientRect();
+              tooltipEl.style.left = (e.clientX - rect.left) + 'px';
+              tooltipEl.style.top = (e.clientY - rect.top) + 'px';
+            }
+          }
+        });
+
+        el.addEventListener('mouseleave', () => {
+          if (hoverTimerRef.current) {
+            clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+          }
+          if (hoveredCompanyIdRef.current === company.id) startHoverDismissRef.current();
+          const tooltipEl = tooltipRef.current;
+          if (tooltipEl) tooltipEl.style.display = 'none';
+        });
+
+        el.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const container = mapContainerRef.current;
+          if (container) {
+            const rect = container.getBoundingClientRect();
+            setColorPickerTarget({
+              id: company.id,
+              x: e.clientX,
+              y: e.clientY,
+            });
+          }
+        });
+      }
+
+      const bubble = el.querySelector('.bubble-inner') as HTMLDivElement || (() => {
+        const d = document.createElement('div');
+        d.className = 'bubble-inner';
+        el.appendChild(d);
+        return d;
+      })();
+      bubble.style.cssText = `
+        position:relative;
+        width:${diameter}px;
+        height:${diameter}px;
+        background-color:${fillColor};
+        opacity:${isSelected ? 0.9 : 0.5};
+        border-radius:50%;
+        transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
+        cursor:grab;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      `;
+
+      let enrichDot = el.querySelector('.enrich-dot') as HTMLDivElement | null;
+      if (hasEnrichedExecs) {
+        if (!enrichDot) {
+          enrichDot = document.createElement('div');
+          enrichDot.className = 'enrich-dot';
+          bubble.appendChild(enrichDot);
+        }
+        enrichDot.style.cssText = 'position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#10b981;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);';
+      } else if (enrichDot) {
+        enrichDot.remove();
+      }
+    });
+  }, [scatteredCompanies, selectedCompanyId, scalingMetric, executives, mapPositions, mapReady, getRadius]);
 
   return (
     <div className="h-full w-full bg-background relative z-0">
-      <MapContainer 
-        center={[20, 0]} 
-        zoom={2} 
-        style={{ height: '100%', width: '100%' }}
-        className="outline-none"
-        zoomControl={false}
-        attributionControl={false}
-        doubleClickZoom={false}
-        minZoom={2}
-        worldCopyJump={true}
-      >
-        <ReactiveTileLayer />
-        <MapClickHandler onDoubleClick={handleMapDoubleClick} />
-        <ZoomDismissGuard onCancelDismiss={cancelHoverDismiss} />
-        
-        <MapUpdater />
+      <div ref={mapContainerRef} style={{ height: '100%', width: '100%' }} />
 
-        {scatteredCompanies.map((company) => {
-          const isSelected = selectedCompanyId === company.id;
-          const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
-          const radius = getRadius(value);
-          const diameter = radius * 2;
-          
-          // Check if company has any enriched executives
-          const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
-          const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
-          
-          const fillColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
-          
-          // Subtle enrichment indicator - emerald ring for enriched companies
-          const enrichedRing = hasEnrichedExecs ? 
-            `<div style="position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; background: #10b981; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>` : '';
+      {mapReady && mapRef.current && (
+        <>
+          {showAllSatellites && scatteredCompanies.map((company) => {
+            const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
+            if (companyExecs.length === 0) return null;
+            const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+            const r = getRadius(val);
+            const cOffset = mapPositions[`company:${company.id}`];
+            return (
+              <ExecutiveSatellites
+                key={`sat-${company.id}`}
+                map={mapRef.current!}
+                companyId={company.id}
+                companyLat={company.displayLat + (cOffset?.dLat || 0)}
+                companyLng={company.displayLng + (cOffset?.dLng || 0)}
+                companyRadius={r}
+                executives={companyExecs}
+                persistent
+                onSelectExecutive={(execId, cId) => selectExecutive(execId, cId)}
+                onDismiss={() => {}}
+              />
+            );
+          })}
 
-          // Create custom icon for draggable marker
-          const customIcon = L.divIcon({
-            className: 'custom-bubble-icon',
-            html: `
-              <div style="
-                position: relative;
-                width: ${diameter}px;
-                height: ${diameter}px;
-                background-color: ${fillColor};
-                opacity: ${isSelected ? 0.9 : 0.5};
-                border-radius: 50%;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                cursor: grab;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-              ">${enrichedRing}</div>
-            `,
-            iconSize: [diameter, diameter],
-            iconAnchor: [radius, radius], // Center the icon
-          });
-
-          const companyOffset = mapPositions[`company:${company.id}`];
-          const markerLat = company.displayLat + (companyOffset?.dLat || 0);
-          const markerLng = company.displayLng + (companyOffset?.dLng || 0);
-
-          return (
-            <Marker
-              key={company.id}
-              position={[markerLat, markerLng]}
-              icon={customIcon}
-              draggable={true}
-              zIndexOffset={1000}
-              eventHandlers={{
-                click: () => {
-                  if (!isMarkerDragging) selectCompany(company.id);
-                },
-                mouseover: () => {
-                  if (isMarkerDragging) return;
-                  cancelHoverDismiss();
-                  if (hoveredCompanyIdRef.current === company.id) return;
-                  if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-                  hoverTimerRef.current = setTimeout(() => {
-                    setHoveredCompanyId(company.id);
-                  }, 300);
-                },
-                mouseout: () => {
-                  if (hoverTimerRef.current) {
-                    clearTimeout(hoverTimerRef.current);
-                    hoverTimerRef.current = null;
-                  }
-                  if (hoveredCompanyIdRef.current === company.id) {
-                    startHoverDismiss();
-                  }
-                },
-                dragstart: () => {
-                  isMarkerDragging = true;
-                  draggingCompanyRef.current = company.id;
-                  if (hoverTimerRef.current) {
-                    clearTimeout(hoverTimerRef.current);
-                    hoverTimerRef.current = null;
-                  }
-                },
-                drag: (e) => {
-                  const pos = e.target.getLatLng();
-                  const anchor = satelliteAnchors.get(company.id);
-                  if (anchor) {
-                    anchor.setLatLng([pos.lat, pos.lng]);
-                  }
-                },
-                dragend: (e) => {
-                  const marker = e.target;
-                  const position = marker.getLatLng();
-                  draggingCompanyRef.current = null;
-                  isMarkerDragging = false;
-                  const newLat = position.lat;
-                  const newLng = position.lng;
-                  // Optimistically commit lat/lng to store immediately so the marker
-                  // stays at the drop position — prevents snap-back on re-render.
-                  // Both calls are batched by React 18 into a single render pass.
-                  updateCompany(company.id, { lat: newLat, lng: newLng });
-                  updateMapPosition(`company:${company.id}`, { dLat: 0, dLng: 0 });
-                  // Reverse geocode country in the background (does not affect position)
-                  fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&zoom=3&addressdetails=1`, {
-                    headers: { 'Accept-Language': 'en' }
-                  })
-                    .then(res => res.json())
-                    .then(data => {
-                      const rawCountry = data?.address?.country || company.hq_country;
-                      const newCountry = normalizeCountryName(rawCountry) || rawCountry;
-                      if (newCountry !== company.hq_country) {
-                        // Include lat/lng so persistCompanyUpdate doesn't
-                        // re-geocode the position to the country centroid
-                        updateCompany(company.id, { lat: newLat, lng: newLng, hq_country: newCountry });
-                      }
-                    })
-                    .catch(() => {});
-                },
-                dblclick: (e) => {
-                  e.originalEvent.stopPropagation();
-                  e.originalEvent.preventDefault();
-                  
-                  const mapContainer = e.target._map.getContainer();
-                  const point = e.containerPoint;
-                  const rect = mapContainer.getBoundingClientRect();
-                  
-                  setColorPickerTarget({
-                    id: company.id,
-                    x: rect.left + point.x,
-                    y: rect.top + point.y
-                  });
-                }
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -radius]} opacity={1}>
-                <div className="font-sans text-xs font-semibold">
-                  {company.name}
-                </div>
-                <div className="font-sans text-xs text-muted-foreground">
-                  {scalingMetric === 'revenue' 
-                    ? `$${(company.revenue_usd / 1000000).toFixed(0)}M`
-                    : `${company.employees.toLocaleString()} Empl.`
-                  }
-                </div>
-              </Tooltip>
-            </Marker>
-          );
-        })}
-
-        {showAllSatellites && scatteredCompanies.map((company) => {
-          const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
-          if (companyExecs.length === 0) return null;
-          const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
-          const r = getRadius(val);
-          const cOffset = mapPositions[`company:${company.id}`];
-          return (
-            <ExecutiveSatellites
-              key={`sat-${company.id}`}
-              companyId={company.id}
-              companyLat={company.displayLat + (cOffset?.dLat || 0)}
-              companyLng={company.displayLng + (cOffset?.dLng || 0)}
-              companyRadius={r}
-              executives={companyExecs}
-              persistent
-              onSelectExecutive={(execId, cId) => {
-                selectExecutive(execId, cId);
-              }}
-              onDismiss={() => {}}
-            />
-          );
-        })}
-
-        {!showAllSatellites && hoveredCompanyId && (() => {
-          const hovered = scatteredCompanies.find(c => c.id === hoveredCompanyId);
-          if (!hovered) return null;
-          const hoveredExecs = executives.filter((e: Executive) => e.company_id === hoveredCompanyId);
-          if (hoveredExecs.length === 0) return null;
-          const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
-          const hoveredRadius = getRadius(hoveredValue);
-          const hOffset = mapPositions[`company:${hoveredCompanyId}`];
-          return (
-            <ExecutiveSatellites
-              companyId={hoveredCompanyId}
-              companyLat={hovered.displayLat + (hOffset?.dLat || 0)}
-              companyLng={hovered.displayLng + (hOffset?.dLng || 0)}
-              companyRadius={hoveredRadius}
-              executives={hoveredExecs}
-              onSelectExecutive={(execId, companyId) => {
-                setHoveredCompanyId(null);
-                selectExecutive(execId, companyId);
-              }}
-              onDismiss={() => setHoveredCompanyId(null)}
-              onPillEnter={cancelHoverDismiss}
-              onPillLeave={startHoverDismiss}
-            />
-          );
-        })()}
-      </MapContainer>
+          {!showAllSatellites && hoveredCompanyId && (() => {
+            const hovered = scatteredCompanies.find(c => c.id === hoveredCompanyId);
+            if (!hovered) return null;
+            const hoveredExecs = executives.filter((e: Executive) => e.company_id === hoveredCompanyId);
+            if (hoveredExecs.length === 0) return null;
+            const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
+            const hoveredRadius = getRadius(hoveredValue);
+            const hOffset = mapPositions[`company:${hoveredCompanyId}`];
+            return (
+              <ExecutiveSatellites
+                companyId={hoveredCompanyId}
+                map={mapRef.current!}
+                companyLat={hovered.displayLat + (hOffset?.dLat || 0)}
+                companyLng={hovered.displayLng + (hOffset?.dLng || 0)}
+                companyRadius={hoveredRadius}
+                executives={hoveredExecs}
+                onSelectExecutive={(execId, companyId) => {
+                  setHoveredCompanyId(null);
+                  selectExecutive(execId, companyId);
+                }}
+                onDismiss={() => setHoveredCompanyId(null)}
+                onPillEnter={cancelHoverDismiss}
+                onPillLeave={startHoverDismiss}
+              />
+            );
+          })()}
+        </>
+      )}
 
       {addCompanyDialog && (
         <div
@@ -587,9 +609,7 @@ export default function MapComponent() {
               placeholder="Company name..."
               value={newCompanyName}
               onChange={e => setNewCompanyName(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Escape') setAddCompanyDialog(null);
-              }}
+              onKeyDown={e => { if (e.key === 'Escape') setAddCompanyDialog(null); }}
               data-testid="input-new-company-map"
             />
             <Input
@@ -620,26 +640,17 @@ export default function MapComponent() {
               />
             </div>
             <div className="flex gap-2 justify-end">
-              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddCompanyDialog(null)}>
-                Cancel
-              </Button>
-              <Button size="sm" className="h-7 text-xs" onClick={handleCreateCompanyOnMap} disabled={!newCompanyName.trim()} data-testid="button-confirm-add-company-map">
-                Add
-              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddCompanyDialog(null)}>Cancel</Button>
+              <Button size="sm" className="h-7 text-xs" onClick={handleCreateCompanyOnMap} disabled={!newCompanyName.trim()} data-testid="button-confirm-add-company-map">Add</Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Color Picker Overlay */}
       {colorPickerTarget && (
-        <div 
+        <div
           className="fixed z-[500] bg-background/95 backdrop-blur border border-border p-2 rounded shadow-xl flex gap-1 flex-wrap w-32 animate-in fade-in zoom-in-95 duration-200"
-          style={{ 
-            left: colorPickerTarget.x, 
-            top: colorPickerTarget.y,
-            transform: 'translate(-50%, -100%) translateY(-10px)' 
-          }}
+          style={{ left: colorPickerTarget.x, top: colorPickerTarget.y, transform: 'translate(-50%, -100%) translateY(-10px)' }}
         >
           {EXECUTIVE_COLORS.map((color) => (
             <button
@@ -650,9 +661,9 @@ export default function MapComponent() {
               title={color}
             />
           ))}
-          <button 
-             onClick={() => setColorPickerTarget(null)}
-             className="w-full text-[10px] text-muted-foreground hover:text-foreground mt-1 text-center"
+          <button
+            onClick={() => setColorPickerTarget(null)}
+            className="w-full text-[10px] text-muted-foreground hover:text-foreground mt-1 text-center"
           >
             Cancel
           </button>

@@ -618,7 +618,9 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         }
       }
 
-      toast.success(`Imported ${result.imported} executives`);
+      const parts = [`Imported ${result.imported} executives`];
+      if (result.skipped > 0) parts.push(`${result.skipped} duplicates skipped`);
+      toast.success(parts.join(', '));
       setShowImportModal(false);
       setImportText('');
       setImportPreview(null);

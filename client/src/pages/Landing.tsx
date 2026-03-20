@@ -377,7 +377,10 @@ export default function Landing() {
       });
 
       loadFromAPI(result.results || [], {}, null, {});
-      toast.success(`Imported ${result.recordsImported} records across ${result.companiesCreated} companies. Enrichment is running in the background.`);
+      const importParts = [`Imported ${result.recordsImported} records across ${result.companiesCreated} companies`];
+      if (result.skipped > 0) importParts.push(`${result.skipped} duplicates skipped`);
+      importParts.push('Enrichment is running in the background.');
+      toast.success(importParts.join('. '));
       setLocation('/dashboard');
     } catch (error: any) {
       toast.dismiss('import');

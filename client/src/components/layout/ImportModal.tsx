@@ -322,7 +322,9 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
         }
       }
 
-      toast.success(`Imported ${result.imported} executives`);
+      const parts = [`Imported ${result.imported} executives`];
+      if (result.skipped > 0) parts.push(`${result.skipped} duplicates skipped`);
+      toast.success(parts.join(', '));
       onClose();
     } catch {
       toast.error('Import failed');

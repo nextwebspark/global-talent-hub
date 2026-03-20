@@ -61,6 +61,7 @@ export interface IStorage {
   // Layer-aware methods with ownership enforcement
   createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive>;
   createExecutiveManual(executive: InsertExecutive): Promise<Executive>;
+  findExecutiveByNameAndCompany(name: string, companyId: number): Promise<Executive | undefined>;
   enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>, metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }>;
   createExecutiveFromClockwork(executive: InsertExecutive, metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }): Promise<{ executive: Executive; alreadyExists: boolean }>;
   checkExecutiveClockworkEnrichment(executiveId: number, clockworkId: string): Promise<boolean>;
@@ -350,7 +351,8 @@ export class DatabaseStorage implements IStorage {
 
     // Only update fields that are currently null or empty
     const fieldsToCheck: (keyof InsertExecutive)[] = [
-      'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl', 'gender', 'ethnicity'
+      'title', 'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl',
+      'gender', 'ethnicity', 'notes', 'remunerationNotes', 'availability', 'level'
     ];
 
     for (const field of fieldsToCheck) {
@@ -469,6 +471,20 @@ export class DatabaseStorage implements IStorage {
       source: 'manual'
     }).returning();
     return newExecutive;
+  }
+
+  async findExecutiveByNameAndCompany(name: string, companyId: number): Promise<Executive | undefined> {
+    const trimmedName = name.trim();
+    if (!trimmedName) return undefined;
+    const [existing] = await db
+      .select()
+      .from(executives)
+      .where(and(
+        eq(executives.companyId, companyId),
+        sql`lower(${executives.name}) = lower(${trimmedName})`
+      ))
+      .limit(1);
+    return existing || undefined;
   }
 
   async updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive> {

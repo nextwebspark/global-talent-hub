@@ -388,6 +388,7 @@ export async function registerRoutes(
       existingCompanies.forEach(c => companyMap.set(c.name.toLowerCase(), c.id));
 
       let imported = 0;
+      let skipped = 0;
       const errors: string[] = [];
 
       const safeStr = (raw: any): string | null => {
@@ -491,23 +492,47 @@ export async function registerRoutes(
           }
 
           if (companyId) {
-            const exec = await storage.createExecutiveManual({
-              companyId,
-              name: name || 'Unknown',
-              title,
-              email,
-              phone,
-              linkedin,
-              notes,
-              gender,
-              ethnicity,
-              remunerationNotes,
-              availability,
-              level,
-              customFields: Object.keys(customFields).length > 0 ? customFields : null,
-              confidence: 5
-            });
-            imported++;
+            const execName = name || 'Unknown';
+            const existingExec = execName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(execName, companyId) : undefined;
+
+            let exec;
+            if (existingExec) {
+              skipped++;
+              console.log(`[BulkImport] Duplicate executive "${execName}" at company ${companyId} — merging empty fields`);
+              const mergeData: Partial<typeof existingExec> = {};
+              if (title && title !== 'Executive') mergeData.title = title;
+              if (email) mergeData.email = email;
+              if (phone) mergeData.phone = phone;
+              if (linkedin) mergeData.linkedin = linkedin;
+              if (notes) mergeData.notes = notes;
+              if (gender) mergeData.gender = gender;
+              if (ethnicity) mergeData.ethnicity = ethnicity;
+              if (remunerationNotes) mergeData.remunerationNotes = remunerationNotes;
+              if (availability) mergeData.availability = availability;
+              if (level) mergeData.level = level;
+              if (Object.keys(mergeData).length > 0) {
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData as any, { source: 'import', confidence: 5 });
+              }
+              exec = existingExec;
+            } else {
+              exec = await storage.createExecutiveManual({
+                companyId,
+                name: execName,
+                title,
+                email,
+                phone,
+                linkedin,
+                notes,
+                gender,
+                ethnicity,
+                remunerationNotes,
+                availability,
+                level,
+                customFields: Object.keys(customFields).length > 0 ? customFields : null,
+                confidence: 5
+              });
+              imported++;
+            }
 
             if (remunerationNotes && remunerationNotes.trim().length >= 5 && exec) {
               try {
@@ -540,6 +565,7 @@ export async function registerRoutes(
 
       res.json({ 
         imported, 
+        skipped,
         total: records.length,
         errors: errors.length > 0 ? errors.slice(0, 5) : undefined 
       });
@@ -2038,6 +2064,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       const companyMap = new Map<string, number>();
       let imported = 0;
+      let skipped = 0;
       const errors: string[] = [];
 
       const safeStr = (raw: any): string | null => {
@@ -2118,20 +2145,43 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           }
 
           if (companyId && (execName || title !== 'Executive')) {
-            const exec = await storage.createExecutiveManual({
-              companyId,
-              name: execName || 'Unknown',
-              title,
-              email,
-              phone,
-              linkedin,
-              notes,
-              remunerationNotes,
-              availability,
-              level,
-              customFields: Object.keys(customFields).length > 0 ? customFields : null,
-              confidence: 5
-            });
+            const resolvedExecName = execName || 'Unknown';
+            const existingExec = resolvedExecName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(resolvedExecName, companyId) : undefined;
+
+            let exec;
+            if (existingExec) {
+              skipped++;
+              console.log(`[ImportProject] Duplicate executive "${resolvedExecName}" at company ${companyId} — merging empty fields`);
+              const mergeData: Partial<typeof existingExec> = {};
+              if (title && title !== 'Executive') mergeData.title = title;
+              if (email) mergeData.email = email;
+              if (phone) mergeData.phone = phone;
+              if (linkedin) mergeData.linkedin = linkedin;
+              if (notes) mergeData.notes = notes;
+              if (remunerationNotes) mergeData.remunerationNotes = remunerationNotes;
+              if (availability) mergeData.availability = availability;
+              if (level) mergeData.level = level;
+              if (Object.keys(mergeData).length > 0) {
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData as any, { source: 'import', confidence: 5 });
+              }
+              exec = existingExec;
+            } else {
+              exec = await storage.createExecutiveManual({
+                companyId,
+                name: resolvedExecName,
+                title,
+                email,
+                phone,
+                linkedin,
+                notes,
+                remunerationNotes,
+                availability,
+                level,
+                customFields: Object.keys(customFields).length > 0 ? customFields : null,
+                confidence: 5
+              });
+              imported++;
+            }
 
             if (remunerationNotes && remunerationNotes.trim().length >= 5 && exec) {
               try {
@@ -2155,7 +2205,6 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
               }
             }
           }
-          imported++;
         } catch (recordError) {
           console.error('[ImportProject] Error importing record:', recordError);
           errors.push(`Failed to import record`);
@@ -2166,7 +2215,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       const fullResults = await storage.getFullSearchResults(searchQueryId);
 
-      console.log(`[ImportProject] Created project "${name}" with ${companyMap.size} companies, ${imported} records`);
+      console.log(`[ImportProject] Created project "${name}" with ${companyMap.size} companies, ${imported} imported, ${skipped} duplicates skipped`);
 
       res.json({
         success: true,
@@ -2174,6 +2223,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         projectName: name,
         companiesCreated: companyMap.size,
         recordsImported: imported,
+        skipped,
         results: fullResults?.companies || [],
         errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
       });

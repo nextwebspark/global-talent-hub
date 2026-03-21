@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useAppStore } from '@/lib/store';
-import { useSearch } from '@/lib/api';
+import { useSearch, type SearchMode } from '@/lib/api';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Search, Loader2, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon, FolderOpen } from 'lucide-react';
+import { Search, Loader2, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon, FolderOpen, Zap, Telescope } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -224,6 +224,7 @@ export default function Landing() {
   const searchMutation = useSearch();
 
   const [mode, setMode] = useState<LandingMode>('search');
+  const [searchMode, setSearchMode] = useState<SearchMode>('quick');
   const [importTab, setImportTab] = useState<'file' | 'paste' | 'manual'>('file');
   const [isImporting, setIsImporting] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -250,8 +251,8 @@ export default function Landing() {
     loadFromAPI([], {}, null, {});
     
     try {
-      toast.loading('Searching...', { id: 'search' });
-      const result = await searchMutation.mutateAsync({ query: input });
+      toast.loading(searchMode === 'quick' ? 'Building results...' : 'Running in-depth search...', { id: 'search' });
+      const result = await searchMutation.mutateAsync({ query: input, mode: searchMode });
       toast.dismiss('search');
       
       if (!result.results || result.results.length === 0) {
@@ -577,6 +578,35 @@ export default function Landing() {
                   <Search className="h-3.5 w-3.5 text-primary shrink-0" />
                   <span className="text-xs font-medium text-primary">AI Search</span>
                 </div>
+                <div className="flex-1" />
+                <div className="flex items-center bg-muted/60 rounded-lg p-0.5" data-testid="search-mode-toggle">
+                  <button
+                    type="button"
+                    onClick={() => setSearchMode('quick')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      searchMode === 'quick'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    data-testid="search-mode-quick"
+                  >
+                    <Zap className="h-3 w-3" />
+                    Quick Build
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSearchMode('deep')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      searchMode === 'deep'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    data-testid="search-mode-deep"
+                  >
+                    <Telescope className="h-3 w-3" />
+                    In-Depth Search
+                  </button>
+                </div>
               </div>
               <div className="p-5 flex-1 flex flex-col">
                 <Textarea 
@@ -599,7 +629,9 @@ export default function Landing() {
                     ) : (
                       <Search className="h-4 w-4 mr-2" />
                     )}
-                    {searchMutation.isPending ? 'Searching...' : 'Search'}
+                    {searchMutation.isPending 
+                      ? (searchMode === 'quick' ? 'Building...' : 'Searching...') 
+                      : (searchMode === 'quick' ? 'Quick Build' : 'Search')}
                   </Button>
                 </div>
               </div>

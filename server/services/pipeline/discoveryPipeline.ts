@@ -603,11 +603,20 @@ export function createDiscoveryPipeline(): DiscoveryPipeline | null {
   return new DiscoveryPipeline({ searchProvider });
 }
 
+export type SearchMode = 'quick' | 'deep';
+
 export async function* runDiscoveryPipeline(
   query: string,
   limit: number,
-  searchQueryId: number
+  searchQueryId: number,
+  mode: SearchMode = 'quick'
 ): AsyncGenerator<any> {
+  if (mode === 'quick') {
+    const { runQuickBuildSearch } = await import('./quickBuildSearch');
+    yield* runQuickBuildSearch(query, limit, searchQueryId);
+    return;
+  }
+
   const pipeline = createDiscoveryPipeline();
   if (!pipeline) {
     yield { type: 'error', data: { message: 'Search not configured', code: 'NOT_CONFIGURED' } };

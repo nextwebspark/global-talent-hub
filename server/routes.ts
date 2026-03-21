@@ -1152,16 +1152,17 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     }
   });
 
-  // Discovery Layer: Search endpoint using Serper discovery pipeline
+  // Discovery Layer: Search endpoint using discovery pipeline
   app.post("/api/search", async (req, res) => {
     try {
-      const { query } = req.body;
+      const { query, mode: rawMode } = req.body;
+      const mode = (rawMode === 'deep' ? 'deep' : 'quick') as 'quick' | 'deep';
 
       if (!query) {
         return res.status(400).json({ error: "Search query is required" });
       }
 
-      console.log(`[Routes] Processing search: "${query}"`);
+      console.log(`[Routes] Processing search (${mode}): "${query}"`);
 
       // Step 1: Parse query to get limit and criteria (simple heuristic, no LLM)
       const { criteria, interpretation } = await parseSearchQuery(query);
@@ -1184,19 +1185,22 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         console.log(`[Routes] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
       }
 
-      // Step 5: Run Serper discovery pipeline
-      if (!process.env.SERPER_API_KEY) {
-        return res.status(503).json({ error: "Search is not configured. Please add SERPER_API_KEY to your secrets." });
+      // Step 5: Run discovery pipeline (quick = LLM-direct, deep = Serper web search)
+      if (mode === 'quick' && !process.env.OPENROUTER_API_KEY) {
+        return res.status(503).json({ error: "Quick Build requires an AI model key. Please add OPENROUTER_API_KEY to your secrets." });
+      }
+      if (mode === 'deep' && !process.env.SERPER_API_KEY) {
+        return res.status(503).json({ error: "In-Depth Search requires SERPER_API_KEY. Try Quick Build mode instead." });
       }
 
       const { runDiscoveryPipeline } = await import("./services/pipeline/discoveryPipeline");
 
-      console.log("[Routes] Running Serper discovery for:", query);
+      console.log(`[Routes] Running ${mode} discovery for:`, query);
       let companyCount = 0;
       let discoveryError: string | null = null;
       let discoveryErrorCode: string | null = null;
 
-      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id)) {
+      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id, mode)) {
         if (event.type === 'company') {
           companyCount++;
         } else if (event.type === 'error' && event.data?.message) {
@@ -1248,6 +1252,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
   // Streaming search endpoint using Server-Sent Events
   app.get("/api/search/stream", async (req, res) => {
     const query = req.query.query as string;
+    const mode = ((req.query.mode as string) === 'deep' ? 'deep' : 'quick') as 'quick' | 'deep';
 
     if (!query) {
       res.status(400).json({ error: "Search query is required" });
@@ -1304,22 +1309,28 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       // ---------------------------------------------------------------
       let companyCount = 0;
 
-      if (!process.env.SERPER_API_KEY) {
-        sendEvent('error', { message: 'Search is not configured. Please add SERPER_API_KEY to your secrets.' });
+      if (mode === 'quick' && !process.env.OPENROUTER_API_KEY) {
+        sendEvent('error', { message: 'Quick Build requires an AI model key. Please add OPENROUTER_API_KEY to your secrets.' });
         res.end();
         return;
       }
 
-      console.log(`[Routes SSE] Using Serper discovery pipeline for: "${query}"`);
+      if (mode === 'deep' && !process.env.SERPER_API_KEY) {
+        sendEvent('error', { message: 'In-Depth Search requires SERPER_API_KEY. Try Quick Build mode instead.' });
+        res.end();
+        return;
+      }
+
+      console.log(`[Routes SSE] Using ${mode} discovery pipeline for: "${query}"`);
 
       const { runDiscoveryPipeline } = await import("./services/pipeline/discoveryPipeline");
 
-      sendEvent('status', { message: 'Searching...', progress: 20 });
+      sendEvent('status', { message: mode === 'quick' ? 'Generating results...' : 'Searching...', progress: 20 });
 
-      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id)) {
+      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id, mode)) {
         if (event.type === 'company') {
           companyCount++;
-          sendEvent('company', event.data);
+          sendEvent('company', { company: event.data });
           sendEvent('status', { 
             message: `Found ${companyCount} companies...`, 
             progress: Math.min(20 + companyCount * 5, 90) 
@@ -1337,7 +1348,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
       sendEvent('complete', {
-        totalCompanies: companyCount,
+        total: companyCount,
         searchQueryId: searchQuery.id
       });
       // ---------------------------------------------------------------

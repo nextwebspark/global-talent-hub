@@ -162,14 +162,16 @@ export function useDeleteExecutive() {
   });
 }
 
+export type SearchMode = 'quick' | 'deep';
+
 export function useSearch() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ query }: { query: string }) => {
+    mutationFn: async ({ query, mode = 'quick' }: { query: string; mode?: SearchMode }) => {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, mode }),
       });
       if (!response.ok) {
         const error = await response.json();
@@ -203,10 +205,10 @@ export interface StreamingSearchCallbacks {
 
 export function streamingSearch(
   query: string,
-  callbacks: StreamingSearchCallbacks
+  callbacks: StreamingSearchCallbacks,
+  mode: SearchMode = 'quick'
 ): () => void {
-  // Use Serper-based pipeline for search
-  const params = new URLSearchParams({ query, research: 'true' });
+  const params = new URLSearchParams({ query, research: 'true', mode });
   const url = `/api/search/stream?${params.toString()}`;
   const eventSource = new EventSource(url);
   

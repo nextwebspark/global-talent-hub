@@ -53,8 +53,90 @@ async function callLLM(prompt: string): Promise<string | null> {
   return null;
 }
 
+interface ExecutiveIntent {
+  requested: boolean;
+  roleCode: string | null;
+  roleLabel: string | null;
+}
+
+function detectExecutiveIntent(query: string): ExecutiveIntent {
+  const q = query.toLowerCase();
+
+  const rolePatterns: Array<{ pattern: RegExp; roleCode: string; roleLabel: string }> = [
+    { pattern: /\b(?:ceo|chief executive officer|managing director)\b/, roleCode: 'CEO', roleLabel: 'CEO / Chief Executive Officer' },
+    { pattern: /\b(?:cfo|chief financial officer|finance director|head of finance|vp finance|financial controller)\b/, roleCode: 'CFO', roleLabel: 'CFO / Chief Financial Officer' },
+    { pattern: /\b(?:chro|chief (?:human resources|people|talent) officer|hr director|head of (?:hr|human resources|people|talent))\b/, roleCode: 'CHRO', roleLabel: 'CHRO / Chief Human Resources Officer' },
+    { pattern: /\b(?:cio|chief information officer|head of (?:it|information technology))\b/, roleCode: 'CIO', roleLabel: 'CIO / Chief Information Officer' },
+    { pattern: /\b(?:cto|chief technology officer|head of (?:technology|engineering)|vp engineering)\b/, roleCode: 'CTO', roleLabel: 'CTO / Chief Technology Officer' },
+    { pattern: /\b(?:coo|chief operating officer|head of operations)\b/, roleCode: 'OTHER', roleLabel: 'COO / Chief Operating Officer' },
+    { pattern: /\b(?:cmo|chief marketing officer|head of marketing|vp marketing)\b/, roleCode: 'OTHER', roleLabel: 'CMO / Chief Marketing Officer' },
+    { pattern: /\b(?:chairman|chairwoman|chairperson|board chair)\b/, roleCode: 'OTHER', roleLabel: 'Chairman / Chairperson' },
+    { pattern: /\b(?:founder|co-founder|cofounder)\b/, roleCode: 'OTHER', roleLabel: 'Founder / Co-Founder' },
+  ];
+
+  for (const { pattern, roleCode, roleLabel } of rolePatterns) {
+    if (pattern.test(q)) {
+      return { requested: true, roleCode, roleLabel };
+    }
+  }
+
+  const personSeekingVerbs = /\b(?:find|list|who is|who are|show|identify|get|name)\b/;
+  const executiveTerms = /\b(?:executive[s]?|c-suite|senior leader(?:s|ship)?|board member[s]?)\b/;
+  if (personSeekingVerbs.test(q) && executiveTerms.test(q)) {
+    return { requested: true, roleCode: null, roleLabel: null };
+  }
+
+  if (/\b(?:and their|with their|include(?:ing)?)\b/.test(q) && executiveTerms.test(q)) {
+    return { requested: true, roleCode: null, roleLabel: null };
+  }
+
+  return { requested: false, roleCode: null, roleLabel: null };
+}
+
 function buildQuickBuildPrompt(query: string, limit: number): string {
-  return `You are an expert business research analyst. A user needs structured data about companies and their executives.
+  const execIntent = detectExecutiveIntent(query);
+
+  let executiveInstructions: string;
+  let executiveJsonBlock: string;
+
+  if (!execIntent.requested) {
+    executiveInstructions = `- Do NOT include any executives. Set "executives" to an empty array [].
+- The user has not asked for executive/people data — only return company information.`;
+    executiveJsonBlock = `      "executives": []`;
+  } else if (execIntent.roleLabel) {
+    executiveInstructions = `- The user is specifically looking for: ${execIntent.roleLabel}
+- For each company, include ONLY the person who holds the ${execIntent.roleLabel} role or the closest equivalent.
+  - For example, if looking for CFO, acceptable titles include: Chief Financial Officer, Finance Director, Head of Finance, VP Finance, Group CFO, etc.
+  - Do NOT include other C-suite roles (no CEO if looking for CFO, etc.)
+- Include at most 1 executive per company — the best match for "${execIntent.roleLabel}"
+- If you cannot identify the ${execIntent.roleLabel} for a company, set "executives" to an empty array []`;
+    executiveJsonBlock = `      "executives": [
+        {
+          "name": "Full Name",
+          "title": "Actual Title (e.g. Chief Financial Officer)",
+          "role": "${execIntent.roleCode}",
+          "linkedinUrl": null,
+          "gender": "male",
+          "ethnicity": "Arab"
+        }
+      ]`;
+  } else {
+    executiveInstructions = `- The user wants executive/leadership data.
+- For each company, include the top 3-5 C-suite or senior leaders you are confident about.
+- Include LinkedIn URLs for executives only if you are confident they are correct.`;
+    executiveJsonBlock = `      "executives": [
+        {
+          "name": "Full Name",
+          "title": "Chief Executive Officer",
+          "role": "CEO",
+          "linkedinUrl": null,
+          "gender": "male",
+          "ethnicity": "Arab"
+        }
+      ]`;
+  }
+
+  return `You are an expert business research analyst. A user needs structured data about companies.
 
 USER QUERY: "${query}"
 
@@ -66,8 +148,7 @@ IMPORTANT GUIDELINES:
 - Provide employee counts where known
 - Provide the correct HQ country
 - Provide accurate latitude/longitude for the company headquarters
-- For executives, include the top 3-5 C-suite or senior leaders you are confident about
-- Include LinkedIn URLs for executives only if you are confident they are correct
+${executiveInstructions}
 - Classify the sector accurately
 - The "businessType" should describe their commercial role (e.g., "distributor", "manufacturer", "retailer", "operator", "conglomerate")
 
@@ -89,16 +170,7 @@ Return ONLY valid JSON in this exact format:
       "website": "https://example.com",
       "summary": "Brief 1-2 sentence description of the company and what they do",
       "confidence": 8,
-      "executives": [
-        {
-          "name": "Full Name",
-          "title": "Chief Executive Officer",
-          "role": "CEO",
-          "linkedinUrl": null,
-          "gender": "male",
-          "ethnicity": "Arab"
-        }
-      ]
+${executiveJsonBlock}
     }
   ]
 }

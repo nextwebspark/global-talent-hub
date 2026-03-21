@@ -467,8 +467,12 @@ export class DiscoveryPipeline {
       }
     }
 
-    if (llmAvailable && persistedWithContext.length > 0) {
-      yield { type: 'status', data: { message: 'Finding executives...', progress: 75 } };
+    const shouldExtractExecutives = intent.executiveRole !== null ||
+      intent.entityType === 'executive' ||
+      intent.entityType === 'person';
+
+    if (llmAvailable && persistedWithContext.length > 0 && shouldExtractExecutives) {
+      yield { type: 'status', data: { message: `Finding ${intent.executiveRole || 'executives'}...`, progress: 75 } };
 
       const EXEC_BATCH_SIZE = 4;
       for (let i = 0; i < persistedWithContext.length; i += EXEC_BATCH_SIZE) {
@@ -497,6 +501,8 @@ export class DiscoveryPipeline {
           }
         }
       }
+    } else if (!shouldExtractExecutives) {
+      console.log(`[Pipeline] Skipping executive extraction — query did not request executives`);
     }
 
     await storage.updateSearchQueryResultCount(searchQueryId, persistedCompanies.length);

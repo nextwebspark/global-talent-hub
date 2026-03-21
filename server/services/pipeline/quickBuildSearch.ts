@@ -63,15 +63,15 @@ function detectExecutiveIntent(query: string): ExecutiveIntent {
   const q = query.toLowerCase();
 
   const rolePatterns: Array<{ pattern: RegExp; roleCode: string; roleLabel: string }> = [
-    { pattern: /\b(?:ceo|chief executive officer|managing director)\b/, roleCode: 'CEO', roleLabel: 'CEO / Chief Executive Officer' },
-    { pattern: /\b(?:cfo|chief financial officer|finance director|head of finance|vp finance|financial controller)\b/, roleCode: 'CFO', roleLabel: 'CFO / Chief Financial Officer' },
-    { pattern: /\b(?:chro|chief (?:human resources|people|talent) officer|hr director|head of (?:hr|human resources|people|talent))\b/, roleCode: 'CHRO', roleLabel: 'CHRO / Chief Human Resources Officer' },
-    { pattern: /\b(?:cio|chief information officer|head of (?:it|information technology))\b/, roleCode: 'CIO', roleLabel: 'CIO / Chief Information Officer' },
-    { pattern: /\b(?:cto|chief technology officer|head of (?:technology|engineering)|vp engineering)\b/, roleCode: 'CTO', roleLabel: 'CTO / Chief Technology Officer' },
-    { pattern: /\b(?:coo|chief operating officer|head of operations)\b/, roleCode: 'OTHER', roleLabel: 'COO / Chief Operating Officer' },
-    { pattern: /\b(?:cmo|chief marketing officer|head of marketing|vp marketing)\b/, roleCode: 'OTHER', roleLabel: 'CMO / Chief Marketing Officer' },
-    { pattern: /\b(?:chairman|chairwoman|chairperson|board chair)\b/, roleCode: 'OTHER', roleLabel: 'Chairman / Chairperson' },
-    { pattern: /\b(?:founder|co-founder|cofounder)\b/, roleCode: 'OTHER', roleLabel: 'Founder / Co-Founder' },
+    { pattern: /\b(?:ceos?|chief executive officers?|managing directors?)\b/, roleCode: 'CEO', roleLabel: 'CEO / Chief Executive Officer' },
+    { pattern: /\b(?:cfos?|chief financial officers?|finance directors?|head of finance|vp finance|financial controllers?)\b/, roleCode: 'CFO', roleLabel: 'CFO / Chief Financial Officer' },
+    { pattern: /\b(?:chros?|chief (?:human resources|people|talent) officers?|hr directors?|head of (?:hr|human resources|people|talent))\b/, roleCode: 'CHRO', roleLabel: 'CHRO / Chief Human Resources Officer' },
+    { pattern: /\b(?:cios?|chief information officers?|head of (?:it|information technology))\b/, roleCode: 'CIO', roleLabel: 'CIO / Chief Information Officer' },
+    { pattern: /\b(?:ctos?|chief technology officers?|head of (?:technology|engineering)|vp engineering)\b/, roleCode: 'CTO', roleLabel: 'CTO / Chief Technology Officer' },
+    { pattern: /\b(?:coos?|chief operating officers?|head of operations)\b/, roleCode: 'OTHER', roleLabel: 'COO / Chief Operating Officer' },
+    { pattern: /\b(?:cmos?|chief marketing officers?|head of marketing|vp marketing)\b/, roleCode: 'OTHER', roleLabel: 'CMO / Chief Marketing Officer' },
+    { pattern: /\b(?:chairman|chairmen|chairwoman|chairwomen|chairpersons?|board chairs?)\b/, roleCode: 'OTHER', roleLabel: 'Chairman / Chairperson' },
+    { pattern: /\b(?:founders?|co-founders?|cofounders?)\b/, roleCode: 'OTHER', roleLabel: 'Founder / Co-Founder' },
   ];
 
   for (const { pattern, roleCode, roleLabel } of rolePatterns) {

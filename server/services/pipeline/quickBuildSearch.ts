@@ -37,7 +37,7 @@ async function callLLM(prompt: string): Promise<string | null> {
     try {
       const response = await openrouter.chat.completions.create({
         model,
-        messages: [{ role: "user", content: prompt }] as any,
+        messages: [{ role: "user" as const, content: prompt }],
         temperature: 0.2,
         max_tokens: 12000,
       });
@@ -155,7 +155,7 @@ function transformToInsertCompany(enriched: EnrichedCompany): InsertCompany {
   let longitude = enriched.longitude.value;
   let locationPrecision = 'unknown';
 
-  if (latitude && longitude) {
+  if (latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined) {
     locationPrecision = 'exact';
   } else {
     const fallback = applyCoordinateFallback({
@@ -272,7 +272,8 @@ export async function* runQuickBuildSearch(
             try {
               const newExec = await storage.createExecutiveFromDiscovery(execData);
               persistedExecs.push(newExec);
-            } catch {
+            } catch (execErr: any) {
+              console.warn(`[QuickBuild] Failed to persist executive "${exec.name}":`, execErr?.message || execErr);
             }
           }
 

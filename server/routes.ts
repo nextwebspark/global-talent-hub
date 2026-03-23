@@ -753,6 +753,8 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
           enrichmentSource: details.executive.enrichmentSource,
           enrichmentConfidence: details.executive.enrichmentConfidence,
           enrichmentTimestamp: details.executive.enrichmentTimestamp,
+          executiveConfidence: details.executive.executiveConfidence,
+          executiveConfidenceReason: details.executive.executiveConfidenceReason,
           isEnriched
         },
         company: details.company ? {

@@ -137,6 +137,8 @@ export interface Executive {
   enrichmentSource?: string;
   enrichmentConfidence?: number;
   enrichmentTimestamp?: string;
+  executiveConfidence?: string | null;
+  executiveConfidenceReason?: string | null;
   isEnriched: boolean;
 }
 
@@ -170,6 +172,8 @@ export interface ExecutiveDetails {
     enrichmentSource: string | null;
     enrichmentConfidence: number | null;
     enrichmentTimestamp: string | null;
+    executiveConfidence: string | null;
+    executiveConfidenceReason: string | null;
     isEnriched: boolean;
   };
   company: {
@@ -449,6 +453,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     enrichmentSource,
     enrichmentConfidence,
     enrichmentTimestamp,
+    executiveConfidence: (apiExec as any).executiveConfidence || null,
+    executiveConfidenceReason: (apiExec as any).executiveConfidenceReason || null,
     isEnriched,
   };
 }

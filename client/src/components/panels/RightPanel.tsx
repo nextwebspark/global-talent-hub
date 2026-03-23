@@ -37,31 +37,69 @@ const LLM_MODELS = [
 ];
 
 // ─── Executive confidence badge helper ───────────────────────────────────────
-function ExecutiveConfidenceBadge({ confidence, reason }: { confidence?: string | null; reason?: string | null }) {
-  if (!confidence || confidence === 'unknown') {
-    return (
-      <span title={reason || 'Insufficient data to confirm'} className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 cursor-help">
-        Unverified
-      </span>
-    );
-  }
-  const styles: Record<string, string> = {
-    high: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    low: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
-  };
-  const labels: Record<string, string> = {
-    high: 'Verified',
-    medium: 'Likely',
-    low: 'Uncertain',
-  };
-  return (
+function ExecutiveConfidenceBadge({ confidence, reason, editable, onChangeConfidence }: {
+  confidence?: string | null;
+  reason?: string | null;
+  editable?: boolean;
+  onChangeConfidence?: (value: string) => void;
+}) {
+  const [showDropdown, setShowDropdown] = React.useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!showDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDropdown]);
+
+  const isVerified = confidence === 'high';
+
+  const badge = (
     <span
-      title={reason || confidence}
-      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full cursor-help ${styles[confidence] || styles.low}`}
+      title={reason || (isVerified ? 'Verified' : 'Unverified')}
+      onClick={editable ? () => setShowDropdown(!showDropdown) : undefined}
+      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${editable ? 'cursor-pointer' : 'cursor-help'} ${
+        isVerified
+          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+      }`}
+      data-testid="badge-executive-confidence"
     >
-      {labels[confidence] || confidence}
+      {isVerified ? 'Verified' : 'Unverified'}
     </span>
+  );
+
+  if (!editable || !onChangeConfidence) return badge;
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      {badge}
+      {showDropdown && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 min-w-[120px]">
+          <button
+            data-testid="option-verified"
+            onClick={() => { onChangeConfidence('high'); setShowDropdown(false); }}
+            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 ${isVerified ? 'font-semibold' : ''}`}
+          >
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            Verified
+          </button>
+          <button
+            data-testid="option-unverified"
+            onClick={() => { onChangeConfidence('unknown'); setShowDropdown(false); }}
+            className={`w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-2 ${!isVerified ? 'font-semibold' : ''}`}
+          >
+            <span className="w-2 h-2 rounded-full bg-gray-400" />
+            Unverified
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -676,8 +714,8 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                           <div className="flex items-center justify-between mt-1.5">
                             <p className="text-[10px] text-primary">Click to view details</p>
                             <ExecutiveConfidenceBadge
-                              confidence={(exec as any).executive_confidence}
-                              reason={(exec as any).executive_confidence_reason}
+                              confidence={exec.executiveConfidence}
+                              reason={exec.executiveConfidenceReason}
                             />
                           </div>
                         </div>
@@ -1012,8 +1050,10 @@ function ExecutiveDetailView({
                     {/* ── Executive confidence badge in detail view ── */}
                     <div className="mt-2">
                       <ExecutiveConfidenceBadge
-                        confidence={(executive as any).executiveConfidence}
-                        reason={(executive as any).executiveConfidenceReason}
+                        confidence={executive.executiveConfidence}
+                        reason={executive.executiveConfidenceReason}
+                        editable
+                        onChangeConfidence={(val) => handleUpdateExecutiveField('executiveConfidence', val)}
                       />
                     </div>
                   </div>

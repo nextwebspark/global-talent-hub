@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera, Link2, FileDown, Maximize2, Minimize2 } from 'lucide-react';
+import { MapPin, DollarSign, Users, X, Edit2, Plus, Trash2, ArrowLeft, Building2, Briefcase, GraduationCap, Banknote, FileText, Loader2, CheckCircle2, Sparkles, Mail, Phone, Linkedin, ChevronLeft, ChevronRight, ChevronDown, TrendingUp, AlertCircle, ShieldCheck, Search, Bot, Camera, Link2, FileDown, Maximize2, Minimize2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
@@ -794,6 +794,7 @@ function ExecutiveDetailView({
 
   const [parsingRemuneration, setParsingRemuneration] = useState(false);
   const [structuredRem, setStructuredRem] = useState<any>(null);
+  const [showCalcNotes, setShowCalcNotes] = useState(false);
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
   const [linkedInInput, setLinkedInInput] = useState('');
 
@@ -1159,26 +1160,39 @@ function ExecutiveDetailView({
                       {structuredRem.longTermIncentives && <div className="flex justify-between text-xs"><span className="text-muted-foreground">LTIP (Annual)</span><span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span></div>}
                       {structuredRem.notes && (
                         <div className="mt-2 pt-2 border-t">
-                          {(() => {
-                            const parts = structuredRem.notes.split('\n').filter((s: string) => s.trim());
-                            const currencyLine = parts.find((p: string) => p.startsWith('Currency:'));
-                            const calcParts = parts.filter((p: string) => !p.startsWith('Currency:'));
-                            const bullets = calcParts.length === 1
-                              ? calcParts[0].split(/\.\s+/).filter((s: string) => s.trim()).map((s: string) => s.replace(/\.$/, '').trim())
-                              : calcParts;
-                            return (
-                              <>
-                                {currencyLine && <p className="text-xs text-muted-foreground mb-1.5">{currencyLine}</p>}
-                                {bullets.length > 0 && (
-                                  <ul className="space-y-0.5 ml-3">
-                                    {bullets.map((line: string, i: number) => (
-                                      <li key={i} className="text-xs text-muted-foreground list-disc">{line}</li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </>
-                            );
-                          })()}
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+                            onClick={() => setShowCalcNotes(!showCalcNotes)}
+                            data-testid="toggle-calc-notes"
+                          >
+                            <ChevronDown className={`h-3 w-3 transition-transform ${showCalcNotes ? '' : '-rotate-90'}`} />
+                            <span>Calculation Details</span>
+                          </button>
+                          {showCalcNotes && (
+                            <div className="mt-1.5 pl-1">
+                              {(() => {
+                                const parts = structuredRem.notes.split('\n').filter((s: string) => s.trim());
+                                const currencyLine = parts.find((p: string) => p.startsWith('Currency:'));
+                                const calcParts = parts.filter((p: string) => !p.startsWith('Currency:'));
+                                const bullets = calcParts.length === 1
+                                  ? calcParts[0].split(/\.\s+/).filter((s: string) => s.trim()).map((s: string) => s.replace(/\.$/, '').trim())
+                                  : calcParts;
+                                return (
+                                  <>
+                                    {currencyLine && <p className="text-xs text-muted-foreground mb-1.5">{currencyLine}</p>}
+                                    {bullets.length > 0 && (
+                                      <ul className="space-y-0.5 ml-3">
+                                        {bullets.map((line: string, i: number) => (
+                                          <li key={i} className="text-xs text-muted-foreground list-disc">{line}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
                         </div>
                       )}
                       {structuredRem.year && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Year</span><span>{structuredRem.year}</span></div>}

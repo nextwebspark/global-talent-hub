@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+const openrouter = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
 });
 
 export interface ParsedRemuneration {
@@ -330,18 +330,19 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
     const liveRates = await fetchLiveRates();
     const systemPrompt = buildSystemPrompt(liveRates);
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      system: systemPrompt,
+    const response = await openrouter.chat.completions.create({
+      model: "anthropic/claude-sonnet-4",
       messages: [
+        { role: "system", content: systemPrompt },
         { role: "user", content: text },
       ],
+      max_tokens: 2000,
+      response_format: { type: "json_object" },
     });
 
-    const textBlock = response.content.find(b => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') return null;
-    const content = textBlock.text.replace(/```json|```/g, '').trim();
+    const rawContent = response.choices[0]?.message?.content;
+    if (!rawContent) return null;
+    const content = rawContent.replace(/```json|```/g, '').trim();
 
     const raw: LLMParsedResult = JSON.parse(content);
 

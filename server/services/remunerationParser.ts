@@ -314,9 +314,7 @@ calculation_notes only.
   "total_yearly_fixed_usd": 0,
   "yearly_bonus_usd": null,
   "ltip_annual_usd": null,
-  "calculation_notes": "Step by step explanation of how each 
-  figure was derived, including any assumptions, ambiguities, 
-  or data gaps"
+  "calculation_notes": "Step by step explanation of how each figure was derived, including any assumptions, ambiguities, or data gaps. Use periods to separate steps, not newlines."
 }
 
 ════════════════════════════════════
@@ -332,7 +330,11 @@ EDGE CASE RULES
 - Never invent figures. If something cannot be determined, 
   return null
 - Always show arithmetic in calculation_notes so errors 
-  can be spotted`;
+  can be spotted
+- CRITICAL: In the JSON output, do NOT use actual newline 
+  characters inside string values. Use ". " (period + space) 
+  to separate sentences/steps in calculation_notes. The 
+  output must be valid single-line JSON strings.`;
 }
 
 interface LLMParsedResult {
@@ -369,31 +371,49 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
     const rawContent = response.choices[0]?.message?.content;
     if (!rawContent) return null;
-    let content = rawContent.replace(/```json|```/g, '').trim();
+    const content = rawContent.replace(/```json|```/g, '').trim();
 
-    content = content
-      .replace(/,\s*}/g, '}')
-      .replace(/,\s*]/g, ']')
-      .replace(/(['"])?(\w+)(['"])?\s*:/g, '"$2":')
-      .replace(/:(\s*)'/g, ':$1"')
-      .replace(/'\s*([,}])/g, '"$1')
-      .replace(/\n/g, ' ');
+    function fixNewlinesInStrings(json: string): string {
+      let result = '';
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < json.length; i++) {
+        const ch = json[i];
+        if (escaped) { result += ch; escaped = false; continue; }
+        if (ch === '\\') { result += ch; escaped = true; continue; }
+        if (ch === '"') { inString = !inString; result += ch; continue; }
+        if (inString && (ch === '\n' || ch === '\r')) {
+          result += ' ';
+          continue;
+        }
+        result += ch;
+      }
+      return result;
+    }
 
     let raw: LLMParsedResult;
-    try {
-      raw = JSON.parse(content);
-    } catch (firstError) {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          raw = JSON.parse(jsonMatch[0]);
-        } catch {
-          throw firstError;
-        }
-      } else {
-        throw firstError;
+    const variants = [
+      content,
+      fixNewlinesInStrings(content),
+      content.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']'),
+      fixNewlinesInStrings(content).replace(/,\s*}/g, '}').replace(/,\s*]/g, ']'),
+    ];
+
+    let lastError: Error | null = null;
+    for (const variant of variants) {
+      try {
+        raw = JSON.parse(variant);
+        lastError = null;
+        break;
+      } catch (e: any) {
+        lastError = e;
       }
     }
+    if (lastError) {
+      console.error("[RemunerationParser] Raw LLM content:", rawContent.substring(0, 500));
+      throw lastError;
+    }
+    raw = raw!;
 
     const notesParts: string[] = [];
 

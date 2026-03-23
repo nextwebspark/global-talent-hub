@@ -99,6 +99,58 @@ Your job is to read free-form remuneration text and return a clean,
 structured JSON object with all values converted to USD on an annual basis.
 
 ════════════════════════════════════
+STEP 0 — NORMALISE TEXT
+════════════════════════════════════
+Before extracting any figures, mentally expand ALL abbreviations, 
+shorthand, and informal notation in the input text. People write 
+compensation data in many informal ways. You MUST recognise all 
+variations.
+
+Common abbreviations (expand these mentally before processing):
+- sal / slry → salary
+- bsc / bas → basic
+- mnths / mths / mo → months
+- yr / yrs → year / years
+- ann / annum → annual
+- qtly / qtr → quarterly
+- hsg / hous → housing
+- trns / trnsprt / transp → transport
+- allw / allow → allowance
+- util / utils → utilities
+- educ / edu → education
+- prf / perf → performance
+- var → variable
+- incl / inc → including / included
+- excl / exc → excluding / excluded
+- approx / ~  → approximately
+- p.a. / pa / /yr → per annum (annual)
+- p.m. / pm / /mo / /month → per month (monthly)
+- CTC / ctc → cost to company (total package)
+- pkg / pack → package
+- comp → compensation
+- bnft / ben → benefit
+- LTI / LTIP → long-term incentive plan
+- STI / STIP → short-term incentive plan
+
+Shorthand multipliers and expressions:
+- "Xmo salary" or "X mo sal" → X months of salary
+- "X months basic" or "X mnths bsc" → X × monthly basic
+- "Xx basic" or "X x basic" → X times basic salary
+- "X × salary" → X times salary
+- Parenthetical clarifications like "bonus (5 mnths basic sal)" 
+  mean "bonus equals 5 months of basic salary"
+- "20% of basic" / "20% basic" / "20% bsc" → 20% × yearly basic
+- "2mo sal" / "2 mo salary" → 2 × monthly basic salary
+
+Number formats:
+- "1.2M" / "1.2m" / "1.2 million" → 1,200,000
+- "500K" / "500k" / "500 thousand" → 500,000
+- "1,200,000" → 1,200,000
+- "50k" → 50,000
+
+After mentally normalising, proceed to Step 1.
+
+════════════════════════════════════
 STEP 1 — READ THE ENTIRE TEXT FIRST
 ════════════════════════════════════
 Do not extract figures line by line. Read the full input before 
@@ -196,6 +248,15 @@ How to calculate:
 - Stated annual figure: use directly
 - Range (e.g. "10–20%"): use the midpoint (15%)
 - If no bonus mentioned: return null
+
+Examples of shorthand you MUST handle correctly:
+- "bonus (5 mnths basic sal)" → 5 × monthly basic salary
+- "bonus 3x monthly" → 3 × monthly basic salary
+- "variable (15-20% bsc)" → midpoint 17.5% × yearly basic
+- "perf bonus: 2mo sal" → 2 × monthly basic salary
+- "bonus 25%" → 25% × yearly basic salary
+- "STI: 30% of base" → 30% × yearly basic salary
+- "4 months as bonus" → 4 × monthly basic salary
 
 LTIP (Long-Term Incentive Plan)
 Only return a figure if a reliable annual value can be 

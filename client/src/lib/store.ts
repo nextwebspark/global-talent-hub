@@ -453,8 +453,8 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
     enrichmentSource,
     enrichmentConfidence,
     enrichmentTimestamp,
-    executiveConfidence: (apiExec as any).executiveConfidence || null,
-    executiveConfidenceReason: (apiExec as any).executiveConfidenceReason || null,
+    executiveConfidence: apiExec.executiveConfidence ?? null,
+    executiveConfidenceReason: apiExec.executiveConfidenceReason ?? null,
     isEnriched,
   };
 }

@@ -37,6 +37,8 @@ export interface Executive {
   email: string | null;
   phone: string | null;
   linkedin: string | null;
+  executiveConfidence: string | null;
+  executiveConfidenceReason: string | null;
   createdAt: string;
   updatedAt: string;
 }

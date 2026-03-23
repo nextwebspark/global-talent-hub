@@ -371,6 +371,14 @@ export async function registerRoutes(
     try {
       const id = parseInt(String(req.params.id));
       const executive = await storage.updateExecutiveManual(id, req.body);
+
+      if (req.body.remunerationNotes !== undefined) {
+        const text = req.body.remunerationNotes;
+        if (!text || text.trim().length < 5) {
+          await storage.deleteRemunerationByExecutive(id);
+        }
+      }
+
       res.json(executive);
     } catch (error) {
       console.error("Error updating executive:", error);

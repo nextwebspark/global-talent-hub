@@ -770,7 +770,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </Button>
 
-      <div className={`flex flex-col h-full overflow-hidden ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+      <div className={`flex flex-col h-full min-h-0 overflow-hidden ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
         <div className="p-4 border-b border-border min-w-[280px]">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -1059,7 +1059,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           </div>
         )}
 
-        <ScrollArea className="flex-1 w-full">
+        <ScrollArea className="flex-1 min-h-0 w-full">
           <div className="p-2 space-y-1 min-w-[280px]">
             {filteredCountries.map((country) => {
               const isCountryExpanded = expandedCountries.has(country.name);

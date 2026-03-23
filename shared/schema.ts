@@ -25,38 +25,38 @@ export const companies = pgTable("companies", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   sector: text("sector"),
-  businessType: text("business_type"), // distributor, retailer, manufacturer, wholesaler, service_provider, etc.
-  ownershipType: text("ownership_type"), // public, private, family-owned, PE-backed, state-owned
-  entityType: text("entity_type"), // operating_company, government_authority, regulator, ministry, corporatised_entity
-  isOperatingCompany: boolean("is_operating_company").default(true), // false for authorities/regulators unless corporatised
+  businessType: text("business_type"),
+  ownershipType: text("ownership_type"),
+  entityType: text("entity_type"),
+  isOperatingCompany: boolean("is_operating_company").default(true),
   region: text("region"),
   country: text("country"),
   streetAddress: text("street_address"),
   latitude: numeric("latitude", { precision: 10, scale: 7 }),
   longitude: numeric("longitude", { precision: 10, scale: 7 }),
-  locationPrecision: text("location_precision").default("unknown"), // exact, city, country, unknown
+  locationPrecision: text("location_precision").default("unknown"),
   revenue: numeric("revenue", { precision: 15, scale: 2 }),
-  revenueSource: text("revenue_source"), // Description of source (e.g., "Annual Report 2023")
-  revenueSourceUrl: text("revenue_source_url"), // URL where revenue was found
-  revenueConfidence: integer("revenue_confidence"), // 1-10 confidence score for revenue data
-  revenueCurrency: text("revenue_currency"), // Original currency (USD, AED, SAR, QAR, etc.) - REQUIRED for revenue display
-  revenueFiscalYear: integer("revenue_fiscal_year"), // Fiscal year - REQUIRED for revenue display
-  revenueConvertedFromCurrency: text("revenue_converted_from_currency"), // If converted, original currency
-  revenueFxRate: numeric("revenue_fx_rate", { precision: 10, scale: 6 }), // FX rate used for conversion
-  revenueFxPolicy: text("revenue_fx_policy"), // Date or policy for FX rate (e.g., "2024-01-01" or "annual average 2023")
-  revenueLastUpdated: timestamp("revenue_last_updated"), // When revenue was last enriched
+  revenueSource: text("revenue_source"),
+  revenueSourceUrl: text("revenue_source_url"),
+  revenueConfidence: integer("revenue_confidence"),
+  revenueCurrency: text("revenue_currency"),
+  revenueFiscalYear: integer("revenue_fiscal_year"),
+  revenueConvertedFromCurrency: text("revenue_converted_from_currency"),
+  revenueFxRate: numeric("revenue_fx_rate", { precision: 10, scale: 6 }),
+  revenueFxPolicy: text("revenue_fx_policy"),
+  revenueLastUpdated: timestamp("revenue_last_updated"),
   employees: integer("employees"),
-  employeesSource: text("employees_source"), // Description of source
-  employeesSourceUrl: text("employees_source_url"), // URL where employee count was found
-  employeesConfidence: integer("employees_confidence"), // 1-10 confidence score
-  employeesLastUpdated: timestamp("employees_last_updated"), // When employees was last enriched
-  geographicFootprint: integer("geographic_footprint"), // number of countries/regions
-  customerModel: text("customer_model"), // B2C, B2B, Mixed
+  employeesSource: text("employees_source"),
+  employeesSourceUrl: text("employees_source_url"),
+  employeesConfidence: integer("employees_confidence"),
+  employeesLastUpdated: timestamp("employees_last_updated"),
+  geographicFootprint: integer("geographic_footprint"),
+  customerModel: text("customer_model"),
   coreActivity: text("core_activity"),
   operatingModel: text("operating_model"),
   revenueDrivers: text("revenue_drivers"),
-  summary: text("summary"), // 2-4 sentence description
-  website: text("website"), // Company website URL
+  summary: text("summary"),
+  website: text("website"),
   lastVerifiedYear: integer("last_verified_year"),
   confidence: integer("confidence").default(5),
   relevanceReason: text("relevance_reason"),
@@ -94,6 +94,8 @@ export const executives = pgTable("executives", {
   genderConfidence: integer("gender_confidence"),
   ethnicity: text("ethnicity"),
   ethnicityConfidence: integer("ethnicity_confidence"),
+  executiveConfidence: text("executive_confidence"), // high, medium, low, unknown
+  executiveConfidenceReason: text("executive_confidence_reason"),
   customFields: jsonb("custom_fields"),
   manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
@@ -183,7 +185,6 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   createdAt: true,
 });
 
-// Executive Details Tables
 export const careerHistory = pgTable("career_history", {
   id: serial("id").primaryKey(),
   executiveId: integer("executive_id").notNull().references(() => executives.id, { onDelete: "cascade" }),

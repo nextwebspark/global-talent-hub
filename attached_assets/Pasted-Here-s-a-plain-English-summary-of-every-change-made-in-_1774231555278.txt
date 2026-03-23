@@ -1,0 +1,69 @@
+Here's a plain English summary of every change made, in the order you should apply them:
+
+What We Built
+We added executive confidence scoring to your app — so when the LLM returns an executive, it also returns how confident it is that the person actually holds that role. This flows from the prompt → database → UI.
+
+Change 1 — Database (Replit SQL Editor)
+What: Added 2 new columns to the executives table.
+Why: The database had nowhere to store confidence data before.
+sqlALTER TABLE executives
+ADD COLUMN IF NOT EXISTS executive_confidence text,
+ADD COLUMN IF NOT EXISTS executive_confidence_reason text;
+✅ Already done — you ran this successfully.
+
+Change 2 — shared/schema.ts
+What: Added the 2 new columns to the Drizzle schema definition.
+Why: Drizzle needs to know the columns exist before TypeScript will allow you to read/write them.
+The two lines added inside the executives table:
+typescriptexecutiveConfidence: text("executive_confidence"),
+executiveConfidenceReason: text("executive_confidence_reason"),
+
+Change 3 — server/services/pipeline/types.ts
+What: Added 2 new optional fields to the ExtractedExecutive TypeScript interface.
+Why: TypeScript needs to know these fields exist on the executive object throughout the pipeline.
+The two lines added:
+typescriptexecutiveConfidence?: 'high' | 'medium' | 'low' | 'unknown';
+executiveConfidenceReason?: string | null;
+
+Change 4 — server/services/pipeline/quickBuildSearch.ts
+What: Four changes inside this file.
+Why: This is the file that builds the LLM prompt and saves the response — so this is where confidence scoring actually gets requested and stored.
+4a — Added confidence fields to the specific-role executive JSON template (the else if branch):
+json"executiveConfidence": "high",
+"executiveConfidenceReason": "One sentence explaining confidence level"
+4b — Added confidence fields to the generic executive JSON template (the else branch):
+json"executiveConfidence": "high",
+"executiveConfidenceReason": "One sentence explaining confidence level"
+```
+
+**4c — Added confidence rules to the bottom of the prompt** so the LLM knows what high/medium/low/unknown means:
+```
+executiveConfidence rules:
+- "high": certain this person holds this exact role currently
+- "medium": likely correct but may be 12-24 months old
+- "low": person known but title or tenure uncertain
+- "unknown": insufficient data
+executiveConfidenceReason: one sentence max explaining why
+4d — Added confidence fields to the database save block so the values actually get persisted:
+typescriptexecutiveConfidence: exec.executiveConfidence || 'unknown',
+executiveConfidenceReason: exec.executiveConfidenceReason || null,
+
+Change 5 — client/src/components/panels/RightPanel.tsx
+What: Two UI changes.
+Why: So the confidence data is visible to the user.
+5a — Added a new ExecutiveConfidenceBadge component near the top of the file:
+
+Green pill = Verified (high)
+Amber pill = Likely (medium)
+Red pill = Uncertain (low)
+Grey pill = Unverified (null or unknown)
+Hovering shows the reason tooltip
+
+5b — Rendered the badge in two places:
+
+On each executive card in the company panel (bottom right of the card)
+In the executive detail view, below the person's title
+
+
+Summary Table
+FileType of ChangeReplit SQL EditorAdded 2 columns to databaseshared/schema.tsAdded 2 columns to Drizzle schemaserver/services/pipeline/types.tsAdded 2 fields to TypeScript interfaceserver/services/pipeline/quickBuildSearch.tsUpdated LLM prompt + database save logicclient/src/components/panels/RightPanel.tsxAdded badge component + rendered in 2 places

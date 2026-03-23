@@ -13,9 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 
 const LLM_MODELS = [
-  // Auto router - selects best free model automatically
   { id: 'openrouter/free', name: 'Auto (Best Free)', free: true },
-  // Free models - verified from OpenRouter Feb 2026
   { id: 'arcee-ai/trinity-large-preview:free', name: 'Arcee Trinity Large 400B', free: true },
   { id: 'tngtech/deepseek-r1t2-chimera:free', name: 'DeepSeek R1T2 Chimera 671B', free: true },
   { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air', free: true },
@@ -32,12 +30,40 @@ const LLM_MODELS = [
   { id: 'google/gemma-3-27b-it:free', name: 'Gemma 3 27B', free: true },
   { id: 'qwen/qwen3-next-80b-a3b-instruct:free', name: 'Qwen3 Next 80B', free: true },
   { id: 'openai/gpt-oss-20b:free', name: 'GPT OSS 20B', free: true },
-  // Paid models - more capable
   { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', free: false },
   { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku', free: false },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', free: false },
   { id: 'openai/gpt-4o', name: 'GPT-4o', free: false },
 ];
+
+// ─── Executive confidence badge helper ───────────────────────────────────────
+function ExecutiveConfidenceBadge({ confidence, reason }: { confidence?: string | null; reason?: string | null }) {
+  if (!confidence || confidence === 'unknown') {
+    return (
+      <span title={reason || 'Insufficient data to confirm'} className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 cursor-help">
+        Unverified
+      </span>
+    );
+  }
+  const styles: Record<string, string> = {
+    high: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    low: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  };
+  const labels: Record<string, string> = {
+    high: 'Verified',
+    medium: 'Likely',
+    low: 'Uncertain',
+  };
+  return (
+    <span
+      title={reason || confidence}
+      className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full cursor-help ${styles[confidence] || styles.low}`}
+    >
+      {labels[confidence] || confidence}
+    </span>
+  );
+}
 
 const EditableField = ({ 
   value, 
@@ -139,7 +165,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
     scalingMetric, 
     setScalingMetric 
   } = useAppStore();
-  
+
   const updateCompanyMutation = useUpdateCompany();
   const updateExecutiveMutation = useUpdateExecutive();
   const createExecutiveMutation = useCreateExecutive();
@@ -151,7 +177,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   const [companyNotesError, setCompanyNotesError] = useState<string | null>(null);
   const [isEnrichingWithBing, setIsEnrichingWithBing] = useState(false);
   const [enrichmentModel, setEnrichmentModel] = useState('openrouter/free');
-  
+
   const company = companies.find(c => c.id === selectedCompanyId);
   const companyExecutives = executives.filter(e => e.company_id === selectedCompanyId);
 
@@ -232,7 +258,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   const handleUpdateCompany = async (field: string, value: any) => {
     if (!company) return;
     updateCompanyLocal(company.id, { [field]: value });
-    
+
     try {
       const updateData: any = {};
       if (field === 'name') updateData.name = value;
@@ -245,7 +271,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
       if (field === 'operatingModel') updateData.operatingModel = value;
       if (field === 'revenueDrivers') updateData.revenueDrivers = value;
       if (field === 'summary') updateData.summary = value;
-      
+
       await updateCompanyMutation.mutateAsync({
         id: parseInt(company.id),
         data: updateData
@@ -258,7 +284,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
 
   const handleUpdateExecutive = async (execId: string, field: string, value: string) => {
     updateExecutiveLocal(execId, { [field]: value });
-    
+
     try {
       await updateExecutiveMutation.mutateAsync({
         id: parseInt(execId),
@@ -282,18 +308,16 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
       confidence: 3,
       isEnriched: false
     };
-    
+
     addExecutiveLocal(newExec);
-    
+
     try {
       const createdExecutive = await createExecutiveMutation.mutateAsync({
         companyId: parseInt(company.id),
         name: 'New Executive',
         title: 'Position TBD'
       });
-      
-      // Update the local executive with the real ID from the server
-      // Remove the temp executive and add the real one
+
       const { executives } = useAppStore.getState();
       const updatedExecutives = executives.filter(e => e.id !== tempId);
       updatedExecutives.push({
@@ -302,13 +326,10 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
         company_id: company.id
       });
       useAppStore.getState().setExecutives(updatedExecutives);
-      
-      // Auto-select the new executive so user can edit their details
+
       selectExecutive(String(createdExecutive.id));
-      
       toast.success('Executive added - you can now edit their details');
     } catch (error) {
-      // Remove the temp executive on failure
       const { executives } = useAppStore.getState();
       useAppStore.getState().setExecutives(executives.filter(e => e.id !== tempId));
       toast.error('Failed to add executive');
@@ -326,27 +347,19 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companyName: companyData.name, country: companyData.hq_country, model: enrichmentModel })
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.message || 'Failed to enrich with DeepSeek');
       }
-      
+
       const enrichedData = await response.json();
-      
-      if (enrichedData.summary) {
-        updateCompanyLocal(companyData.id, { summary: enrichedData.summary });
-      }
-      if (enrichedData.coreActivity) {
-        updateCompanyLocal(companyData.id, { coreActivity: enrichedData.coreActivity });
-      }
-      if (enrichedData.operatingModel) {
-        updateCompanyLocal(companyData.id, { operatingModel: enrichedData.operatingModel });
-      }
-      if (enrichedData.revenueDrivers) {
-        updateCompanyLocal(companyData.id, { revenueDrivers: enrichedData.revenueDrivers });
-      }
-      
+
+      if (enrichedData.summary) updateCompanyLocal(companyData.id, { summary: enrichedData.summary });
+      if (enrichedData.coreActivity) updateCompanyLocal(companyData.id, { coreActivity: enrichedData.coreActivity });
+      if (enrichedData.operatingModel) updateCompanyLocal(companyData.id, { operatingModel: enrichedData.operatingModel });
+      if (enrichedData.revenueDrivers) updateCompanyLocal(companyData.id, { revenueDrivers: enrichedData.revenueDrivers });
+
       toast.success(`Company enriched with ${modelName}`);
     } catch (error: any) {
       console.error('Error enriching with DeepSeek:', error);
@@ -356,10 +369,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
     }
   };
 
-  // Per §2: RHP hidden ONLY when no entity is selected
-  if (!selectedCompanyId && !selectedExecutiveId) {
-    return null;
-  }
+  if (!selectedCompanyId && !selectedExecutiveId) return null;
 
   if (panelView === 'executive' && selectedExecutiveId) {
     return (
@@ -375,7 +385,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
     );
   }
 
-  // Company view - Per §4: never show nothing
   if (!company) {
     return (
       <div className="h-full bg-background border-l border-border flex flex-col items-center justify-center">
@@ -401,7 +410,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
   return (
     <div className="h-full bg-background border-l border-border flex flex-col overflow-hidden animate-in slide-in-from-right-5 duration-200">
       <div className="flex flex-col h-full">
-        {/* §7.1 Company Header - Sticky */}
+        {/* Header */}
         <div className="sticky top-0 z-10 p-4 border-b border-border bg-background/95 backdrop-blur-sm">
           <div className="flex justify-between items-start mb-2">
             <div className="flex-1 min-w-0">
@@ -423,22 +432,18 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
               </Button>
             </div>
           </div>
-          
+
           <div className="flex items-center text-sm text-muted-foreground gap-1 mb-2" data-testid="text-location">
             <MapPin className="w-3 h-3 shrink-0" />
             <span className="truncate">{company.hq_country}</span>
           </div>
-          
+
           <div className="flex flex-wrap gap-1.5">
             {company.industry && company.industry !== 'Unknown' && (
-              <Badge variant="outline" className="text-xs" data-testid="badge-sector">
-                {company.industry}
-              </Badge>
+              <Badge variant="outline" className="text-xs" data-testid="badge-sector">{company.industry}</Badge>
             )}
             {company.ownershipType && (
-              <Badge variant="secondary" className="text-xs" data-testid="badge-ownership">
-                {company.ownershipType}
-              </Badge>
+              <Badge variant="secondary" className="text-xs" data-testid="badge-ownership">{company.ownershipType}</Badge>
             )}
             {company.businessType && (
               <Badge variant="outline" className="text-xs capitalize" data-testid="badge-business-type">
@@ -450,7 +455,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
 
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-6">
-            {/* §7.2 Scale Snapshot - Fixed KPI boxes */}
+            {/* Scale Snapshot */}
             <div>
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" /> Scale Snapshot
@@ -458,11 +463,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
               <div className="grid grid-cols-2 gap-3">
                 <div 
                   onClick={() => setScalingMetric('revenue')}
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                    scalingMetric === 'revenue' 
-                      ? 'bg-primary/5 border-primary ring-1 ring-primary/20' 
-                      : 'bg-muted/30 border-border hover:bg-muted/50'
-                  }`}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${scalingMetric === 'revenue' ? 'bg-primary/5 border-primary ring-1 ring-primary/20' : 'bg-muted/30 border-border hover:bg-muted/50'}`}
                   data-testid="card-revenue"
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
@@ -477,18 +478,12 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                       displayFormatter={(val) => Number(val) > 0 ? `$${(Number(val) / 1000000000).toFixed(2)}B` : 'Unknown'}
                     />
                   </div>
-                  {scalingMetric === 'revenue' && (
-                    <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>
-                  )}
+                  {scalingMetric === 'revenue' && <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>}
                 </div>
 
                 <div 
                   onClick={() => setScalingMetric('employees')}
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                    scalingMetric === 'employees' 
-                      ? 'bg-primary/5 border-primary ring-1 ring-primary/20' 
-                      : 'bg-muted/30 border-border hover:bg-muted/50'
-                  }`}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${scalingMetric === 'employees' ? 'bg-primary/5 border-primary ring-1 ring-primary/20' : 'bg-muted/30 border-border hover:bg-muted/50'}`}
                   data-testid="card-employees"
                 >
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
@@ -503,22 +498,17 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                       displayFormatter={(val) => Number(val) > 0 ? Number(val).toLocaleString() : 'Unknown'}
                     />
                   </div>
-                  {scalingMetric === 'employees' && (
-                    <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>
-                  )}
+                  {scalingMetric === 'employees' && <div className="text-[10px] text-primary mt-1">Map Scaling Active</div>}
                 </div>
-
               </div>
             </div>
 
             <Separator />
 
-            {/* §7.4 Company Summary - Now above Business Profile */}
+            {/* Company Summary */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                  Company Summary
-                </h3>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Company Summary</h3>
                 <div className="flex items-center gap-2">
                   <Select value={enrichmentModel} onValueChange={setEnrichmentModel}>
                     <SelectTrigger className="w-[140px] h-6 text-[10px] bg-background" data-testid="select-enrichment-model">
@@ -539,17 +529,12 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                     </SelectContent>
                   </Select>
                   <Button 
-                    variant="outline" 
-                    size="sm" 
+                    variant="outline" size="sm" 
                     onClick={() => handleEnrichWithAI(company)}
                     disabled={isEnrichingWithBing}
                     className="h-6 text-xs"
                   >
-                    {isEnrichingWithBing ? (
-                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</>
-                    ) : (
-                      <><Sparkles className="h-3 w-3 mr-1" /> Enrich</>
-                    )}
+                    {isEnrichingWithBing ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Enriching...</> : <><Sparkles className="h-3 w-3 mr-1" /> Enrich</>}
                   </Button>
                 </div>
               </div>
@@ -568,7 +553,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
 
             <Separator />
 
-            {/* §7.3 Business Profile */}
+            {/* Business Profile */}
             <div>
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
                 <Building2 className="h-4 w-4" /> Business Profile
@@ -576,37 +561,22 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
               <div className="space-y-3">
                 <div>
                   <label className="text-xs text-muted-foreground">Core Activity</label>
-                  <EditableField
-                    value={company.coreActivity || ''}
-                    onSave={(val) => handleUpdateCompany('coreActivity', String(val))}
-                    className="text-sm mt-0.5"
-                    placeholder="What the company primarily does"
-                  />
+                  <EditableField value={company.coreActivity || ''} onSave={(val) => handleUpdateCompany('coreActivity', String(val))} className="text-sm mt-0.5" placeholder="What the company primarily does" />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Operating Model</label>
-                  <EditableField
-                    value={company.operatingModel || ''}
-                    onSave={(val) => handleUpdateCompany('operatingModel', String(val))}
-                    className="text-sm mt-0.5"
-                    placeholder="How the company operates"
-                  />
+                  <EditableField value={company.operatingModel || ''} onSave={(val) => handleUpdateCompany('operatingModel', String(val))} className="text-sm mt-0.5" placeholder="How the company operates" />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground">Primary Revenue Drivers</label>
-                  <EditableField
-                    value={company.revenueDrivers || ''}
-                    onSave={(val) => handleUpdateCompany('revenueDrivers', String(val))}
-                    className="text-sm mt-0.5"
-                    placeholder="Main sources of revenue"
-                  />
+                  <EditableField value={company.revenueDrivers || ''} onSave={(val) => handleUpdateCompany('revenueDrivers', String(val))} className="text-sm mt-0.5" placeholder="Main sources of revenue" />
                 </div>
               </div>
             </div>
 
             <Separator />
 
-            {/* §7.5 Notes (User Editable) */}
+            {/* Notes */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
@@ -618,7 +588,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                   </Button>
                 )}
               </div>
-              
+
               {isLoadingCompanyNotes ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading notes...
@@ -637,13 +607,9 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                   />
                   <div className="flex gap-2">
                     <Button size="sm" onClick={handleSaveCompanyNotes} disabled={isSavingCompanyNotes}>
-                      {isSavingCompanyNotes ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                      Save
+                      {isSavingCompanyNotes ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null} Save
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => {
-                      setIsEditingCompanyNotes(false);
-                      fetchCompanyNotes(company.id);
-                    }}>
+                    <Button size="sm" variant="outline" onClick={() => { setIsEditingCompanyNotes(false); fetchCompanyNotes(company.id); }}>
                       Cancel
                     </Button>
                   </div>
@@ -657,22 +623,19 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                   )}
                 </div>
               )}
-              <p className="text-[10px] text-muted-foreground mt-2 italic">
-                Notes are private and not sourced from external data.
-              </p>
+              <p className="text-[10px] text-muted-foreground mt-2 italic">Notes are private and not sourced from external data.</p>
             </div>
 
             <Separator />
 
-            {/* Key Executives */}
+            {/* ── Key Executives ─────────────────────────────────────────── */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
                   <Users className="h-4 w-4" /> Key Executives
                 </h3>
                 <Button 
-                  variant="ghost" 
-                  size="sm" 
+                  variant="ghost" size="sm" 
                   className="h-6 text-xs text-primary hover:bg-primary/10"
                   onClick={handleAddExecutive}
                   data-testid="button-add-executive"
@@ -703,16 +666,20 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                             <span className="font-medium text-sm truncate hover:text-primary transition-colors">
                               {exec.name}
                             </span>
+                            {/* ── Confidence score (numeric) ── */}
                             <span className={`text-[10px] font-medium shrink-0 ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
                               {exec.confidence}/10
                             </span>
                           </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {exec.title}
+                          <div className="text-xs text-muted-foreground truncate">{exec.title}</div>
+                          {/* ── Executive confidence badge — NEW ── */}
+                          <div className="flex items-center justify-between mt-1.5">
+                            <p className="text-[10px] text-primary">Click to view details</p>
+                            <ExecutiveConfidenceBadge
+                              confidence={(exec as any).executive_confidence}
+                              reason={(exec as any).executive_confidence_reason}
+                            />
                           </div>
-                          <p className="text-[10px] text-primary mt-1">
-                            Click to view details
-                          </p>
                         </div>
                       </div>
                     </div>
@@ -723,7 +690,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
           </div>
         </ScrollArea>
 
-        {/* §7.6 Data Confidence Footer - Always visible */}
+        {/* Data Confidence Footer */}
         <div className="sticky bottom-0 p-3 border-t border-border bg-muted/30 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -732,9 +699,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
             </div>
             <div className="flex items-center gap-2">
               {company.lastVerifiedYear && (
-                <span className="text-xs text-muted-foreground">
-                  Verified {company.lastVerifiedYear}
-                </span>
+                <span className="text-xs text-muted-foreground">Verified {company.lastVerifiedYear}</span>
               )}
               <Badge className={`text-xs ${confidenceInfo.color}`}>
                 {confidenceInfo.label} ({company.confidence}/10)
@@ -742,9 +707,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
             </div>
           </div>
           {company.source && (
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Source: {company.source}
-            </p>
+            <p className="text-[10px] text-muted-foreground mt-1">Source: {company.source}</p>
           )}
         </div>
       </div>
@@ -770,16 +733,13 @@ function ExecutiveDetailView({
   onToggle?: () => void;
 }) {
   const [localExecutive, setLocalExecutive] = useState(executiveDetails?.executive);
-  
   const [notes, setNotes] = useState('');
   const [remunerationNotes, setRemunerationNotes] = useState('');
   const [availability, setAvailability] = useState('');
   const [level, setLevel] = useState('');
   const [gender, setGender] = useState('');
   const [ethnicity, setEthnicity] = useState('');
-  
   const [editingField, setEditingField] = useState<string | null>(null);
-  
   const [viewMode, setViewMode] = useState<'profile' | 'source'>('profile');
   const [sourceText, setSourceText] = useState('');
   const [isExtracting, setIsExtracting] = useState(false);
@@ -793,6 +753,7 @@ function ExecutiveDetailView({
     { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
     { value: 'deepseek/deepseek-chat', label: 'DeepSeek Chat' },
   ];
+
   const [parsingRemuneration, setParsingRemuneration] = useState(false);
   const [structuredRem, setStructuredRem] = useState<any>(null);
   const [editingLinkedIn, setEditingLinkedIn] = useState(false);
@@ -812,24 +773,16 @@ function ExecutiveDetailView({
       setStructuredRem(null);
       fetch(`/api/executives/${executiveDetails.executive.id}/remuneration`)
         .then(r => r.ok ? r.json() : [])
-        .then(data => {
-          if (Array.isArray(data) && data.length > 0) setStructuredRem(data[data.length - 1]);
-        })
+        .then(data => { if (Array.isArray(data) && data.length > 0) setStructuredRem(data[data.length - 1]); })
         .catch(() => {});
     }
   }, [executiveDetails]);
 
   const handleUpdateExecutiveField = async (field: string, value: string) => {
     if (!localExecutive) return;
-    
     setLocalExecutive(prev => prev ? { ...prev, [field]: value } : prev);
-    
     const { executives, setExecutives } = useAppStore.getState();
-    const updatedExecutives = executives.map(e => 
-      e.id === String(localExecutive.id) ? { ...e, [field]: value } : e
-    );
-    setExecutives(updatedExecutives);
-    
+    setExecutives(executives.map(e => e.id === String(localExecutive.id) ? { ...e, [field]: value } : e));
     try {
       await fetch(`/api/executives/${localExecutive.id}`, {
         method: 'PATCH',
@@ -867,11 +820,7 @@ function ExecutiveDetailView({
   };
 
   const handleExtractProfile = async () => {
-    if (!localExecutive || !sourceText.trim()) {
-      toast.error('Please paste some text first');
-      return;
-    }
-
+    if (!localExecutive || !sourceText.trim()) { toast.error('Please paste some text first'); return; }
     setIsExtracting(true);
     try {
       const response = await fetch(`/api/executives/${localExecutive.id}/extract-profile`, {
@@ -879,52 +828,30 @@ function ExecutiveDetailView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sourceText, model: selectedModel })
       });
-
-      if (!response.ok) {
-        throw new Error('Extraction failed');
-      }
-
+      if (!response.ok) throw new Error('Extraction failed');
       const data = await response.json();
-      
       setLocalExecutive(data.executive);
       if (data.executive.remunerationNotes) setRemunerationNotes(data.executive.remunerationNotes);
       if (data.executive.linkedin) setLinkedInInput(data.executive.linkedin);
-      
       const { executives, setExecutives } = useAppStore.getState();
-      const updatedExecutives = executives.map(e => 
-        e.id === String(localExecutive.id) ? { 
-          ...e, 
-          name: data.executive.name || e.name,
-          title: data.executive.title || e.title
-        } : e
-      );
-      setExecutives(updatedExecutives);
-      
+      setExecutives(executives.map(e => e.id === String(localExecutive.id) ? { ...e, name: data.executive.name || e.name, title: data.executive.title || e.title } : e));
       if (data.executive.remunerationNotes && data.executive.remunerationNotes.trim().length >= 5) {
         setParsingRemuneration(true);
         try {
           const remRes = await fetch(`/api/executives/${localExecutive.id}/remuneration/parse`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: data.executive.remunerationNotes }),
           });
-          if (remRes.ok) {
-            const remData = await remRes.json();
-            setStructuredRem(remData.entry);
-          }
+          if (remRes.ok) { const remData = await remRes.json(); setStructuredRem(remData.entry); }
         } catch (e) {
-        } finally {
-          setParsingRemuneration(false);
-        }
+        } finally { setParsingRemuneration(false); }
       }
-
       setViewMode('profile');
       if (data.executive.gender) setGender(data.executive.gender);
       if (data.executive.ethnicity) setEthnicity(data.executive.ethnicity);
       toast.success('Profile extracted successfully');
       onRefresh();
     } catch (error) {
-      console.error('Extraction error:', error);
       toast.error('Failed to extract profile');
     } finally {
       setIsExtracting(false);
@@ -946,7 +873,7 @@ function ExecutiveDetailView({
             {isOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         )}
-        <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`} 
+        <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col items-center justify-center shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
           style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
           {isOpen && (
             <div className="flex flex-col items-center gap-3">
@@ -974,9 +901,7 @@ function ExecutiveDetailView({
             <>
               <AlertCircle className="h-10 w-10 text-muted-foreground/30 mb-3" />
               <p className="text-sm text-muted-foreground">No executive data</p>
-              <Button variant="ghost" onClick={onBack} className="mt-4">
-                <ArrowLeft className="h-4 w-4 mr-2" /> Back
-              </Button>
+              <Button variant="ghost" onClick={onBack} className="mt-4"><ArrowLeft className="h-4 w-4 mr-2" /> Back</Button>
             </>
           )}
         </div>
@@ -998,392 +923,254 @@ function ExecutiveDetailView({
       )}
       <div className={`h-full bg-background/95 backdrop-blur-sm border-l border-border flex flex-col shadow-xl transition-all overflow-hidden ${!isOpen ? 'w-0 border-l-0' : ''}`}
         style={{ width: isOpen ? width : 0, minWidth: isOpen ? 280 : 0 }}>
-      
-      <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="p-4 border-b border-border flex items-center justify-between bg-muted/10">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              {viewMode === 'source' ? 'Source Text' : 'Executive Profile'}
-            </span>
-          </div>
-          {viewMode === 'profile' && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => setViewMode('source')}
-              className="text-xs"
-              data-testid="button-edit-source"
-            >
-              <FileDown className="h-3 w-3 mr-1" /> Edit Source
-            </Button>
-          )}
-        </div>
-
-        {viewMode === 'source' ? (
-          <div className="flex-1 flex flex-col p-6">
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold mb-2">Paste Raw Text</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Paste text from LinkedIn, resumes, or other sources. AI will extract name, title, career history, and compensation data.
-              </p>
-              <div className="flex items-center gap-2 mt-2">
-                <label className="text-xs text-muted-foreground">Model:</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="flex-1 text-xs px-2 py-1 border rounded bg-background"
-                  data-testid="select-extraction-model"
-                >
-                  {EXTRACTION_MODELS.map(m => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <Textarea
-              value={sourceText}
-              onChange={(e) => setSourceText(e.target.value)}
-              placeholder="Paste executive profile text here...&#10;&#10;Example:&#10;John Smith - Chief Executive Officer at Acme Corp&#10;LinkedIn: linkedin.com/in/johnsmith&#10;Previous: VP at TechCo (2018-2022)..."
-              className="flex-1 min-h-[300px] resize-none"
-              data-testid="textarea-source-text"
-            />
-            <div className="flex gap-2 mt-4">
-              <Button 
-                onClick={handleExtractProfile}
-                disabled={isExtracting || !sourceText.trim()}
-                className="flex-1"
-                data-testid="button-extract-profile"
-              >
-                {isExtracting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Extracting...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Extract Profile
-                  </>
-                )}
+        <div className={`flex flex-col h-full ${!isOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className="p-4 border-b border-border flex items-center justify-between bg-muted/10">
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={onBack} className="h-8 w-8" data-testid="button-back">
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-              {(remunerationNotes || executive.linkedin) && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setViewMode('profile')}
-                  data-testid="button-view-profile"
-                >
-                  View Profile
-                </Button>
-              )}
+              <span className="text-sm text-muted-foreground">
+                {viewMode === 'source' ? 'Source Text' : 'Executive Profile'}
+              </span>
             </div>
+            {viewMode === 'profile' && (
+              <Button variant="outline" size="sm" onClick={() => setViewMode('source')} className="text-xs" data-testid="button-edit-source">
+                <FileDown className="h-3 w-3 mr-1" /> Edit Source
+              </Button>
+            )}
           </div>
-        ) : (
-        <ScrollArea className="flex-1">
-          <div className="p-6 space-y-6">
-            <div className="flex items-start gap-4">
-              <div className="relative group">
-                <div className="w-20 h-20 rounded-full flex items-center justify-center font-bold text-2xl bg-primary/10 text-primary overflow-hidden">
-                  {(() => {
-                    const imgUrl = localExecutive?.imageUrl || executive.imageUrl;
-                    if (imgUrl && imgUrl.length > 0) {
-                      return <img src={imgUrl} alt={executive.name} className="w-full h-full object-cover" />;
-                    }
-                    return executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-                  })()}
+
+          {viewMode === 'source' ? (
+            <div className="flex-1 flex flex-col p-6">
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold mb-2">Paste Raw Text</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Paste text from LinkedIn, resumes, or other sources. AI will extract name, title, career history, and compensation data.
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <label className="text-xs text-muted-foreground">Model:</label>
+                  <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1 border rounded bg-background" data-testid="select-extraction-model">
+                    {EXTRACTION_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
                 </div>
-                <label className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
-                  <Camera className="h-5 w-5 text-white" />
-                  <input type="file" accept="image/*" className="hidden" 
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file || !localExecutive) return;
-                      const formData = new FormData();
-                      formData.append('image', file);
-                      try {
-                        const response = await fetch(`/api/executives/${localExecutive.id}/image`, {
-                          method: 'POST',
-                          body: formData
-                        });
-                        if (response.ok) {
-                          const { imageUrl } = await response.json();
-                          setLocalExecutive(prev => prev ? { ...prev, imageUrl } : prev);
-                          const { executives, setExecutives } = useAppStore.getState();
-                          setExecutives(executives.map(e => 
-                            e.id === String(localExecutive.id) ? { ...e, imageUrl } : e
-                          ));
-                          toast.success('Photo updated');
-                        }
-                      } catch (error) {
-                        toast.error('Failed to upload');
-                      }
-                    }}
-                  />
-                </label>
               </div>
-              <div className="flex-1">
-                <EditableField
-                  value={executive.name}
-                  onSave={(val) => handleUpdateExecutiveField('name', String(val))}
-                  className="text-xl font-serif font-bold"
-                  inputClassName="text-xl font-serif font-bold"
-                  placeholder="Name"
-                />
-                <EditableField
-                  value={executive.title}
-                  onSave={(val) => handleUpdateExecutiveField('title', String(val))}
-                  className="text-sm text-muted-foreground"
-                  placeholder="Title"
-                />
-                {company && (
-                  <p className="text-xs text-muted-foreground mt-1">{company.name}</p>
+              <Textarea
+                value={sourceText}
+                onChange={(e) => setSourceText(e.target.value)}
+                placeholder="Paste executive profile text here..."
+                className="flex-1 min-h-[300px] resize-none"
+                data-testid="textarea-source-text"
+              />
+              <div className="flex gap-2 mt-4">
+                <Button onClick={handleExtractProfile} disabled={isExtracting || !sourceText.trim()} className="flex-1" data-testid="button-extract-profile">
+                  {isExtracting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extracting...</> : <><Sparkles className="h-4 w-4 mr-2" />Extract Profile</>}
+                </Button>
+                {(remunerationNotes || executive.linkedin) && (
+                  <Button variant="outline" onClick={() => setViewMode('profile')} data-testid="button-view-profile">View Profile</Button>
                 )}
               </div>
             </div>
-
-            {executive.linkedin && !editingLinkedIn ? (
-              <div className="flex items-center gap-2">
-                <a href={executive.linkedin} target="_blank" rel="noopener noreferrer" 
-                  className="flex-1 flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
-                  <Linkedin className="h-4 w-4 text-blue-600" />
-                  <span className="text-blue-600 truncate">LinkedIn Profile</span>
-                </a>
-                <Button variant="ghost" size="icon" onClick={() => setEditingLinkedIn(true)} className="h-8 w-8">
-                  <Edit2 className="h-3 w-3" />
-                </Button>
-              </div>
-            ) : (
-              <div className="p-3 border border-dashed rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Linkedin className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">LinkedIn URL</span>
+          ) : (
+            <ScrollArea className="flex-1">
+              <div className="p-6 space-y-6">
+                <div className="flex items-start gap-4">
+                  <div className="relative group">
+                    <div className="w-20 h-20 rounded-full flex items-center justify-center font-bold text-2xl bg-primary/10 text-primary overflow-hidden">
+                      {(() => {
+                        const imgUrl = localExecutive?.imageUrl || executive.imageUrl;
+                        if (imgUrl && imgUrl.length > 0) return <img src={imgUrl} alt={executive.name} className="w-full h-full object-cover" />;
+                        return executive.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+                      })()}
+                    </div>
+                    <label className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity">
+                      <Camera className="h-5 w-5 text-white" />
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !localExecutive) return;
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          try {
+                            const response = await fetch(`/api/executives/${localExecutive.id}/image`, { method: 'POST', body: formData });
+                            if (response.ok) {
+                              const { imageUrl } = await response.json();
+                              setLocalExecutive(prev => prev ? { ...prev, imageUrl } : prev);
+                              const { executives, setExecutives } = useAppStore.getState();
+                              setExecutives(executives.map(e => e.id === String(localExecutive.id) ? { ...e, imageUrl } : e));
+                              toast.success('Photo updated');
+                            }
+                          } catch (error) { toast.error('Failed to upload'); }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex-1">
+                    <EditableField value={executive.name} onSave={(val) => handleUpdateExecutiveField('name', String(val))} className="text-xl font-serif font-bold" inputClassName="text-xl font-serif font-bold" placeholder="Name" />
+                    <EditableField value={executive.title} onSave={(val) => handleUpdateExecutiveField('title', String(val))} className="text-sm text-muted-foreground" placeholder="Title" />
+                    {company && <p className="text-xs text-muted-foreground mt-1">{company.name}</p>}
+                    {/* ── Executive confidence badge in detail view ── */}
+                    <div className="mt-2">
+                      <ExecutiveConfidenceBadge
+                        confidence={(executive as any).executiveConfidence}
+                        reason={(executive as any).executiveConfidenceReason}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Input
-                    value={linkedInInput}
-                    onChange={(e) => setLinkedInInput(e.target.value)}
-                    placeholder="https://linkedin.com/in/username"
-                    className="text-sm flex-1"
-                    data-testid="input-linkedin"
-                  />
-                  <Button size="sm" onClick={handleSaveLinkedIn}>
-                    <CheckCircle2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
 
-            <Separator />
-
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <FileText className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Notes</h3>
-              </div>
-              {editingField === 'notes' ? (
-                <div className="space-y-2">
-                  <Textarea
-                    autoFocus
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    onBlur={() => handleSaveTextField('notes', notes)}
-                    placeholder="Internal notes and assessments..."
-                    className="min-h-[200px]"
-                  />
-                  <p className="text-xs text-muted-foreground">Click outside to save</p>
-                </div>
-              ) : (
-                <div 
-                  className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors"
-                  onClick={() => setEditingField('notes')}>
-                  {notes ? (
-                    <p className="text-sm whitespace-pre-wrap">{notes}</p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">Click to add notes...</p>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Banknote className="h-4 w-4 text-primary" />
-                  <h3 className="font-semibold">Remuneration</h3>
-                </div>
-                {parsingRemuneration && (
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>Extracting...</span>
+                {executive.linkedin && !editingLinkedIn ? (
+                  <div className="flex items-center gap-2">
+                    <a href={executive.linkedin} target="_blank" rel="noopener noreferrer"
+                      className="flex-1 flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                      <Linkedin className="h-4 w-4 text-blue-600" />
+                      <span className="text-blue-600 truncate">LinkedIn Profile</span>
+                    </a>
+                    <Button variant="ghost" size="icon" onClick={() => setEditingLinkedIn(true)} className="h-8 w-8">
+                      <Edit2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="p-3 border border-dashed rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Linkedin className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">LinkedIn URL</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input value={linkedInInput} onChange={(e) => setLinkedInInput(e.target.value)} placeholder="https://linkedin.com/in/username" className="text-sm flex-1" data-testid="input-linkedin" />
+                      <Button size="sm" onClick={handleSaveLinkedIn}><CheckCircle2 className="h-4 w-4" /></Button>
+                    </div>
                   </div>
                 )}
-              </div>
-              {editingField === 'remunerationNotes' ? (
-                <div className="space-y-2">
-                  <Textarea
-                    autoFocus
-                    value={remunerationNotes}
-                    onChange={(e) => setRemunerationNotes(e.target.value)}
-                    onBlur={() => handleSaveTextField('remunerationNotes', remunerationNotes)}
-                    placeholder="Paste compensation details in any format and currency. AI will extract Fixed fees, Allowances, Variable bonus, and LTIP..."
-                    className="min-h-[200px]"
-                  />
-                  <p className="text-xs text-muted-foreground">Click outside to save — AI will automatically extract structured data.</p>
-                </div>
-              ) : (
-                <div 
-                  className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors"
-                  onClick={() => setEditingField('remunerationNotes')}>
-                  {remunerationNotes ? (
-                    <p className="text-sm whitespace-pre-wrap">{remunerationNotes}</p>
+
+                <Separator />
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <h3 className="font-semibold">Notes</h3>
+                  </div>
+                  {editingField === 'notes' ? (
+                    <div className="space-y-2">
+                      <Textarea autoFocus value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={() => handleSaveTextField('notes', notes)} placeholder="Internal notes and assessments..." className="min-h-[200px]" />
+                      <p className="text-xs text-muted-foreground">Click outside to save</p>
+                    </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground italic">Click to add remuneration details (any format/currency)...</p>
-                  )}
-                </div>
-              )}
-              {structuredRem && (
-                <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-1.5" data-testid="structured-remuneration">
-                  <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted (USD) — all currencies converted to USD</p>
-                  {structuredRem.baseSalary && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Fixed Fees</span>
-                      <span className="font-medium">USD {Number(structuredRem.baseSalary).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {structuredRem.totalAllowances && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Total Allowances</span>
-                      <span className="font-medium">USD {Number(structuredRem.totalAllowances).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {structuredRem.bonus && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Variable Bonus</span>
-                      <span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {structuredRem.longTermIncentives && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">LTIP</span>
-                      <span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {structuredRem.year && (
-                    <div className="flex justify-between text-xs mt-1">
-                      <span className="text-muted-foreground">Year</span>
-                      <span>{structuredRem.year}</span>
+                    <div className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors" onClick={() => setEditingField('notes')}>
+                      {notes ? <p className="text-sm whitespace-pre-wrap">{notes}</p> : <p className="text-sm text-muted-foreground italic">Click to add notes...</p>}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            <Separator />
+                <Separator />
 
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <TrendingUp className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Status</h3>
-              </div>
-              <select
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
-                value={availability}
-                onChange={(e) => {
-                  setAvailability(e.target.value);
-                  handleSaveTextField('availability', e.target.value);
-                }}
-                data-testid="select-status"
-              >
-                <option value="">- Select Status -</option>
-                <option value="Interested">Interested</option>
-                <option value="Not Interested">Not Interested</option>
-              </select>
-            </div>
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Banknote className="h-4 w-4 text-primary" />
+                      <h3 className="font-semibold">Remuneration</h3>
+                    </div>
+                    {parsingRemuneration && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /><span>Extracting...</span>
+                      </div>
+                    )}
+                  </div>
+                  {editingField === 'remunerationNotes' ? (
+                    <div className="space-y-2">
+                      <Textarea autoFocus value={remunerationNotes} onChange={(e) => setRemunerationNotes(e.target.value)} onBlur={() => handleSaveTextField('remunerationNotes', remunerationNotes)} placeholder="Paste compensation details in any format and currency..." className="min-h-[200px]" />
+                      <p className="text-xs text-muted-foreground">Click outside to save — AI will automatically extract structured data.</p>
+                    </div>
+                  ) : (
+                    <div className="p-3 border rounded-lg bg-card min-h-[120px] cursor-text hover:bg-muted/30 transition-colors" onClick={() => setEditingField('remunerationNotes')}>
+                      {remunerationNotes ? <p className="text-sm whitespace-pre-wrap">{remunerationNotes}</p> : <p className="text-sm text-muted-foreground italic">Click to add remuneration details (any format/currency)...</p>}
+                    </div>
+                  )}
+                  {structuredRem && (
+                    <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-1.5" data-testid="structured-remuneration">
+                      <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted (USD) — all currencies converted to USD</p>
+                      {structuredRem.baseSalary && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Fixed Fees</span><span className="font-medium">USD {Number(structuredRem.baseSalary).toLocaleString()}</span></div>}
+                      {structuredRem.totalAllowances && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Total Allowances</span><span className="font-medium">USD {Number(structuredRem.totalAllowances).toLocaleString()}</span></div>}
+                      {structuredRem.bonus && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Variable Bonus</span><span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span></div>}
+                      {structuredRem.longTermIncentives && <div className="flex justify-between text-xs"><span className="text-muted-foreground">LTIP</span><span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span></div>}
+                      {structuredRem.year && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Year</span><span>{structuredRem.year}</span></div>}
+                    </div>
+                  )}
+                </div>
 
-            <Separator />
+                <Separator />
 
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Level</h3>
-              </div>
-              <select
-                className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
-                value={level}
-                onChange={(e) => {
-                  setLevel(e.target.value);
-                  handleSaveTextField('level', e.target.value);
-                }}
-                data-testid="select-level"
-              >
-                <option value="">- Select Level -</option>
-                <option value="Board">Board</option>
-                <option value="C-Suite">C-Suite</option>
-                <option value="N-1">N-1</option>
-                <option value="N-2">N-2</option>
-              </select>
-            </div>
-
-            <Separator />
-
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h3 className="font-semibold">Diversity & Inclusion</h3>
-              </div>
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground ml-1">Gender</label>
-                  <select
-                    className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
-                    value={gender}
-                    onChange={(e) => {
-                      setGender(e.target.value);
-                      handleSaveTextField('gender', e.target.value);
-                    }}
-                    data-testid="select-gender"
-                  >
-                    <option value="">- Select Gender -</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    <h3 className="font-semibold">Status</h3>
+                  </div>
+                  <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                    value={availability} onChange={(e) => { setAvailability(e.target.value); handleSaveTextField('availability', e.target.value); }} data-testid="select-status">
+                    <option value="">- Select Status -</option>
+                    <option value="Interested">Interested</option>
+                    <option value="Not Interested">Not Interested</option>
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground ml-1">Ethnicity</label>
-                  <select
-                    value={ethnicity}
-                    onChange={(e) => {
-                      setEthnicity(e.target.value);
-                      handleSaveTextField('ethnicity', e.target.value);
-                    }}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    data-testid="select-ethnicity"
-                  >
-                    <option value="">Select ethnicity</option>
-                    <option value="African">African</option>
-                    <option value="East Asian">East Asian</option>
-                    <option value="European">European</option>
-                    <option value="Latin American">Latin American</option>
-                    <option value="Middle Eastern">Middle Eastern</option>
-                    <option value="Native/Indigenous">Native/Indigenous</option>
-                    <option value="Pacific Islander">Pacific Islander</option>
-                    <option value="South Asian">South Asian</option>
-                    <option value="Southeast Asian">Southeast Asian</option>
-                    <option value="Mixed/Other">Mixed/Other</option>
+                <Separator />
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Users className="h-4 w-4 text-primary" />
+                    <h3 className="font-semibold">Level</h3>
+                  </div>
+                  <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                    value={level} onChange={(e) => { setLevel(e.target.value); handleSaveTextField('level', e.target.value); }} data-testid="select-level">
+                    <option value="">- Select Level -</option>
+                    <option value="Board">Board</option>
+                    <option value="C-Suite">C-Suite</option>
+                    <option value="N-1">N-1</option>
+                    <option value="N-2">N-2</option>
                   </select>
                 </div>
+
+                <Separator />
+
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    <h3 className="font-semibold">Diversity & Inclusion</h3>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground ml-1">Gender</label>
+                      <select className="w-full bg-card border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+                        value={gender} onChange={(e) => { setGender(e.target.value); handleSaveTextField('gender', e.target.value); }} data-testid="select-gender">
+                        <option value="">- Select Gender -</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs text-muted-foreground ml-1">Ethnicity</label>
+                      <select value={ethnicity} onChange={(e) => { setEthnicity(e.target.value); handleSaveTextField('ethnicity', e.target.value); }}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2" data-testid="select-ethnicity">
+                        <option value="">Select ethnicity</option>
+                        <option value="African">African</option>
+                        <option value="East Asian">East Asian</option>
+                        <option value="European">European</option>
+                        <option value="Latin American">Latin American</option>
+                        <option value="Middle Eastern">Middle Eastern</option>
+                        <option value="Native/Indigenous">Native/Indigenous</option>
+                        <option value="Pacific Islander">Pacific Islander</option>
+                        <option value="South Asian">South Asian</option>
+                        <option value="Southeast Asian">Southeast Asian</option>
+                        <option value="Mixed/Other">Mixed/Other</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </ScrollArea>
-        )}
-      </div>
+            </ScrollArea>
+          )}
+        </div>
       </div>
     </div>
   );

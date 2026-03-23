@@ -56,6 +56,8 @@ export interface ExtractedExecutive {
   genderConfidence?: number | null;
   ethnicity?: string | null;
   ethnicityConfidence?: number | null;
+  executiveConfidence?: 'high' | 'medium' | 'low' | 'unknown';
+  executiveConfidenceReason?: string | null;
 }
 
 export interface SearchIntent {

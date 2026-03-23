@@ -117,7 +117,9 @@ function buildQuickBuildPrompt(query: string, limit: number): string {
           "role": "${execIntent.roleCode}",
           "linkedinUrl": null,
           "gender": "male",
-          "ethnicity": "Arab"
+          "ethnicity": "Arab",
+          "executiveConfidence": "high",
+          "executiveConfidenceReason": "One sentence explaining confidence level"
         }
       ]`;
   } else {
@@ -131,7 +133,9 @@ function buildQuickBuildPrompt(query: string, limit: number): string {
           "role": "CEO",
           "linkedinUrl": null,
           "gender": "male",
-          "ethnicity": "Arab"
+          "ethnicity": "Arab",
+          "executiveConfidence": "high",
+          "executiveConfidenceReason": "One sentence explaining confidence level"
         }
       ]`;
   }
@@ -178,7 +182,13 @@ ${executiveJsonBlock}
 Revenue should be a number in raw USD (e.g., 5000000000 for $5B, 500000000 for $500M).
 Confidence should be 1-10 (10 = very confident the data is accurate).
 Role must be one of: CEO, CFO, CHRO, CIO, CTO, OTHER.
-Gender should be one of: male, female, or null if unknown.`;
+Gender should be one of: male, female, or null if unknown.
+executiveConfidence rules:
+- "high": you are certain this person holds this exact role currently
+- "medium": you believe this is correct but data may be 12-24 months old
+- "low": you recognise the person but are uncertain of their current title or tenure
+- "unknown": insufficient data to confirm this person or role
+executiveConfidenceReason: one sentence max explaining why (e.g. "Publicly confirmed CFO as of 2023 annual report" or "Known senior executive but title unverified").`;
 }
 
 function makeField<T>(value: T | null | undefined, confidence: number = 5): FieldValue<T> {
@@ -340,6 +350,8 @@ export async function* runQuickBuildSearch(
               genderConfidence: exec.gender ? 6 : null,
               ethnicity: exec.ethnicity || null,
               ethnicityConfidence: exec.ethnicity ? 5 : null,
+              executiveConfidence: exec.executiveConfidence || 'unknown',
+              executiveConfidenceReason: exec.executiveConfidenceReason || null,
             };
             try {
               const newExec = await storage.createExecutiveFromDiscovery(execData);

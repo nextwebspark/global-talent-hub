@@ -1,18 +1,9 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
-function createOpenAIClient(): OpenAI {
-  if (process.env.OPENAI_API_KEY) {
-    return new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-  }
-  return new OpenAI({
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  });
-}
-
-const openai = createOpenAIClient();
+const anthropic = new Anthropic({
+  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+});
 
 export interface ParsedRemuneration {
   baseSalary: number | null;
@@ -275,18 +266,18 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
     const liveRates = await fetchLiveRates();
     const systemPrompt = buildSystemPrompt(liveRates);
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: text },
       ],
-      max_completion_tokens: 1500,
-      response_format: { type: "json_object" },
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) return null;
+    const textBlock = response.content.find(b => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') return null;
+    const content = textBlock.text.replace(/```json|```/g, '').trim();
 
     const raw: LLMParsedResult = JSON.parse(content);
 

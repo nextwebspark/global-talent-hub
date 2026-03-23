@@ -704,9 +704,9 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
                             <span className="font-medium text-sm truncate hover:text-primary transition-colors">
                               {exec.name}
                             </span>
-                            {/* ── Confidence score (numeric) ── */}
-                            <span className={`text-[10px] font-medium shrink-0 ${exec.confidence >= 7 ? 'text-green-600' : exec.confidence >= 4 ? 'text-amber-600' : 'text-red-500'}`}>
-                              {exec.confidence}/10
+                            {/* ── Confidence score (numeric) — derived from executive confidence ── */}
+                            <span className={`text-[10px] font-medium shrink-0 ${exec.executiveConfidence === 'high' ? 'text-green-600' : 'text-gray-400'}`}>
+                              {exec.executiveConfidence === 'high' ? '10' : '5'}/10
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground truncate">{exec.title}</div>

@@ -244,19 +244,22 @@ performance bonus, incentive pay, commission.
 
 How to calculate:
 - Percentage of basic: "20% bonus" → 20% × yearly basic
-- Months of salary: "5 months basic" → 5 × monthly basic
+- Months of salary: "N months basic" → N × MONTHLY basic
+  CRITICAL: monthly basic = yearly basic ÷ 12.
+  Example: if yearly basic = $91,853, monthly basic = $91,853 ÷ 12 = $7,654.
+  Then "5 months basic" = 5 × $7,654 = $38,271. NOT 5 × $91,853.
 - Stated annual figure: use directly
 - Range (e.g. "10–20%"): use the midpoint (15%)
 - If no bonus mentioned: return null
 
 Examples of shorthand you MUST handle correctly:
-- "bonus (5 mnths basic sal)" → 5 × monthly basic salary
-- "bonus 3x monthly" → 3 × monthly basic salary
+- "bonus (5 mnths basic sal)" → 5 × (yearly_basic ÷ 12)
+- "bonus 3x monthly" → 3 × (yearly_basic ÷ 12)
 - "variable (15-20% bsc)" → midpoint 17.5% × yearly basic
-- "perf bonus: 2mo sal" → 2 × monthly basic salary
+- "perf bonus: 2mo sal" → 2 × (yearly_basic ÷ 12)
 - "bonus 25%" → 25% × yearly basic salary
 - "STI: 30% of base" → 30% × yearly basic salary
-- "4 months as bonus" → 4 × monthly basic salary
+- "4 months as bonus" → 4 × (yearly_basic ÷ 12)
 
 LTIP (Long-Term Incentive Plan)
 Only return a figure if a reliable annual value can be 

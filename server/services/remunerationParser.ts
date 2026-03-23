@@ -369,9 +369,31 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
     const rawContent = response.choices[0]?.message?.content;
     if (!rawContent) return null;
-    const content = rawContent.replace(/```json|```/g, '').trim();
+    let content = rawContent.replace(/```json|```/g, '').trim();
 
-    const raw: LLMParsedResult = JSON.parse(content);
+    content = content
+      .replace(/,\s*}/g, '}')
+      .replace(/,\s*]/g, ']')
+      .replace(/(['"])?(\w+)(['"])?\s*:/g, '"$2":')
+      .replace(/:(\s*)'/g, ':$1"')
+      .replace(/'\s*([,}])/g, '"$1')
+      .replace(/\n/g, ' ');
+
+    let raw: LLMParsedResult;
+    try {
+      raw = JSON.parse(content);
+    } catch (firstError) {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          raw = JSON.parse(jsonMatch[0]);
+        } catch {
+          throw firstError;
+        }
+      } else {
+        throw firstError;
+      }
+    }
 
     const notesParts: string[] = [];
 

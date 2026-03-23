@@ -1157,7 +1157,30 @@ function ExecutiveDetailView({
                       {(structuredRem.baseSalary || structuredRem.totalAllowances) && <div className="flex justify-between text-xs font-semibold border-t pt-1 mt-1"><span className="text-foreground">Total Yearly Fixed</span><span>USD {(Number(structuredRem.baseSalary || 0) + Number(structuredRem.totalAllowances || 0)).toLocaleString()}</span></div>}
                       {structuredRem.bonus && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Total Yearly Bonus</span><span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span></div>}
                       {structuredRem.longTermIncentives && <div className="flex justify-between text-xs"><span className="text-muted-foreground">LTIP (Annual)</span><span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span></div>}
-                      {structuredRem.notes && <div className="mt-2 pt-2 border-t"><p className="text-xs text-muted-foreground whitespace-pre-wrap">{structuredRem.notes}</p></div>}
+                      {structuredRem.notes && (
+                        <div className="mt-2 pt-2 border-t">
+                          {(() => {
+                            const parts = structuredRem.notes.split('\n').filter((s: string) => s.trim());
+                            const currencyLine = parts.find((p: string) => p.startsWith('Currency:'));
+                            const calcParts = parts.filter((p: string) => !p.startsWith('Currency:'));
+                            const bullets = calcParts.length === 1
+                              ? calcParts[0].split(/\.\s+/).filter((s: string) => s.trim()).map((s: string) => s.replace(/\.$/, '').trim())
+                              : calcParts;
+                            return (
+                              <>
+                                {currencyLine && <p className="text-xs text-muted-foreground mb-1.5">{currencyLine}</p>}
+                                {bullets.length > 0 && (
+                                  <ul className="space-y-0.5 ml-3">
+                                    {bullets.map((line: string, i: number) => (
+                                      <li key={i} className="text-xs text-muted-foreground list-disc">{line}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                       {structuredRem.year && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Year</span><span>{structuredRem.year}</span></div>}
                     </div>
                   )}

@@ -204,6 +204,7 @@ export interface ExecutiveDetails {
     baseSalary: string | null;
     housingAllowance: string | null;
     transportAllowance: string | null;
+    schoolingAllowance: string | null;
     totalAllowances: string | null;
     bonus: string | null;
     longTermIncentives: string | null;

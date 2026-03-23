@@ -9,6 +9,7 @@ export interface ParsedRemuneration {
   baseSalary: number | null;
   housingAllowance: number | null;
   transportAllowance: number | null;
+  schoolingAllowance: number | null;
   totalAllowances: number | null;
   bonus: number | null;
   longTermIncentives: number | null;
@@ -21,6 +22,7 @@ export interface ParsedRemunerationUSD extends ParsedRemuneration {
   baseSalaryUSD: number | null;
   housingAllowanceUSD: number | null;
   transportAllowanceUSD: number | null;
+  schoolingAllowanceUSD: number | null;
   totalAllowancesUSD: number | null;
   bonusUSD: number | null;
   longTermIncentivesUSD: number | null;
@@ -249,10 +251,16 @@ housing and other allowances.
 - Convert and annualise if needed
 - If no transport mentioned: return null
 
+YEARLY SCHOOLING ALLOWANCE
+Education/schooling allowance specifically for children's 
+school fees. Only include if explicitly mentioned as 
+"schooling allowance", "education allowance", or 
+"school fees". Do NOT assume or invent this field.
+
 YEARLY OTHER ALLOWANCES
 Sum of all other named recurring cash allowances NOT 
-covered by housing or transport (mobile, utilities, 
-education, relocation, etc.).
+covered by housing, transport, or schooling (mobile, 
+utilities, relocation, etc.).
 - Only include allowances explicitly stated
 - Convert and annualise each individually, then sum
 - If none mentioned: return null
@@ -310,6 +318,7 @@ calculation_notes only.
   "yearly_basic_usd": 0,
   "yearly_housing_usd": null,
   "yearly_transport_usd": null,
+  "yearly_schooling_usd": null,
   "yearly_other_allowances_usd": null,
   "total_yearly_fixed_usd": 0,
   "yearly_bonus_usd": null,
@@ -345,6 +354,7 @@ interface LLMParsedResult {
   yearly_basic_usd: number | null;
   yearly_housing_usd: number | null;
   yearly_transport_usd: number | null;
+  yearly_schooling_usd: number | null;
   yearly_other_allowances_usd: number | null;
   total_yearly_fixed_usd: number | null;
   yearly_bonus_usd: number | null;
@@ -429,13 +439,15 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
 
     const housing = parseNumeric(raw.yearly_housing_usd);
     const transport = parseNumeric(raw.yearly_transport_usd);
+    const schooling = parseNumeric(raw.yearly_schooling_usd);
     const otherAllow = parseNumeric(raw.yearly_other_allowances_usd);
-    const totalAllow = (housing || 0) + (transport || 0) + (otherAllow || 0);
+    const totalAllow = (housing || 0) + (transport || 0) + (schooling || 0) + (otherAllow || 0);
 
     return {
       baseSalary: parseNumeric(raw.yearly_basic_usd),
       housingAllowance: housing,
       transportAllowance: transport,
+      schoolingAllowance: schooling,
       totalAllowances: totalAllow > 0 ? Math.round(totalAllow * 100) / 100 : null,
       bonus: parseNumeric(raw.yearly_bonus_usd),
       longTermIncentives: parseNumeric(raw.ltip_annual_usd),
@@ -455,6 +467,7 @@ export function convertRemunerationToUSD(rem: ParsedRemuneration): ParsedRemuner
     baseSalaryUSD: rem.baseSalary,
     housingAllowanceUSD: rem.housingAllowance,
     transportAllowanceUSD: rem.transportAllowance,
+    schoolingAllowanceUSD: rem.schoolingAllowance,
     totalAllowancesUSD: rem.totalAllowances,
     bonusUSD: rem.bonus,
     longTermIncentivesUSD: rem.longTermIncentives,

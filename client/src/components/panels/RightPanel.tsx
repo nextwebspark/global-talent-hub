@@ -1053,7 +1053,22 @@ function ExecutiveDetailView({
                         confidence={executive.executiveConfidence}
                         reason={executive.executiveConfidenceReason}
                         editable
-                        onChangeConfidence={(val) => handleUpdateExecutiveField('executiveConfidence', val)}
+                        onChangeConfidence={async (val) => {
+                          const newConfidence = val === 'high' ? 10 : 5;
+                          const updates = { executiveConfidence: val, confidence: newConfidence };
+                          setLocalExecutive(prev => prev ? { ...prev, ...updates } : prev);
+                          const { executives, setExecutives } = useAppStore.getState();
+                          setExecutives(executives.map(e => e.id === String(localExecutive!.id) ? { ...e, ...updates } : e));
+                          try {
+                            await fetch(`/api/executives/${localExecutive!.id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(updates)
+                            });
+                          } catch (error) {
+                            toast.error('Failed to update');
+                          }
+                        }}
                       />
                     </div>
                   </div>

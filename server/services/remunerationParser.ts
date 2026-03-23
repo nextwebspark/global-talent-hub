@@ -7,6 +7,8 @@ const openrouter = new OpenAI({
 
 export interface ParsedRemuneration {
   baseSalary: number | null;
+  housingAllowance: number | null;
+  transportAllowance: number | null;
   totalAllowances: number | null;
   bonus: number | null;
   longTermIncentives: number | null;
@@ -17,6 +19,8 @@ export interface ParsedRemuneration {
 
 export interface ParsedRemunerationUSD extends ParsedRemuneration {
   baseSalaryUSD: number | null;
+  housingAllowanceUSD: number | null;
+  transportAllowanceUSD: number | null;
   totalAllowancesUSD: number | null;
   bonusUSD: number | null;
   longTermIncentivesUSD: number | null;
@@ -223,19 +227,38 @@ bonuses, and benefits.
 - If given as a monthly figure → multiply by 12
 - Never use the total package figure as the basic
 
-YEARLY ALLOWANCES
-Sum of all named recurring cash allowances paid regardless 
-of performance. Includes: housing, transport, mobile, 
-utilities, education, relocation (if recurring).
-- Only include allowances explicitly stated as additional 
-  to basic salary
-- If an allowance is included within the salary, do not 
-  count it again
-- Convert and annualise each allowance individually, 
-  then sum
+YEARLY HOUSING ALLOWANCE
+The annual housing allowance. Extract separately from 
+transport and other allowances.
+- If housing is a percentage of total package 
+  (e.g. "20% housing") → housing = total × 0.20
+- If housing is a separate stated amount → use directly
+- If housing is INCLUDED within salary (not additional), 
+  still extract the housing portion as a separate figure
+- Convert and annualise if needed
+- If no housing mentioned: return null
+
+YEARLY TRANSPORT ALLOWANCE
+The annual transport allowance. Extract separately from 
+housing and other allowances.
+- If transport is a percentage of total package 
+  (e.g. "10% transport") → transport = total × 0.10
+- If transport is a separate stated amount → use directly
+- If transport is INCLUDED within salary (not additional), 
+  still extract the transport portion as a separate figure
+- Convert and annualise if needed
+- If no transport mentioned: return null
+
+YEARLY OTHER ALLOWANCES
+Sum of all other named recurring cash allowances NOT 
+covered by housing or transport (mobile, utilities, 
+education, relocation, etc.).
+- Only include allowances explicitly stated
+- Convert and annualise each individually, then sum
+- If none mentioned: return null
 
 TOTAL YEARLY FIXED
-= Yearly Basic Salary + Yearly Allowances
+= Yearly Basic Salary + Housing + Transport + Other Allowances
 Always calculate this yourself. Never take it from the text.
 
 YEARLY BONUS
@@ -285,7 +308,9 @@ calculation_notes only.
   "fx_rate_used": 3.75,
   "fx_rate_date": "${today}",
   "yearly_basic_usd": 0,
-  "yearly_allowances_usd": 0,
+  "yearly_housing_usd": null,
+  "yearly_transport_usd": null,
+  "yearly_other_allowances_usd": null,
   "total_yearly_fixed_usd": 0,
   "yearly_bonus_usd": null,
   "ltip_annual_usd": null,
@@ -316,7 +341,9 @@ interface LLMParsedResult {
   fx_rate_used: number;
   fx_rate_date: string;
   yearly_basic_usd: number | null;
-  yearly_allowances_usd: number | null;
+  yearly_housing_usd: number | null;
+  yearly_transport_usd: number | null;
+  yearly_other_allowances_usd: number | null;
   total_yearly_fixed_usd: number | null;
   yearly_bonus_usd: number | null;
   ltip_annual_usd: number | null;
@@ -358,9 +385,16 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
       notesParts.push(raw.calculation_notes);
     }
 
+    const housing = parseNumeric(raw.yearly_housing_usd);
+    const transport = parseNumeric(raw.yearly_transport_usd);
+    const otherAllow = parseNumeric(raw.yearly_other_allowances_usd);
+    const totalAllow = (housing || 0) + (transport || 0) + (otherAllow || 0);
+
     return {
       baseSalary: parseNumeric(raw.yearly_basic_usd),
-      totalAllowances: parseNumeric(raw.yearly_allowances_usd),
+      housingAllowance: housing,
+      transportAllowance: transport,
+      totalAllowances: totalAllow > 0 ? Math.round(totalAllow * 100) / 100 : null,
       bonus: parseNumeric(raw.yearly_bonus_usd),
       longTermIncentives: parseNumeric(raw.ltip_annual_usd),
       currency: 'USD',
@@ -377,6 +411,8 @@ export function convertRemunerationToUSD(rem: ParsedRemuneration): ParsedRemuner
   return {
     ...rem,
     baseSalaryUSD: rem.baseSalary,
+    housingAllowanceUSD: rem.housingAllowance,
+    transportAllowanceUSD: rem.transportAllowance,
     totalAllowancesUSD: rem.totalAllowances,
     bonusUSD: rem.bonus,
     longTermIncentivesUSD: rem.longTermIncentives,

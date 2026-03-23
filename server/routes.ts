@@ -548,6 +548,8 @@ export async function registerRoutes(
                   await storage.createRemuneration({
                     executiveId: exec.id,
                     baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+                    housingAllowance: parsed.housingAllowance != null ? String(parsed.housingAllowance) : null,
+                    transportAllowance: parsed.transportAllowance != null ? String(parsed.transportAllowance) : null,
                     totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
                     bonus: parsed.bonus != null ? String(parsed.bonus) : null,
                     longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
@@ -687,6 +689,8 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
             await storage.createRemuneration({
               executiveId: id,
               baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+              housingAllowance: parsed.housingAllowance != null ? String(parsed.housingAllowance) : null,
+              transportAllowance: parsed.transportAllowance != null ? String(parsed.transportAllowance) : null,
               totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
               bonus: parsed.bonus != null ? String(parsed.bonus) : null,
               longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
@@ -783,6 +787,9 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
         remuneration: details.remuneration.map(rem => ({
           id: rem.id,
           baseSalary: rem.baseSalary,
+          housingAllowance: rem.housingAllowance,
+          transportAllowance: rem.transportAllowance,
+          totalAllowances: rem.totalAllowances,
           bonus: rem.bonus,
           longTermIncentives: rem.longTermIncentives,
           currency: rem.currency,
@@ -956,6 +963,8 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       const entry = await storage.createRemuneration({
         executiveId,
         baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+        housingAllowance: parsed.housingAllowance != null ? String(parsed.housingAllowance) : null,
+        transportAllowance: parsed.transportAllowance != null ? String(parsed.transportAllowance) : null,
         totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
         bonus: parsed.bonus != null ? String(parsed.bonus) : null,
         longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
@@ -2216,6 +2225,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
                   await storage.createRemuneration({
                     executiveId: exec.id,
                     baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+                    housingAllowance: parsed.housingAllowance != null ? String(parsed.housingAllowance) : null,
+                    transportAllowance: parsed.transportAllowance != null ? String(parsed.transportAllowance) : null,
                     totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
                     bonus: parsed.bonus != null ? String(parsed.bonus) : null,
                     longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,

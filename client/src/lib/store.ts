@@ -202,6 +202,9 @@ export interface ExecutiveDetails {
   remuneration: Array<{
     id: number;
     baseSalary: string | null;
+    housingAllowance: string | null;
+    transportAllowance: string | null;
+    totalAllowances: string | null;
     bonus: string | null;
     longTermIncentives: string | null;
     currency: string | null;

@@ -1144,10 +1144,12 @@ function ExecutiveDetailView({
                   {structuredRem && (
                     <div className="mt-3 p-3 border rounded-lg bg-muted/20 space-y-1.5" data-testid="structured-remuneration">
                       <p className="text-xs font-medium text-primary uppercase tracking-wider mb-2">Extracted (USD) — all currencies converted to USD</p>
-                      {structuredRem.baseSalary && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Fixed Fees</span><span className="font-medium">USD {Number(structuredRem.baseSalary).toLocaleString()}</span></div>}
-                      {structuredRem.totalAllowances && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Total Allowances</span><span className="font-medium">USD {Number(structuredRem.totalAllowances).toLocaleString()}</span></div>}
-                      {structuredRem.bonus && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Variable Bonus</span><span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span></div>}
-                      {structuredRem.longTermIncentives && <div className="flex justify-between text-xs"><span className="text-muted-foreground">LTIP</span><span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span></div>}
+                      {structuredRem.baseSalary && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Yearly Basic Salary</span><span className="font-medium">USD {Number(structuredRem.baseSalary).toLocaleString()}</span></div>}
+                      {structuredRem.totalAllowances && <div className="flex justify-between text-xs"><span className="text-muted-foreground">Yearly Allowances</span><span className="font-medium">USD {Number(structuredRem.totalAllowances).toLocaleString()}</span></div>}
+                      {(structuredRem.baseSalary || structuredRem.totalAllowances) && <div className="flex justify-between text-xs font-semibold border-t pt-1 mt-1"><span className="text-foreground">Total Yearly Fixed</span><span>USD {(Number(structuredRem.baseSalary || 0) + Number(structuredRem.totalAllowances || 0)).toLocaleString()}</span></div>}
+                      {structuredRem.bonus && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Yearly Bonus</span><span className="font-medium">USD {Number(structuredRem.bonus).toLocaleString()}</span></div>}
+                      {structuredRem.longTermIncentives && <div className="flex justify-between text-xs"><span className="text-muted-foreground">LTIP (Annual)</span><span className="font-medium">USD {Number(structuredRem.longTermIncentives).toLocaleString()}</span></div>}
+                      {structuredRem.notes && <div className="mt-2 pt-2 border-t"><p className="text-xs text-muted-foreground whitespace-pre-wrap">{structuredRem.notes}</p></div>}
                       {structuredRem.year && <div className="flex justify-between text-xs mt-1"><span className="text-muted-foreground">Year</span><span>{structuredRem.year}</span></div>}
                     </div>
                   )}

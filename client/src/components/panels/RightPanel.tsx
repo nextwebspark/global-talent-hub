@@ -834,30 +834,33 @@ function ExecutiveDetailView({
 
   const handleSaveTextField = async (field: string, value: string) => {
     setEditingField(null);
-    await handleUpdateExecutiveField(field, value);
-    toast.success('Saved');
 
     if (field === 'remunerationNotes' && executive) {
       if (!value || value.trim().length < 5) {
         setStructuredRem(null);
+        await handleUpdateExecutiveField(field, value);
+        toast.success('Saved');
       } else {
         setParsingRemuneration(true);
+        await handleUpdateExecutiveField(field, value);
+        toast.success('Saved');
         try {
-          const res = await fetch(`/api/executives/${executive.id}/remuneration/parse`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: value }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            toast.success('Remuneration data extracted and saved');
-            setStructuredRem(data.entry);
+          const remRes = await fetch(`/api/executives/${executive.id}/remuneration`);
+          if (remRes.ok) {
+            const data = await remRes.json();
+            if (Array.isArray(data) && data.length > 0) {
+              setStructuredRem(data[data.length - 1]);
+              toast.success('Remuneration data extracted');
+            }
           }
         } catch (e: any) {
         } finally {
           setParsingRemuneration(false);
         }
       }
+    } else {
+      await handleUpdateExecutiveField(field, value);
+      toast.success('Saved');
     }
   };
 

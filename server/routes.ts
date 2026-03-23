@@ -376,6 +376,28 @@ export async function registerRoutes(
         const text = req.body.remunerationNotes;
         if (!text || text.trim().length < 5) {
           await storage.deleteRemunerationByExecutive(id);
+        } else {
+          try {
+            const { parseRemunerationText } = await import("./services/remunerationParser");
+            const parsed = await parseRemunerationText(text);
+            if (parsed) {
+              await storage.deleteRemunerationByExecutive(id);
+              await storage.createRemuneration({
+                executiveId: id,
+                baseSalary: parsed.baseSalary != null ? String(parsed.baseSalary) : null,
+                housingAllowance: parsed.housingAllowance != null ? String(parsed.housingAllowance) : null,
+                transportAllowance: parsed.transportAllowance != null ? String(parsed.transportAllowance) : null,
+                totalAllowances: parsed.totalAllowances != null ? String(parsed.totalAllowances) : null,
+                bonus: parsed.bonus != null ? String(parsed.bonus) : null,
+                longTermIncentives: parsed.longTermIncentives != null ? String(parsed.longTermIncentives) : null,
+                currency: parsed.currency,
+                year: parsed.year,
+                notes: parsed.notes,
+              });
+            }
+          } catch (parseErr) {
+            console.error("[PATCH] Remuneration parse error:", parseErr);
+          }
         }
       }
 

@@ -10,6 +10,7 @@ interface ExecutiveSatellitesProps {
   companyLat: number;
   companyLng: number;
   companyRadius: number;
+  companyStatus?: string;
   executives: Executive[];
   persistent?: boolean;
   onSelectExecutive: (execId: string | null, companyId: string) => void;
@@ -47,6 +48,7 @@ export default function ExecutiveSatellites({
   companyLat,
   companyLng,
   companyRadius,
+  companyStatus,
   executives,
   persistent = false,
   onSelectExecutive,
@@ -504,7 +506,7 @@ export default function ExecutiveSatellites({
         const isSelected = selectedExecId === exec.id;
         const isUnlocking = unlockingId === exec.id;
         const isUnlockReady = unlockReadyId === exec.id;
-        const isExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
+        const isExcluded = companyStatus === 'Off-Limits' || exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
 
         return (
           <div

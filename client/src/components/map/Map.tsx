@@ -464,7 +464,7 @@ export default function MapComponent() {
       const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
       const companyExcluded = company.status === 'Off-Limits';
       const allExecsExcluded = companyExcluded || (companyExecs.length > 0 && companyExecs.every((e: Executive) => e.availability === 'Off-Limits'));
-      const fillColor = isSelected ? 'hsl(35 92% 50%)' : allExecsExcluded ? 'hsl(0 0% 60%)' : (company.color || 'hsl(222 47% 11%)');
+      const fillColor = allExecsExcluded ? 'hsl(0 0% 60%)' : isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
       const companyOffset = mapPositions[`company:${company.id}`];
       const markerLat = company.displayLat + (companyOffset?.dLat || 0);
       const markerLng = company.displayLng + (companyOffset?.dLng || 0);
@@ -573,7 +573,7 @@ export default function MapComponent() {
         width:${diameter}px;
         height:${diameter}px;
         background-color:${fillColor};
-        opacity:${isSelected ? 0.9 : allExecsExcluded ? 0.25 : 0.5};
+        opacity:${allExecsExcluded ? 0.25 : isSelected ? 0.9 : 0.5};
         border-radius:50%;
         transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
         cursor:grab;
@@ -607,6 +607,7 @@ export default function MapComponent() {
                 companyLat={company.displayLat + (cOffset?.dLat || 0)}
                 companyLng={company.displayLng + (cOffset?.dLng || 0)}
                 companyRadius={r}
+                companyStatus={company.status}
                 executives={companyExecs}
                 persistent
                 onSelectExecutive={(execId, cId) => { selectExecutive(execId, cId); setPinnedCompanyId(cId); }}
@@ -631,6 +632,7 @@ export default function MapComponent() {
                 companyLat={pinned.displayLat + (pOffset?.dLat || 0)}
                 companyLng={pinned.displayLng + (pOffset?.dLng || 0)}
                 companyRadius={pinnedRadius}
+                companyStatus={pinned.status}
                 executives={pinnedExecs}
                 persistent
                 onSelectExecutive={(execId, companyId) => {
@@ -658,6 +660,7 @@ export default function MapComponent() {
                 companyLat={hovered.displayLat + (hOffset?.dLat || 0)}
                 companyLng={hovered.displayLng + (hOffset?.dLng || 0)}
                 companyRadius={hoveredRadius}
+                companyStatus={hovered.status}
                 executives={hoveredExecs}
                 persistent={isPinned}
                 onSelectExecutive={(execId, companyId) => {

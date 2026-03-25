@@ -69,7 +69,7 @@ export default function MapComponent() {
   pinnedCompanyIdRef.current = pinnedCompanyId;
   const setPinnedCompanyIdRef = useRef(setPinnedCompanyId);
   setPinnedCompanyIdRef.current = setPinnedCompanyId;
-  const [pinnedLabelPos, setPinnedLabelPos] = useState<{ x: number; y: number } | null>(null);
+  const [labelPos, setLabelPos] = useState<{ x: number; y: number } | null>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draggingCompanyRef = useRef<string | null>(null);
@@ -78,7 +78,6 @@ export default function MapComponent() {
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const markerDataRef = useRef<Map<string, { name: string; revenue_usd: number; employees: number }>>(new Map());
-  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const scalingMetricRef = useRef(scalingMetric);
   scalingMetricRef.current = scalingMetric;
   const prevIdSignatureRef = useRef('');
@@ -151,14 +150,9 @@ export default function MapComponent() {
       handleMapDoubleClickRef.current(lat, lng);
     });
 
-    const tooltipEl = document.createElement('div');
-    tooltipEl.className = 'mapbox-tooltip';
-    tooltipEl.style.cssText = 'position:absolute;pointer-events:none;z-index:999;display:none;font-size:12px;font-weight:600;transform:translate(-50%,-100%) translateY(-10px);white-space:nowrap;color:hsl(var(--foreground));text-shadow:0 1px 3px rgba(0,0,0,0.6),0 0 6px rgba(0,0,0,0.3);';
-    mapContainerRef.current.appendChild(tooltipEl);
-    tooltipRef.current = tooltipEl;
-
     map.on('click', () => {
       setPinnedCompanyIdRef.current(null);
+      setHoveredCompanyId(null);
     });
 
     return () => {
@@ -167,7 +161,6 @@ export default function MapComponent() {
       if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
       markersRef.current.forEach(m => m.remove());
       markersRef.current.clear();
-      tooltipEl.remove();
       map.remove();
       mapRef.current = null;
       window.mapboxMap = null;
@@ -353,26 +346,28 @@ export default function MapComponent() {
   const startHoverDismissRef = useRef(startHoverDismiss);
   startHoverDismissRef.current = startHoverDismiss;
 
+  const labelCompanyId = pinnedCompanyId || hoveredCompanyId;
+
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || !pinnedCompanyId) {
-      setPinnedLabelPos(null);
+    if (!map || !mapReady || !labelCompanyId) {
+      setLabelPos(null);
       return;
     }
-    const company = scatteredCompanies.find(c => c.id === pinnedCompanyId);
-    if (!company) { setPinnedLabelPos(null); return; }
-    const cOffset = mapPositions[`company:${pinnedCompanyId}`];
+    const company = scatteredCompanies.find(c => c.id === labelCompanyId);
+    if (!company) { setLabelPos(null); return; }
+    const cOffset = mapPositions[`company:${labelCompanyId}`];
     const lat = company.displayLat + (cOffset?.dLat || 0);
     const lng = company.displayLng + (cOffset?.dLng || 0);
     const updatePos = () => {
       if (!mapRef.current) return;
       const pt = mapRef.current.project([lng, lat]);
-      setPinnedLabelPos({ x: pt.x, y: pt.y });
+      setLabelPos({ x: pt.x, y: pt.y });
     };
     updatePos();
     map.on('move', updatePos);
     return () => { map.off('move', updatePos); };
-  }, [pinnedCompanyId, scatteredCompanies, mapPositions, mapReady]);
+  }, [labelCompanyId, scatteredCompanies, mapPositions, mapReady]);
 
   const visibleIdSignature = useMemo(
     () => scatteredCompanies.map(c => c.id).sort().join(','),
@@ -504,6 +499,8 @@ export default function MapComponent() {
           if (!isMarkerDragging) {
             selectCompanyRef.current(company.id);
             setPinnedCompanyIdRef.current(company.id);
+            setHoveredCompanyId(company.id);
+            cancelHoverDismissRef.current();
           }
         });
 
@@ -513,25 +510,6 @@ export default function MapComponent() {
           if (hoveredCompanyIdRef.current === company.id) return;
           if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
           hoverTimerRef.current = setTimeout(() => setHoveredCompanyId(company.id), 300);
-          const tooltipEl = tooltipRef.current;
-          if (tooltipEl && !pinnedCompanyIdRef.current) {
-            const data = markerDataRef.current.get(company.id);
-            const name = data?.name || company.name;
-            tooltipEl.textContent = name;
-            tooltipEl.style.display = 'block';
-          }
-        });
-
-        el.addEventListener('mousemove', (e) => {
-          const tooltipEl = tooltipRef.current;
-          if (tooltipEl && tooltipEl.style.display === 'block') {
-            const container = mapContainerRef.current;
-            if (container) {
-              const rect = container.getBoundingClientRect();
-              tooltipEl.style.left = (e.clientX - rect.left) + 'px';
-              tooltipEl.style.top = (e.clientY - rect.top) + 'px';
-            }
-          }
         });
 
         el.addEventListener('mouseleave', () => {
@@ -540,8 +518,6 @@ export default function MapComponent() {
             hoverTimerRef.current = null;
           }
           if (hoveredCompanyIdRef.current === company.id) startHoverDismissRef.current();
-          const tooltipEl = tooltipRef.current;
-          if (tooltipEl) tooltipEl.style.display = 'none';
         });
 
         el.addEventListener('dblclick', (e) => {
@@ -612,6 +588,33 @@ export default function MapComponent() {
             );
           })}
 
+          {!showAllSatellites && pinnedCompanyId && pinnedCompanyId !== hoveredCompanyId && (() => {
+            const pinned = scatteredCompanies.find(c => c.id === pinnedCompanyId);
+            if (!pinned) return null;
+            const pinnedExecs = executives.filter((e: Executive) => e.company_id === pinnedCompanyId);
+            if (pinnedExecs.length === 0) return null;
+            const pinnedValue = scalingMetric === 'revenue' ? pinned.revenue_usd : pinned.employees;
+            const pinnedRadius = getRadius(pinnedValue);
+            const pOffset = mapPositions[`company:${pinnedCompanyId}`];
+            return (
+              <ExecutiveSatellites
+                key={`pinned-${pinnedCompanyId}`}
+                companyId={pinnedCompanyId}
+                map={mapRef.current!}
+                companyLat={pinned.displayLat + (pOffset?.dLat || 0)}
+                companyLng={pinned.displayLng + (pOffset?.dLng || 0)}
+                companyRadius={pinnedRadius}
+                executives={pinnedExecs}
+                persistent
+                onSelectExecutive={(execId, companyId) => {
+                  selectExecutive(execId, companyId);
+                  setPinnedCompanyId(companyId);
+                }}
+                onDismiss={() => {}}
+              />
+            );
+          })()}
+
           {!showAllSatellites && hoveredCompanyId && (() => {
             const hovered = scatteredCompanies.find(c => c.id === hoveredCompanyId);
             if (!hovered) return null;
@@ -620,6 +623,7 @@ export default function MapComponent() {
             const hoveredValue = scalingMetric === 'revenue' ? hovered.revenue_usd : hovered.employees;
             const hoveredRadius = getRadius(hoveredValue);
             const hOffset = mapPositions[`company:${hoveredCompanyId}`];
+            const isPinned = pinnedCompanyId === hoveredCompanyId;
             return (
               <ExecutiveSatellites
                 companyId={hoveredCompanyId}
@@ -628,14 +632,15 @@ export default function MapComponent() {
                 companyLng={hovered.displayLng + (hOffset?.dLng || 0)}
                 companyRadius={hoveredRadius}
                 executives={hoveredExecs}
+                persistent={isPinned}
                 onSelectExecutive={(execId, companyId) => {
-                  setHoveredCompanyId(null);
+                  if (!isPinned) setHoveredCompanyId(null);
                   selectExecutive(execId, companyId);
                   setPinnedCompanyId(companyId);
                 }}
-                onDismiss={() => setHoveredCompanyId(null)}
+                onDismiss={() => { if (!isPinned) setHoveredCompanyId(null); }}
                 onPillEnter={cancelHoverDismiss}
-                onPillLeave={startHoverDismiss}
+                onPillLeave={isPinned ? undefined : startHoverDismiss}
               />
             );
           })()}
@@ -693,35 +698,64 @@ export default function MapComponent() {
         </div>
       )}
 
-      {pinnedCompanyId && pinnedLabelPos && (() => {
-        const company = scatteredCompanies.find(c => c.id === pinnedCompanyId);
+      {labelCompanyId && labelPos && (() => {
+        const company = scatteredCompanies.find(c => c.id === labelCompanyId);
         if (!company) return null;
-        const data = markerDataRef.current.get(pinnedCompanyId);
+        const data = markerDataRef.current.get(labelCompanyId);
         const name = data?.name || company.name;
-        const metric = scalingMetric === 'revenue'
-          ? `$${((data?.revenue_usd ?? company.revenue_usd) / 1_000_000).toFixed(0)}M`
-          : `${(data?.employees ?? company.employees).toLocaleString()} emp.`;
+        const isPinned = pinnedCompanyId === labelCompanyId;
+        const execCount = executives.filter((e: Executive) => e.company_id === labelCompanyId).length;
+        const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
+        const r = getRadius(val);
         return (
           <div
             style={{
               position: 'absolute',
-              left: pinnedLabelPos.x,
-              top: pinnedLabelPos.y,
-              transform: 'translate(-50%, calc(-100% - 10px))',
+              left: labelPos.x,
+              top: labelPos.y - r,
+              transform: 'translate(-50%, calc(-100% - 6px))',
               zIndex: 998,
               pointerEvents: 'none',
-              background: 'hsl(var(--popover) / 0.95)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '6px',
-              padding: '4px 8px',
-              fontSize: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
               whiteSpace: 'nowrap',
+              transition: 'opacity 0.2s ease',
             }}
           >
-            <div style={{ fontWeight: 600, color: 'hsl(var(--foreground))' }}>{name}</div>
-            <div style={{ color: 'hsl(var(--muted-foreground))' }}>{metric}</div>
+            {isPinned ? (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'hsl(var(--popover) / 0.88)',
+                  backdropFilter: 'blur(12px)',
+                  borderRadius: '20px',
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'hsl(var(--foreground))',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                }}
+              >
+                <span>{name}</span>
+                {execCount > 0 && (
+                  <span style={{ color: 'hsl(var(--muted-foreground))', fontWeight: 400, fontSize: '10px' }}>
+                    · {execCount} exec{execCount !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: 'hsl(var(--foreground))',
+                  textShadow: '0 1px 3px rgba(0,0,0,0.5), 0 0 8px rgba(0,0,0,0.25)',
+                  textAlign: 'center',
+                }}
+              >
+                {name}
+              </div>
+            )}
           </div>
         );
       })()}

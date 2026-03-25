@@ -1691,10 +1691,9 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               const selected = !isGrouped && isRowSelected(row);
               const style = !isGrouped ? getRowStyles(row) : {};
               const isDragSelected = original ? dragSelectedRows.has(original.id) : false;
-              const isExcluded = !isGrouped && original && (
-                original.availability === 'Out of Scope' || original.availability === 'Off-Limits' ||
-                original.companyStatus === 'Out of Scope' || original.companyStatus === 'Off-Limits'
-              );
+              const isExecExcluded = original && (original.availability === 'Out of Scope' || original.availability === 'Off-Limits');
+              const isCompanyOffLimits = original && original.companyStatus === 'Off-Limits';
+              const isExcluded = !isGrouped && (isExecExcluded || isCompanyOffLimits);
 
               return (
                 <tr

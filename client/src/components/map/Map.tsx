@@ -87,6 +87,9 @@ export default function MapComponent() {
   const [mapReady, setMapReady] = useState(false);
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const styleLoadedRef = useRef(false);
+  const mapZoomRef = useRef(1.5);
+  const getRadiusRef = useRef(getRadius);
+  getRadiusRef.current = getRadius;
 
   useEffect(() => {
     fetch('/api/config')
@@ -126,8 +129,30 @@ export default function MapComponent() {
     window.mapboxMap = map;
 
     map.on('load', () => {
+      mapZoomRef.current = map.getZoom();
       setMapReady(true);
     });
+
+    const getZoomScale = (zoom: number) => Math.max(0.25, Math.min(1.0, (zoom - 1) / (5 - 1)));
+
+    const handleZoom = () => {
+      mapZoomRef.current = map.getZoom();
+      const scale = getZoomScale(mapZoomRef.current);
+      markersRef.current.forEach((marker, id) => {
+        const data = markerDataRef.current.get(id);
+        if (!data) return;
+        const el = marker.getElement() as HTMLDivElement;
+        const bubble = el.querySelector('.bubble-inner') as HTMLDivElement | null;
+        if (!bubble) return;
+        const value = scalingMetricRef.current === 'revenue' ? data.revenue_usd : data.employees;
+        const baseRadius = getRadiusRef.current(value);
+        const scaledDiam = baseRadius * scale * 2;
+        bubble.style.width = `${scaledDiam}px`;
+        bubble.style.height = `${scaledDiam}px`;
+      });
+    };
+
+    map.on('zoom', handleZoom);
 
     const handleInteractionStart = () => {
       isUserInteractingRef.current = true;
@@ -432,7 +457,9 @@ export default function MapComponent() {
       });
       const isSelected = selectedCompanyId === company.id;
       const value = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
-      const radius = getRadius(value);
+      const baseRadius = getRadius(value);
+      const zoomScale = Math.max(0.25, Math.min(1.0, (mapZoomRef.current - 1) / (5 - 1)));
+      const radius = baseRadius * zoomScale;
       const diameter = radius * 2;
       const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
       const companyExcluded = company.status === 'Off-Limits';
@@ -706,7 +733,8 @@ export default function MapComponent() {
         const isPinned = pinnedCompanyId === labelCompanyId;
         const execCount = executives.filter((e: Executive) => e.company_id === labelCompanyId).length;
         const val = scalingMetric === 'revenue' ? company.revenue_usd : company.employees;
-        const r = getRadius(val);
+        const labelZoomScale = Math.max(0.25, Math.min(1.0, (mapZoomRef.current - 1) / (5 - 1)));
+        const r = getRadius(val) * labelZoomScale;
         return (
           <div
             style={{

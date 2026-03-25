@@ -25,9 +25,10 @@ export const satelliteAnchors = new Map<string, mapboxgl.Marker>();
 const SNAP_DISTANCE = 22;
 const DRAG_THRESHOLD = 4;
 const ROW_HEIGHT = 38;
-const PILL_X = 80;
+const PILL_X = 20;
 const CHILD_INDENT = 60;
 const START_Y_GAP = 25;
+const BRANCH_GAP = 10;
 
 function getDescendants(id: string, hier: Record<string, string>): Set<string> {
   const result = new Set<string>();
@@ -295,7 +296,7 @@ export default function ExecutiveSatellites({
 
       if (isRoot) {
         const currentBase = basePositionsRef.current[execId];
-        if (currentBase && Math.abs(dx) < PILL_X * 0.6) {
+        if (currentBase && Math.abs(dx) < 48) {
           const draggedY = currentBase.y + dy;
           const currentOrder = orderedRootIdsRef.current;
           const myIdx = currentOrder.indexOf(execId);
@@ -458,7 +459,7 @@ export default function ExecutiveSatellites({
                     <line
                       key={`h-${exec.id}`}
                       x1={parentPos.x + PILL_R + 4} y1={parentPos.y}
-                      x2={pos.x - PILL_R} y2={pos.y}
+                      x2={pos.x - BRANCH_GAP} y2={pos.y}
                       stroke="hsl(35 92% 50%)" strokeWidth={1.5} strokeOpacity={0.5}
                       strokeDasharray="3 2"
                     />
@@ -468,7 +469,7 @@ export default function ExecutiveSatellites({
                   <line
                     key={`b-${exec.id}`}
                     x1={0} y1={pos.y}
-                    x2={pos.x - PILL_R} y2={pos.y}
+                    x2={pos.x - BRANCH_GAP} y2={pos.y}
                     stroke="currentColor" strokeWidth={1} strokeOpacity={0.2}
                     strokeDasharray="4 3"
                     className="text-muted-foreground"
@@ -512,7 +513,7 @@ export default function ExecutiveSatellites({
               position: 'absolute',
               left: pos.x,
               top: pos.y,
-              transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
+              transform: `translate(0, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? (isExcluded ? 0.35 : 1) : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
               zIndex: isDragging ? 453 : isSelected ? 452 : 451,
@@ -620,7 +621,7 @@ export default function ExecutiveSatellites({
               position: 'absolute',
               left: PILL_X,
               top: overflowY,
-              transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
+              transform: `translate(0, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
               transition: `all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${execs.length * 50}ms`,
               zIndex: 451,

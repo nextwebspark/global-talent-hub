@@ -625,8 +625,13 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       });
       if (!res.ok) throw new Error('Request failed');
       const { results } = await res.json() as { results: { id: number; sector: string }[] };
-      for (const r of results) {
-        updateCompany(String(r.id), { industry: r.sector });
+      if (results.length > 0) {
+        const filled = new Map(results.map(r => [String(r.id), r.sector]));
+        useAppStore.setState(state => ({
+          companies: state.companies.map(c =>
+            filled.has(c.id) ? { ...c, industry: filled.get(c.id)! } : c
+          ),
+        }));
       }
       toast.success(`${results.length} sector${results.length !== 1 ? 's' : ''} filled automatically.`);
     } catch {
@@ -634,7 +639,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     } finally {
       setFillingSectors(false);
     }
-  }, [companies, updateCompany]);
+  }, [companies]);
 
   const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');

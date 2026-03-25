@@ -455,6 +455,7 @@ export async function registerRoutes(
       let imported = 0;
       let skipped = 0;
       const errors: string[] = [];
+      const newCompaniesForSectorInference: { id: number; name: string }[] = [];
 
       const safeStr = (raw: any): string | null => {
         if (raw === null || raw === undefined) return null;
@@ -519,11 +520,10 @@ export async function registerRoutes(
             } else {
               const countryForCoords = normalizedCountry || 'Unknown';
               const coords = applyCoordinateFallback({ country: countryForCoords, city: city || undefined });
-              const finalSector = sector || await inferSector(companyName);
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: companyName,
                 country: countryForCoords,
-                sector: finalSector,
+                sector: sector,
                 businessType: null,
                 region: city,
                 revenue: revenueRaw !== null ? String(revenueRaw) : null,
@@ -534,6 +534,9 @@ export async function registerRoutes(
               });
               companyId = newCompany.id;
               companyMap.set(lowerName, companyId);
+              if (!sector) {
+                newCompaniesForSectorInference.push({ id: newCompany.id, name: companyName });
+              }
             }
           } else {
             if (existingCompanies.length > 0) {
@@ -645,6 +648,15 @@ export async function registerRoutes(
             console.error("[Routes] Background diversity inference after bulk import failed:", err)
           );
         });
+      }
+
+      if (newCompaniesForSectorInference.length > 0) {
+        inferSectorsBatch(newCompaniesForSectorInference).then(async (results) => {
+          for (const r of results) {
+            await storage.updateCompanyManual(r.id, { sector: r.sector });
+          }
+          console.log(`[Routes] Background sector inference: filled ${results.length}/${newCompaniesForSectorInference.length} sectors`);
+        }).catch(err => console.error("[Routes] Background sector inference failed:", err));
       }
     } catch (error) {
       console.error("Error bulk importing executives:", error);
@@ -2184,6 +2196,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let imported = 0;
       let skipped = 0;
       const errors: string[] = [];
+      const newCompaniesForSectorInference2: { id: number; name: string }[] = [];
 
       const safeStr = (raw: any): string | null => {
         if (raw === null || raw === undefined) return null;
@@ -2260,6 +2273,9 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
             });
             companyId = newCompany.id;
             companyMap.set(lowerName, companyId);
+            if (!sector && resolvedCompanyName !== 'Imported Contacts') {
+              newCompaniesForSectorInference2.push({ id: newCompany.id, name: resolvedCompanyName });
+            }
           }
 
           if (companyId && (execName || title !== 'Executive')) {
@@ -2358,6 +2374,15 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }).catch(err => {
         console.error(`[ImportProject] Background enrichment failed for "${name}":`, err);
       });
+
+      if (newCompaniesForSectorInference2.length > 0) {
+        inferSectorsBatch(newCompaniesForSectorInference2).then(async (results) => {
+          for (const r of results) {
+            await storage.updateCompanyManual(r.id, { sector: r.sector });
+          }
+          console.log(`[ImportProject] Background sector inference: filled ${results.length}/${newCompaniesForSectorInference2.length} sectors`);
+        }).catch(err => console.error("[ImportProject] Background sector inference failed:", err));
+      }
 
     } catch (error: any) {
       console.error("[ImportProject] Error:", error);

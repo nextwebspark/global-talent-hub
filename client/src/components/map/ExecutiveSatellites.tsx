@@ -418,14 +418,16 @@ export default function ExecutiveSatellites({
           if (!pos) return null;
           const parentId = hierarchy[exec.id];
 
+          const PILL_TOP = 16;
+
           if (parentId) {
             const parentPos = displayPositions[parentId];
             if (!parentPos) return null;
             return (
               <line
                 key={`h-${exec.id}`}
-                x1={parentPos.x} y1={parentPos.y}
-                x2={pos.x} y2={pos.y}
+                x1={parentPos.x} y1={parentPos.y - PILL_TOP}
+                x2={pos.x} y2={pos.y - PILL_TOP}
                 stroke="hsl(35 92% 50%)" strokeWidth={2} strokeOpacity={0.6}
               />
             );
@@ -435,7 +437,7 @@ export default function ExecutiveSatellites({
             <line
               key={`c-${exec.id}`}
               x1={0} y1={0}
-              x2={pos.x} y2={pos.y}
+              x2={pos.x} y2={pos.y - PILL_TOP}
               stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.25}
               className="text-muted-foreground"
             />

@@ -21,6 +21,25 @@ export const GICS_SECTORS = [
 
 export type GicsSector = typeof GICS_SECTORS[number];
 
+const GICS_SET = new Set<string>(GICS_SECTORS);
+
+/** Returns true only if `sector` is exactly one of the 11 GICS top-level sector names. */
+export function isStandardSector(sector: string | null | undefined): boolean {
+  return !!sector && GICS_SET.has(sector);
+}
+
+/**
+ * Returns the sector unchanged if it is already a GICS sector,
+ * or infers a new one from the company name if not.
+ */
+export async function normalizeOrInferSector(
+  companyName: string,
+  rawSector: string | null | undefined
+): Promise<string | null> {
+  if (isStandardSector(rawSector)) return rawSector!;
+  return inferSector(companyName);
+}
+
 const SECTOR_LIST = GICS_SECTORS.join(", ");
 
 const SYSTEM_PROMPT = `You are a sector classification expert. Classify companies into exactly one of these 11 GICS top-level sectors: ${SECTOR_LIST}.

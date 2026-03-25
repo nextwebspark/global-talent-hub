@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { storage } from "../storage";
 import { validateLlmResponse } from "./postLlmValidation";
 import { validateQuery, validateResults, type QueryValidationResult } from "./queryValidation";
+import { normalizeOrInferSector } from "./sectorInference";
 
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -1604,9 +1605,10 @@ IMPORTANT:
         ? String(validatedData.revenueFxRate)
         : null;
       
+      const normalizedSector = await normalizeOrInferSector(validatedData.name, validatedData.sector);
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
-        sector: validatedData.sector,
+        sector: normalizedSector || validatedData.sector,
         businessType: validatedData.businessType || null,
         entityType: validatedData.entityType || null,
         isOperatingCompany: validatedData.isOperatingCompany ?? true,

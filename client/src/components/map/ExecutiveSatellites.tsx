@@ -375,6 +375,7 @@ export default function ExecutiveSatellites({
       setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
 
       if (isSubordinate && !wasUnlockReady) {
+        if (!persistent && hoverCountRef.current === 0) startDismissRef.current();
         return;
       } else if (wasDragged && currentSnap) {
         setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
@@ -434,7 +435,6 @@ export default function ExecutiveSatellites({
       >
         {(() => {
           const PILL_R = 15;
-          const BUBBLE_R = 16;
           const allY = execs.map(e => displayPositions[e.id]?.y).filter((y): y is number => y != null);
           if (allY.length === 0) return null;
           const maxY = Math.max(...allY);

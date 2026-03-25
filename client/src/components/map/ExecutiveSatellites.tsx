@@ -24,8 +24,10 @@ const MAX_SATELLITES = 8;
 export const satelliteAnchors = new Map<string, mapboxgl.Marker>();
 const SNAP_DISTANCE = 22;
 const DRAG_THRESHOLD = 4;
-const CHILD_VERTICAL_OFFSET = 38;
-const CHILD_HORIZONTAL_STAGGER = 75;
+const ROW_HEIGHT = 38;
+const PILL_X = 80;
+const CHILD_INDENT = 60;
+const START_Y_GAP = 25;
 
 function getDescendants(id: string, hier: Record<string, string>): Set<string> {
   const result = new Set<string>();
@@ -207,32 +209,40 @@ export default function ExecutiveSatellites({
     };
   }, [map, cancelDismiss]);
 
-  const orbitRadius = companyRadius + 65;
+  const savedOrder = mapPositions[`satellite-order:${companyId}`] as string[] | undefined;
+
+  const orderedRootIds = useMemo(() => {
+    const rootExecs = execs.filter(e => !hierarchy[e.id] || !execIdSet.has(hierarchy[e.id]));
+    const rootIds = rootExecs.map(e => e.id);
+    if (!savedOrder) return rootIds;
+    const ordered: string[] = [];
+    for (const id of savedOrder) {
+      if (rootIds.includes(id)) ordered.push(id);
+    }
+    for (const id of rootIds) {
+      if (!ordered.includes(id)) ordered.push(id);
+    }
+    return ordered;
+  }, [execs, hierarchy, execIdSet, savedOrder]);
 
   const basePositions = useMemo(() => {
     const positions: Record<string, { x: number; y: number }> = {};
-    const rootExecs = execs.filter(e => !hierarchy[e.id] || !execIdSet.has(hierarchy[e.id]));
-    const totalRoots = rootExecs.length + (overflow > 0 ? 1 : 0);
-    const angleStep = totalRoots > 1 ? (2 * Math.PI) / totalRoots : 0;
+    const startY = companyRadius + START_Y_GAP;
+    let row = 0;
 
-    const computeForExec = (exec: typeof execs[0], bx: number, by: number) => {
-      positions[exec.id] = { x: bx, y: by };
-      const children = execs.filter(e => hierarchy[e.id] === exec.id && execIdSet.has(e.id));
-      if (children.length > 0) {
-        const startX = bx - ((children.length - 1) * CHILD_HORIZONTAL_STAGGER) / 2;
-        children.forEach((child, ci) => {
-          computeForExec(child, startX + ci * CHILD_HORIZONTAL_STAGGER, by + CHILD_VERTICAL_OFFSET);
-        });
-      }
+    const computeForExec = (execId: string, indent: number) => {
+      positions[execId] = { x: PILL_X + indent, y: startY + row * ROW_HEIGHT };
+      row++;
+      const children = execs.filter(e => hierarchy[e.id] === execId && execIdSet.has(e.id));
+      children.forEach(child => computeForExec(child.id, indent + CHILD_INDENT));
     };
 
-    rootExecs.forEach((exec, i) => {
-      const angle = totalRoots > 1 ? -(i * angleStep) : 0;
-      computeForExec(exec, Math.cos(angle) * orbitRadius, Math.sin(angle) * orbitRadius);
-    });
-
+    orderedRootIds.forEach(id => computeForExec(id, 0));
     return positions;
-  }, [execs, execIdSet, hierarchy, orbitRadius, overflow]);
+  }, [execs, execIdSet, hierarchy, companyRadius, orderedRootIds]);
+
+  const orderedRootIdsRef = useRef(orderedRootIds);
+  orderedRootIdsRef.current = orderedRootIds;
 
   const basePositionsRef = useRef(basePositions);
   basePositionsRef.current = basePositions;
@@ -243,17 +253,14 @@ export default function ExecutiveSatellites({
       const base = basePositions[exec.id];
       if (!base) continue;
       const offset = dragOffsets[exec.id];
-      const saved = mapPositions[`exec:${exec.id}`];
       if (offset) {
         result[exec.id] = { x: base.x + offset.dx, y: base.y + offset.dy };
-      } else if (saved) {
-        result[exec.id] = { x: saved.x, y: saved.y };
       } else {
         result[exec.id] = { x: base.x, y: base.y };
       }
     }
     return result;
-  }, [execs, basePositions, dragOffsets, mapPositions]);
+  }, [execs, basePositions, dragOffsets]);
 
   const displayPositionsRef = useRef(displayPositions);
   displayPositionsRef.current = displayPositions;
@@ -268,6 +275,7 @@ export default function ExecutiveSatellites({
     const origDx = currentDisplay && base ? currentDisplay.x - base.x : 0;
     const origDy = currentDisplay && base ? currentDisplay.y - base.y : 0;
     const isSubordinate = !!hierarchyRef.current[execId];
+    const isRoot = !isSubordinate;
     draggingRef.current = { id: execId, startX: clientX, startY: clientY, origDx, origDy };
 
     const handleDragMove = (e: MouseEvent) => {
@@ -285,6 +293,34 @@ export default function ExecutiveSatellites({
       const dx = draggingRef.current.origDx + totalDx;
       const dy = draggingRef.current.origDy + totalDy;
       setDragOffsets(prev => ({ ...prev, [execId]: { dx, dy } }));
+
+      if (isRoot) {
+        const currentBase = basePositionsRef.current[execId];
+        if (currentBase) {
+          const draggedY = currentBase.y + dy;
+          const currentOrder = orderedRootIdsRef.current;
+          const myIdx = currentOrder.indexOf(execId);
+          if (myIdx >= 0) {
+            let swapIdx = -1;
+            if (myIdx > 0) {
+              const aboveBase = basePositionsRef.current[currentOrder[myIdx - 1]];
+              if (aboveBase && draggedY < aboveBase.y) swapIdx = myIdx - 1;
+            }
+            if (swapIdx < 0 && myIdx < currentOrder.length - 1) {
+              const belowBase = basePositionsRef.current[currentOrder[myIdx + 1]];
+              if (belowBase && draggedY > belowBase.y) swapIdx = myIdx + 1;
+            }
+            if (swapIdx >= 0) {
+              const newOrder = [...currentOrder];
+              newOrder[myIdx] = currentOrder[swapIdx];
+              newOrder[swapIdx] = currentOrder[myIdx];
+              orderedRootIdsRef.current = newOrder;
+              updateMapPosition(`satellite-order:${companyId}`, newOrder);
+              draggingRef.current!.origDy += (swapIdx - myIdx) * ROW_HEIGHT;
+            }
+          }
+        }
+      }
 
       if (isSubordinate && !unlockReadyRef.current) return;
 
@@ -336,35 +372,18 @@ export default function ExecutiveSatellites({
       snapTargetRef.current = null;
       setSnapTargetId(null);
       setDraggingId(null);
+      setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
 
       if (isSubordinate && !wasUnlockReady) {
-        const currentBase = basePositionsRef.current[execId];
-        const finalOffset = dragOffsetsRef.current[execId];
-        if (wasDragged && currentBase && finalOffset) {
-          const finalX = currentBase.x + finalOffset.dx;
-          const finalY = currentBase.y + finalOffset.dy;
-          updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
-        }
-        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
+        return;
       } else if (wasDragged && currentSnap) {
         setHierarchy(prev => ({ ...prev, [execId]: currentSnap }));
-        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
         updateMapPosition(`exec:${execId}`, null);
-      } else if (wasDragged && didDragRef.current) {
-        const currentBase = basePositionsRef.current[execId];
-        const finalOffset = dragOffsetsRef.current[execId];
-        if (currentBase && finalOffset) {
-          const finalX = currentBase.x + finalOffset.dx;
-          const finalY = currentBase.y + finalOffset.dy;
-          updateMapPosition(`exec:${execId}`, { x: finalX, y: finalY });
-        }
-        if (wasUnlockReady) {
-          setHierarchy(prev => {
-            if (!prev[execId]) return prev;
-            const next = { ...prev }; delete next[execId]; return next;
-          });
-        }
-        setDragOffsets(prev => { const next = { ...prev }; delete next[execId]; return next; });
+      } else if (wasDragged && wasUnlockReady) {
+        setHierarchy(prev => {
+          if (!prev[execId]) return prev;
+          const next = { ...prev }; delete next[execId]; return next;
+        });
       }
 
       if (!persistent && hoverCountRef.current === 0) startDismissRef.current();
@@ -387,7 +406,7 @@ export default function ExecutiveSatellites({
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [cancelDismiss, setHierarchy, map, persistent, updateMapPosition]);
+  }, [cancelDismiss, setHierarchy, map, persistent, updateMapPosition, companyId]);
 
   if (execs.length === 0 || !anchorEl) return null;
 
@@ -413,47 +432,53 @@ export default function ExecutiveSatellites({
           pointerEvents: 'none',
         }}
       >
-        {execs.map((exec) => {
-          const pos = displayPositions[exec.id];
-          if (!pos) return null;
-          const parentId = hierarchy[exec.id];
-
+        {(() => {
           const PILL_R = 15;
           const BUBBLE_R = 16;
-
-          if (parentId) {
-            const parentPos = displayPositions[parentId];
-            if (!parentPos) return null;
-            const dx = pos.x - parentPos.x;
-            const dy = pos.y - parentPos.y;
-            const d = Math.sqrt(dx * dx + dy * dy) || 1;
-            const ux = dx / d;
-            const uy = dy / d;
-            return (
-              <line
-                key={`h-${exec.id}`}
-                x1={parentPos.x + ux * PILL_R} y1={parentPos.y + uy * PILL_R}
-                x2={pos.x - ux * PILL_R} y2={pos.y - uy * PILL_R}
-                stroke="hsl(35 92% 50%)" strokeWidth={2} strokeOpacity={0.6}
-              />
-            );
-          }
-
-          const dx = pos.x;
-          const dy = pos.y;
-          const d = Math.sqrt(dx * dx + dy * dy) || 1;
-          const ux = dx / d;
-          const uy = dy / d;
+          const allY = execs.map(e => displayPositions[e.id]?.y).filter((y): y is number => y != null);
+          if (allY.length === 0) return null;
+          const maxY = Math.max(...allY);
+          const spineTop = companyRadius;
+          const spineBottom = maxY;
           return (
-            <line
-              key={`c-${exec.id}`}
-              x1={ux * BUBBLE_R} y1={uy * BUBBLE_R}
-              x2={pos.x - ux * PILL_R} y2={pos.y - uy * PILL_R}
-              stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.25}
-              className="text-muted-foreground"
-            />
+            <>
+              <line
+                x1={0} y1={spineTop}
+                x2={0} y2={spineBottom}
+                stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.18}
+                className="text-muted-foreground"
+              />
+              {execs.map((exec) => {
+                const pos = displayPositions[exec.id];
+                if (!pos) return null;
+                const parentId = hierarchy[exec.id];
+                if (parentId) {
+                  const parentPos = displayPositions[parentId];
+                  if (!parentPos) return null;
+                  return (
+                    <line
+                      key={`h-${exec.id}`}
+                      x1={parentPos.x + PILL_R + 4} y1={parentPos.y}
+                      x2={pos.x - PILL_R} y2={pos.y}
+                      stroke="hsl(35 92% 50%)" strokeWidth={1.5} strokeOpacity={0.5}
+                      strokeDasharray="3 2"
+                    />
+                  );
+                }
+                return (
+                  <line
+                    key={`b-${exec.id}`}
+                    x1={0} y1={pos.y}
+                    x2={pos.x - PILL_R} y2={pos.y}
+                    stroke="currentColor" strokeWidth={1} strokeOpacity={0.2}
+                    strokeDasharray="4 3"
+                    className="text-muted-foreground"
+                  />
+                );
+              })}
+            </>
           );
-        })}
+        })()}
 
         {draggingId && snapTargetRef.current && (() => {
           const dragPos = displayPositions[draggingId];
@@ -587,18 +612,15 @@ export default function ExecutiveSatellites({
       })}
 
       {overflow > 0 && (() => {
-        const rootCount = execs.filter(e => !hierarchy[e.id]).length;
-        const totalRoots = rootCount + 1;
-        const angleStep = totalRoots > 1 ? (2 * Math.PI) / totalRoots : 0;
-        const angle = totalRoots > 1 ? -(rootCount * angleStep) : 0;
-        const x = Math.cos(angle) * orbitRadius;
-        const y = Math.sin(angle) * orbitRadius;
+        const allY = execs.map(e => basePositions[e.id]?.y).filter((y): y is number => y != null);
+        const maxY = allY.length > 0 ? Math.max(...allY) : companyRadius + START_Y_GAP;
+        const overflowY = maxY + ROW_HEIGHT;
         return (
           <div
             style={{
               position: 'absolute',
-              left: x,
-              top: y,
+              left: PILL_X,
+              top: overflowY,
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
               opacity: visible ? 1 : 0,
               transition: `all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${execs.length * 50}ms`,

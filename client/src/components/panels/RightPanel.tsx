@@ -528,7 +528,6 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
           >
             <option value="">- Company Status -</option>
             <option value="Active">Active</option>
-            <option value="Out of Scope">Out of Scope</option>
             <option value="Off-Limits">Off-Limits</option>
           </select>
         </div>

@@ -88,8 +88,6 @@ export default function MapComponent() {
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const styleLoadedRef = useRef(false);
   const mapZoomRef = useRef(1.5);
-  const getRadiusRef = useRef(getRadius);
-  getRadiusRef.current = getRadius;
 
   useEffect(() => {
     fetch('/api/config')
@@ -325,6 +323,8 @@ export default function MapComponent() {
     const radius = 0.2 * Math.sqrt(value);
     return Math.max(minRadius, Math.min(maxRadius, radius));
   }, [scalingMetric]);
+  const getRadiusRef = useRef(getRadius);
+  getRadiusRef.current = getRadius;
 
   const handleColorSelect = (color: string) => {
     if (colorPickerTarget) {

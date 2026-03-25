@@ -410,7 +410,8 @@ export default function MapComponent() {
       const diameter = radius * 2;
       const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
       const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
-      const fillColor = isSelected ? 'hsl(35 92% 50%)' : (company.color || 'hsl(222 47% 11%)');
+      const allExecsExcluded = companyExecs.length > 0 && companyExecs.every((e: Executive) => e.availability === 'Out of Scope' || e.availability === 'Off-Limits');
+      const fillColor = isSelected ? 'hsl(35 92% 50%)' : allExecsExcluded ? 'hsl(0 0% 60%)' : (company.color || 'hsl(222 47% 11%)');
       const companyOffset = mapPositions[`company:${company.id}`];
       const markerLat = company.displayLat + (companyOffset?.dLat || 0);
       const markerLng = company.displayLng + (companyOffset?.dLng || 0);
@@ -541,7 +542,7 @@ export default function MapComponent() {
         width:${diameter}px;
         height:${diameter}px;
         background-color:${fillColor};
-        opacity:${isSelected ? 0.9 : 0.5};
+        opacity:${isSelected ? 0.9 : allExecsExcluded ? 0.25 : 0.5};
         border-radius:50%;
         transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
         cursor:grab;

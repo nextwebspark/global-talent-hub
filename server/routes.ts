@@ -2563,6 +2563,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       let availableCount = 0;
+      let outOfScopeCount = 0;
+      let offLimitsCount = 0;
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
       
@@ -2597,6 +2599,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           availableCount++;
           availByLevel[execLevel].available++;
           availByGeo[country].available++;
+        } else if (avail === 'out of scope') {
+          outOfScopeCount++;
+        } else if (avail === 'off-limits') {
+          offLimitsCount++;
         }
       }
 
@@ -2637,6 +2643,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           totalExecutives,
           availableCount,
           availabilityPct: totalExecutives > 0 ? Math.round((availableCount / totalExecutives) * 100) : 0,
+          outOfScopeCount,
+          outOfScopePct: totalExecutives > 0 ? Math.round((outOfScopeCount / totalExecutives) * 100) : 0,
+          offLimitsCount,
+          offLimitsPct: totalExecutives > 0 ? Math.round((offLimitsCount / totalExecutives) * 100) : 0,
           byLevel: availByLevel,
           byGeography: availByGeo,
         },

@@ -34,7 +34,7 @@ export default function CompanyList() {
       }
       const companyExecs = executives
         .filter(e => e.company_id === company.id)
-        .map(e => ({ id: e.id, name: e.name, title: e.title, confidence: e.confidence, isEnriched: e.isEnriched, enrichmentSource: e.enrichmentSource }));
+        .map(e => ({ id: e.id, name: e.name, title: e.title, confidence: e.confidence, isEnriched: e.isEnriched, enrichmentSource: e.enrichmentSource, availability: e.availability }));
       countryMap.get(countryName)!.companies.push({
         id: company.id, name: company.name, revenue_usd: company.revenue_usd, employees: company.employees,
         confidence: company.confidence, lat: company.lat, lng: company.lng,
@@ -291,11 +291,12 @@ export default function CompanyList() {
 
                           {isCExpanded && company.executives.map((exec: any) => {
                             const isExecSel = selectedExecutiveId === exec.id;
+                            const isExecExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits';
                             return (
                               <div key={exec.id}
                                 className={`flex items-center gap-1.5 ml-5 pl-2 border-l border-border/30 px-2 py-1 rounded-sm cursor-pointer text-xs group/exec ${
                                   isExecSel ? 'bg-primary/10' : 'hover:bg-muted/30'
-                                }`}
+                                } ${isExecExcluded ? 'opacity-40' : ''}`}
                                 onClick={e => { e.stopPropagation(); selectCompany(company.id); selectExecutive(exec.id); }}
                                 data-testid={`exec-${exec.id}`}
                               >

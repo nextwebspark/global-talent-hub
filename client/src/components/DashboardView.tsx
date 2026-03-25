@@ -76,6 +76,10 @@ interface DashboardData {
     totalExecutives: number;
     availableCount: number;
     availabilityPct: number;
+    outOfScopeCount: number;
+    outOfScopePct: number;
+    offLimitsCount: number;
+    offLimitsPct: number;
     byLevel: Record<string, { total: number; available: number }>;
     byGeography: Record<string, { total: number; available: number }>;
   };
@@ -336,7 +340,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
     return pctB - pctA;
   });
 
-  const hasAvailData = availability.availableCount > 0 || availLevels.some(([, v]) => v.available > 0);
+  const hasAvailData = availability.availableCount > 0 || availability.outOfScopeCount > 0 || availability.offLimitsCount > 0 || availLevels.some(([, v]) => v.available > 0);
 
   const sortedRevenueBands = Object.entries(revenueBands).filter(([k]) => k !== 'Unknown');
   const unknownRevCount = revenueBands['Unknown'] || 0;
@@ -361,7 +365,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Talent Mapping Report</p>
           <h1 className="text-lg font-semibold text-foreground leading-tight">{data.reportTitle || 'Search Results'}</h1>
         </div>
-        <div className="grid grid-cols-5 gap-4 mt-4">
+        <div className="grid grid-cols-7 gap-4 mt-4">
           <div className="text-center">
             <p className="text-2xl font-bold text-foreground">{mappingCompletion.totalCompanies}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Companies</p>
@@ -381,6 +385,14 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           <div className="text-center">
             <p className="text-2xl font-bold text-emerald-400">{availability.availabilityPct}%</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Interested</p>
+          </div>
+          <div className="text-center" data-testid="stat-out-of-scope">
+            <p className="text-2xl font-bold text-muted-foreground">{availability.outOfScopeCount}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Out of Scope</p>
+          </div>
+          <div className="text-center" data-testid="stat-off-limits">
+            <p className="text-2xl font-bold text-red-400">{availability.offLimitsCount}</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Off-Limits</p>
           </div>
         </div>
       </div>
@@ -491,7 +503,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center gap-4 pb-2 border-b border-border">
+              <div className="flex items-center gap-4 pb-2 border-b border-border flex-wrap">
                 <div className="text-center">
                   <p className="text-2xl font-bold text-emerald-400">{availability.availabilityPct}%</p>
                   <p className="text-[10px] text-muted-foreground uppercase">Interest Rate</p>
@@ -504,6 +516,22 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                   <p className="text-lg font-semibold text-foreground">{availability.totalExecutives}</p>
                   <p className="text-[10px] text-muted-foreground uppercase">Total</p>
                 </div>
+                {(availability.outOfScopeCount > 0 || availability.offLimitsCount > 0) && (
+                  <div className="border-l border-border pl-4 flex items-center gap-4">
+                    {availability.outOfScopeCount > 0 && (
+                      <div className="text-center" data-testid="avail-out-of-scope">
+                        <p className="text-lg font-semibold text-muted-foreground">{availability.outOfScopeCount}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Out of Scope</p>
+                      </div>
+                    )}
+                    {availability.offLimitsCount > 0 && (
+                      <div className="text-center" data-testid="avail-off-limits">
+                        <p className="text-lg font-semibold text-red-400">{availability.offLimitsCount}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Off-Limits</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <CollapsibleSection title={`By Level (${availLevels.length})`}>
                 <div className="max-h-[100px] overflow-y-auto pr-1">

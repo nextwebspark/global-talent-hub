@@ -466,6 +466,7 @@ export default function ExecutiveSatellites({
         const isSelected = selectedExecId === exec.id;
         const isUnlocking = unlockingId === exec.id;
         const isUnlockReady = unlockReadyId === exec.id;
+        const isExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits';
 
         return (
           <div
@@ -475,7 +476,7 @@ export default function ExecutiveSatellites({
               left: pos.x,
               top: pos.y,
               transform: `translate(-50%, -50%) scale(${visible ? 1 : 0.3})`,
-              opacity: visible ? 1 : 0,
+              opacity: visible ? (isExcluded ? 0.35 : 1) : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
               zIndex: isDragging ? 453 : isSelected ? 452 : 451,
               cursor: isDragging ? 'grabbing' : 'grab',

@@ -75,7 +75,7 @@ The Dashboard provides a professional Talent Mapping Report with:
 - Mapping Completion progress.
 - Executive Universe analysis (level, geography, talent concentration).
 - Revenue Distribution by bands, with sector and ownership breakdowns.
-- Status & Interest analytics.
+- Status & Interest analytics (Interested, Not Interested, Out of Scope, Off-Limits). Out of Scope and Off-Limits executives are visually greyed out across the map bubbles, satellite pills, CompanyList, and DataTable. Dashboard shows Out of Scope / Off-Limits counts and percentages.
 - Comprehensive Compensation Analytics (median/min/max, level-to-level step-up, median compensation by revenue band & region).
 - **Diversity & Inclusion Analytics**: Gender distribution (donut chart with percentages), gender by seniority level (stacked bars), ethnicity distribution (horizontal bars with diversity index), ethnicity by seniority level (stacked bars). Gender and ethnicity are stored as persistent fields on executives (`gender`, `genderConfidence`, `ethnicity`, `ethnicityConfidence` columns). Values are auto-inferred by the LLM on every executive creation path (manual add, bulk import, discovery, enrichment, project import) using `server/services/pipeline/diversityInference.ts`. Inference runs in background (fire-and-forget), only persists high-confidence values (8+/10), and respects manual edits via `manuallyEditedFields`. "Enrich All" also backfills missing diversity data. Gender and ethnicity columns are visible in the Table View and editable in the Right Panel. Data is exported with Excel exports.
 All analytics are computed server-side.

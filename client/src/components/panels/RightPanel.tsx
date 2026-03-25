@@ -1213,6 +1213,8 @@ function ExecutiveDetailView({
                     <option value="">- Select Status -</option>
                     <option value="Interested">Interested</option>
                     <option value="Not Interested">Not Interested</option>
+                    <option value="Out of Scope">Out of Scope</option>
+                    <option value="Off-Limits">Off-Limits</option>
                   </select>
                 </div>
 

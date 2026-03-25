@@ -522,7 +522,9 @@ export default function ExecutiveSatellites({
             <div
               className="flex items-center gap-1.5 backdrop-blur-sm border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
               style={{
-                backgroundColor: isUnlockReady
+                backgroundColor: isExcluded
+                  ? 'hsl(0 0% 75% / 0.9)'
+                  : isUnlockReady
                   ? 'hsl(0 84% 60% / 0.12)'
                   : isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
                 borderColor: isUnlockReady

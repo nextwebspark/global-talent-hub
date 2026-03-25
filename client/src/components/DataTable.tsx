@@ -128,14 +128,12 @@ for (const [cat, subs] of Object.entries(SECTOR_TAXONOMY)) {
   for (const s of subs) SECTOR_TO_CATEGORY[s] = cat;
 }
 
-const ALL_SUB_SECTORS = Object.values(SECTOR_TAXONOMY).flat();
+const ALL_SUB_SECTORS: readonly string[] = Object.values(SECTOR_TAXONOMY).flat();
 
 function getSectorCategory(sector: string | null | undefined): string | null {
   if (!sector) return null;
   return SECTOR_TO_CATEGORY[sector] || null;
 }
-
-const STANDARD_SECTORS = ALL_SUB_SECTORS as unknown as readonly string[];
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -291,7 +289,7 @@ function SectorPickerButton({ value, onChange, className }: { value: string; onC
         <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
       </button>
       {open && (
-        <FixedDropdown anchorRef={btnRef as any} onClose={() => setOpen(false)} minWidth={240}>
+        <FixedDropdown anchorRef={btnRef} onClose={() => setOpen(false)} minWidth={240}>
           <input
             ref={inputRef}
             style={{ backgroundColor: 'hsl(var(--background))' }}
@@ -1129,7 +1127,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           return (
             <SearchableSelectCell
               value={String(info.getValue() || '')}
-              options={STANDARD_SECTORS}
+              options={ALL_SUB_SECTORS}
               groups={SECTOR_TAXONOMY}
               onSave={(val) => handleCellSave(row, 'sector', val)}
               placeholder="Search sector..."

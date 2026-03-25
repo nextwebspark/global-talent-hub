@@ -861,8 +861,8 @@ function ExecutiveDetailView({
   const handleUpdateExecutiveField = async (field: string, value: string) => {
     if (!localExecutive) return;
     setLocalExecutive(prev => prev ? { ...prev, [field]: value } : prev);
-    const { executives, setExecutives } = useAppStore.getState();
-    setExecutives(executives.map(e => e.id === String(localExecutive.id) ? { ...e, [field]: value } : e));
+    const { updateExecutive } = useAppStore.getState();
+    updateExecutive(String(localExecutive.id), { [field]: value });
     try {
       await fetch(`/api/executives/${localExecutive.id}`, {
         method: 'PATCH',

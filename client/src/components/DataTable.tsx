@@ -1149,15 +1149,13 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   const rowElementsRef = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const didDragRef = useRef(false);
+  const dragPendingRef = useRef<{ rowId: string; startX: number; startY: number } | null>(null);
 
   const handleDragSelectStart = useCallback((rowId: string, e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-trash-btn]')) return;
     if ((e.target as HTMLElement).closest('[data-no-drag-select]')) return;
-    e.preventDefault();
-    setIsDragSelecting(true);
+    dragPendingRef.current = { rowId, startX: e.clientX, startY: e.clientY };
     didDragRef.current = false;
-    dragStartRowRef.current = rowId;
-    setDragSelectedRows(new Set([rowId]));
   }, []);
 
   const handleDragSelectMove = useCallback((rowId: string) => {
@@ -1175,25 +1173,40 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   }, [isDragSelecting, allRowIds]);
 
   useEffect(() => {
-    if (!isDragSelecting) return;
+    const DRAG_THRESHOLD = 8;
 
     const handleGlobalMouseMove = (e: MouseEvent) => {
-      const container = tableContainerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const scrollThreshold = 40;
-      if (e.clientY < rect.top + scrollThreshold) {
-        container.scrollTop -= 8;
-      } else if (e.clientY > rect.bottom - scrollThreshold) {
-        container.scrollTop += 8;
+      if (dragPendingRef.current && !isDragSelecting) {
+        const { rowId, startX, startY } = dragPendingRef.current;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        if (Math.sqrt(dx * dx + dy * dy) >= DRAG_THRESHOLD) {
+          dragStartRowRef.current = rowId;
+          setDragSelectedRows(new Set([rowId]));
+          setIsDragSelecting(true);
+        }
+      }
+      if (isDragSelecting) {
+        const container = tableContainerRef.current;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const scrollThreshold = 40;
+        if (e.clientY < rect.top + scrollThreshold) {
+          container.scrollTop -= 8;
+        } else if (e.clientY > rect.bottom - scrollThreshold) {
+          container.scrollTop += 8;
+        }
       }
     };
 
     const handleMouseUp = () => {
-      setIsDragSelecting(false);
-      dragStartRowRef.current = null;
-      if (!didDragRef.current) {
-        setDragSelectedRows(new Set());
+      dragPendingRef.current = null;
+      if (isDragSelecting) {
+        setIsDragSelecting(false);
+        dragStartRowRef.current = null;
+        if (!didDragRef.current) {
+          setDragSelectedRows(new Set());
+        }
       }
     };
 

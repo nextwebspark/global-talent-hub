@@ -26,6 +26,7 @@ export default function Dashboard() {
   const loadSearchResults = useLoadSearchResults();
 
   const [activeView, setActiveViewRaw] = useState<ViewMode>('map');
+  const mapViewStateRef = useRef<{ center: [number, number]; zoom: number }>({ center: [0, 20], zoom: 1.5 });
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importModalMode, setImportModalMode] = useState<'import' | 'add'>('import');
@@ -403,7 +404,11 @@ export default function Dashboard() {
         <div className="flex-1 flex min-h-0 relative">
           {activeView === 'map' && (
             <div className="flex-1 relative">
-              <MapComponent />
+              <MapComponent
+                initialCenter={mapViewStateRef.current.center}
+                initialZoom={mapViewStateRef.current.zoom}
+                onViewChange={(center, zoom) => { mapViewStateRef.current = { center, zoom }; }}
+              />
               <CompanyList />
             </div>
           )}

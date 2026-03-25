@@ -51,7 +51,15 @@ const EXECUTIVE_COLORS = [
   'hsl(199 89% 48%)',
 ];
 
-export default function MapComponent() {
+export default function MapComponent({
+  initialCenter = [0, 20] as [number, number],
+  initialZoom = 1.5,
+  onViewChange,
+}: {
+  initialCenter?: [number, number];
+  initialZoom?: number;
+  onViewChange?: (center: [number, number], zoom: number) => void;
+} = {}) {
   const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites, mapPositions, updateMapPosition } = useAppStore();
   const isDark = useIsDarkMode();
   const [colorPickerTarget, setColorPickerTarget] = useState<{ id: string, x: number, y: number } | null>(null);
@@ -105,8 +113,8 @@ export default function MapComponent() {
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: isDark ? DARK_STYLE : LIGHT_STYLE,
-      center: [0, 20],
-      zoom: 1.5,
+      center: initialCenter,
+      zoom: initialZoom,
       projection: 'globe',
       doubleClickZoom: false,
       attributionControl: false,
@@ -151,6 +159,13 @@ export default function MapComponent() {
     };
 
     map.on('zoom', handleZoom);
+
+    const onViewChangeRef = { current: onViewChange };
+    const handleMoveEnd = () => {
+      const c = map.getCenter();
+      onViewChangeRef.current?.([c.lng, c.lat], map.getZoom());
+    };
+    map.on('moveend', handleMoveEnd);
 
     const handleInteractionStart = () => {
       isUserInteractingRef.current = true;

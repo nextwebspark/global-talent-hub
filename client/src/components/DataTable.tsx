@@ -198,8 +198,10 @@ function SelectCell({ value, options, onSave, placeholder }: {
         ref={triggerRef}
         className="truncate block cursor-pointer hover:bg-muted/40 rounded px-0.5 -mx-0.5"
         title={value || undefined}
+        onMouseDown={e => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
         data-testid="select-cell-display"
+        data-no-drag-select
       >
         {value || '-'}
       </span>
@@ -267,8 +269,10 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
         ref={triggerRef}
         className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
         title={value || undefined}
+        onMouseDown={e => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
         data-testid="searchable-select-display"
+        data-no-drag-select
       >
         {value || '-'}
       </span>
@@ -355,8 +359,10 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
     <span
       className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
       title={value || undefined}
+      onMouseDown={e => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
       data-testid="editable-cell-display"
+      data-no-drag-select
     >
       {display}
     </span>
@@ -1146,6 +1152,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
 
   const handleDragSelectStart = useCallback((rowId: string, e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-trash-btn]')) return;
+    if ((e.target as HTMLElement).closest('[data-no-drag-select]')) return;
     e.preventDefault();
     setIsDragSelecting(true);
     didDragRef.current = false;

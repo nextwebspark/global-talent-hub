@@ -262,7 +262,9 @@ export default function CompanyList() {
                       const isSelected = selectedCompanyId === company.id;
                       const companyColor = company.color || '#1e3a8a';
                       const isCHidden = hiddenCompanies.has(company.id) || isHidden;
-                      const isCompanyExcluded = company.status === 'Out of Scope' || company.status === 'Off-Limits';
+                      const companyStatusExcluded = company.status === 'Out of Scope' || company.status === 'Off-Limits';
+                      const allExecsExcluded = company.executives.length > 0 && company.executives.every((e: any) => e.availability === 'Out of Scope' || e.availability === 'Off-Limits');
+                      const isCompanyExcluded = companyStatusExcluded || allExecsExcluded;
 
                       return (
                         <div key={company.id} className={`group/company ${isCompanyExcluded ? 'opacity-40' : ''}`}>

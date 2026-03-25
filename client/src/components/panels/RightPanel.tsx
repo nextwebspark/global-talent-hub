@@ -316,7 +316,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
         data: updateData
       });
 
-      if (field === 'status' && (value === 'Off-Limits' || value === 'Out of Scope')) {
+      if (field === 'status' && value === 'Off-Limits') {
         const noteText = `${company.name} - ${value}`;
         await fetch(`/api/companies/${company.id}/notes`, {
           method: 'PUT',
@@ -324,14 +324,37 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
           body: JSON.stringify({ content: noteText }),
         });
         setCompanyNotes(noteText);
-        await Promise.all(companyExecutives.map(exec =>
-          fetch(`/api/executives/${exec.id}/notes`, {
+        const { updateExecutive } = useAppStore.getState();
+        await Promise.all(companyExecutives.map(async exec => {
+          await fetch(`/api/executives/${exec.id}/notes`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: noteText }),
-          })
-        ));
+          });
+          const isFormer = /\b(ex|former|fmr|prev|past)\b/i.test(exec.title || '');
+          if (!isFormer) {
+            updateExecutive(String(exec.id), { availability: 'Off-Limits' });
+            await fetch(`/api/executives/${exec.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ availability: 'Off-Limits' }),
+            });
+          }
+        }));
         toast.success(`Status set — notes updated for company and ${companyExecutives.length} executive(s)`);
+      } else if (field === 'status' && value === 'Active') {
+        const { updateExecutive } = useAppStore.getState();
+        await Promise.all(companyExecutives.map(async exec => {
+          if (exec.availability === 'Off-Limits') {
+            updateExecutive(String(exec.id), { availability: '' });
+            await fetch(`/api/executives/${exec.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ availability: '' }),
+            });
+          }
+        }));
+        toast.success(`Company set to Active — ${companyExecutives.length} executive(s) availability cleared`);
       } else {
         toast.success('Company updated');
       }

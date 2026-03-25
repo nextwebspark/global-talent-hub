@@ -295,7 +295,7 @@ export default function ExecutiveSatellites({
 
       if (isRoot) {
         const currentBase = basePositionsRef.current[execId];
-        if (currentBase) {
+        if (currentBase && Math.abs(dx) < PILL_X * 0.6) {
           const draggedY = currentBase.y + dy;
           const currentOrder = orderedRootIdsRef.current;
           const myIdx = currentOrder.indexOf(execId);

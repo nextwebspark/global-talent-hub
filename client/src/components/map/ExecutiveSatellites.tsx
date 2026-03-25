@@ -507,7 +507,7 @@ export default function ExecutiveSatellites({
         const isUnlocking = unlockingId === exec.id;
         const isUnlockReady = unlockReadyId === exec.id;
         const isFormerExec = /\b(ex|former|fmr|prev|past)\b/i.test(exec.title || '');
-        const isExcluded = (companyStatus === 'Off-Limits' && !isFormerExec) || exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
+        const isExcluded = isFormerExec ? false : (companyStatus === 'Off-Limits') || exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
 
         return (
           <div

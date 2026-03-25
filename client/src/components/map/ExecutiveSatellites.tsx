@@ -75,7 +75,8 @@ export default function ExecutiveSatellites({
 
   const storeHierarchy = useAppStore((s) => s.satelliteHierarchies[companyId] ?? EMPTY_HIERARCHY);
   const setSatelliteHierarchy = useAppStore((s) => s.setSatelliteHierarchy);
-  const mapPositions = useAppStore((s) => s.mapPositions);
+  const savedOrder = useAppStore((s) => s.satelliteOrders[companyId]);
+  const setSatelliteOrder = useAppStore((s) => s.setSatelliteOrder);
   const updateMapPosition = useAppStore((s) => s.updateMapPosition);
 
   const hierarchy = storeHierarchy;
@@ -209,8 +210,6 @@ export default function ExecutiveSatellites({
     };
   }, [map, cancelDismiss]);
 
-  const savedOrder = mapPositions[`satellite-order:${companyId}`] as string[] | undefined;
-
   const orderedRootIds = useMemo(() => {
     const rootExecs = execs.filter(e => !hierarchy[e.id] || !execIdSet.has(hierarchy[e.id]));
     const rootIds = rootExecs.map(e => e.id);
@@ -315,7 +314,7 @@ export default function ExecutiveSatellites({
               newOrder[myIdx] = currentOrder[swapIdx];
               newOrder[swapIdx] = currentOrder[myIdx];
               orderedRootIdsRef.current = newOrder;
-              updateMapPosition(`satellite-order:${companyId}`, newOrder);
+              setSatelliteOrder(companyId, newOrder);
               draggingRef.current!.origDy += (swapIdx - myIdx) * ROW_HEIGHT;
             }
           }
@@ -407,7 +406,7 @@ export default function ExecutiveSatellites({
 
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
-  }, [cancelDismiss, setHierarchy, map, persistent, updateMapPosition, companyId]);
+  }, [cancelDismiss, setHierarchy, map, persistent, updateMapPosition, companyId, setSatelliteOrder]);
 
   if (execs.length === 0 || !anchorEl) return null;
 

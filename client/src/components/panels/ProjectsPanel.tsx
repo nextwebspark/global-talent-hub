@@ -87,7 +87,7 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
       });
 
       const results = data.results || [];
-      loadFromAPI(results, data.satelliteHierarchies || {}, data.tableConfig || null, data.mapPositions || {});
+      loadFromAPI(results, data.satelliteHierarchies || {}, data.tableConfig || null, data.mapPositions || {}, data.satelliteOrders || {});
       if (results.length === 0) {
         toast.info('This project has no companies yet.');
       } else {

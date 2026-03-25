@@ -1455,6 +1455,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         results: formattedCompanies,
         searchQueryId: searchId,
         satelliteHierarchies: data.searchQuery.satelliteHierarchies || {},
+        satelliteOrders: data.searchQuery.satelliteOrders || {},
         tableConfig: data.searchQuery.tableConfig || null,
         mapPositions: data.searchQuery.mapPositions || {}
       });
@@ -1479,6 +1480,24 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
     } catch (error) {
       console.error("Error saving satellite hierarchies:", error);
       res.status(500).json({ error: "Failed to save satellite hierarchies" });
+    }
+  });
+
+  app.put("/api/search/:id/satellite-orders", async (req, res) => {
+    try {
+      const searchId = parseInt(req.params.id);
+      if (isNaN(searchId)) {
+        return res.status(400).json({ error: "Invalid search ID" });
+      }
+      const orders = req.body.orders;
+      if (typeof orders !== 'object' || orders === null) {
+        return res.status(400).json({ error: "Invalid orders data" });
+      }
+      await storage.saveSatelliteOrders(searchId, orders);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving satellite orders:", error);
+      res.status(500).json({ error: "Failed to save satellite orders" });
     }
   });
 
@@ -1548,7 +1567,8 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       res.json({
         searchQuery: results.searchQuery,
         companies: formattedCompanies,
-        satelliteHierarchies: results.searchQuery.satelliteHierarchies || {}
+        satelliteHierarchies: results.searchQuery.satelliteHierarchies || {},
+        satelliteOrders: results.searchQuery.satelliteOrders || {}
       });
     } catch (error) {
       console.error("Error loading search results:", error);

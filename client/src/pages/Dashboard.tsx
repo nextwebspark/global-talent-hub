@@ -115,6 +115,31 @@ export default function Dashboard() {
     };
   }, []);
 
+  const ordersSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevOrdersRef = useRef<Record<string, string[]>>({});
+  useEffect(() => {
+    prevOrdersRef.current = useAppStore.getState().satelliteOrders;
+    const unsub = useAppStore.subscribe((state) => {
+      const orders = state.satelliteOrders;
+      if (orders === prevOrdersRef.current) return;
+      prevOrdersRef.current = orders;
+      const projectId = state.currentProject?.id;
+      if (!projectId) return;
+      if (ordersSaveTimerRef.current) clearTimeout(ordersSaveTimerRef.current);
+      ordersSaveTimerRef.current = setTimeout(() => {
+        fetch(`/api/search/${projectId}/satellite-orders`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orders }),
+        }).catch(() => {});
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      if (ordersSaveTimerRef.current) clearTimeout(ordersSaveTimerRef.current);
+    };
+  }, []);
+
   const mapPositionsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevMapPositionsRef = useRef<Record<string, any>>({});
   const prevMapPositionsProjectRef = useRef<string | undefined>(useAppStore.getState().currentProject?.id);

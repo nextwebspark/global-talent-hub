@@ -242,6 +242,7 @@ interface AppState {
   hiddenCompanies: Set<string>;
   showAllSatellites: boolean;
   satelliteHierarchies: Record<string, Record<string, string>>;
+  satelliteOrders: Record<string, string[]>;
   tableConfig: Record<string, any> | null;
   mapPositions: Record<string, any>;
   
@@ -276,12 +277,13 @@ interface AppState {
   toggleCompanyVisibility: (companyId: string) => void;
   toggleAllSatellites: () => void;
   setSatelliteHierarchy: (companyId: string, hierarchy: Record<string, string>) => void;
+  setSatelliteOrder: (companyId: string, order: string[]) => void;
   resetVisibility: () => void;
   setTableConfig: (config: Record<string, any> | null) => void;
   setMapPositions: (positions: Record<string, any>) => void;
   updateMapPosition: (id: string, position: any) => void;
   
-  loadFromAPI: (apiCompanies: APICompany[], satelliteHierarchies?: Record<string, Record<string, string>>, tableConfig?: Record<string, any> | null, mapPositions?: Record<string, any>) => void;
+  loadFromAPI: (apiCompanies: APICompany[], satelliteHierarchies?: Record<string, Record<string, string>>, tableConfig?: Record<string, any> | null, mapPositions?: Record<string, any>, satelliteOrders?: Record<string, string[]>) => void;
   reset: () => void;
 }
 
@@ -485,6 +487,7 @@ export const useAppStore = create<AppState>((set) => ({
   hiddenCompanies: new Set<string>(),
   showAllSatellites: false,
   satelliteHierarchies: {},
+  satelliteOrders: {},
   tableConfig: null,
   mapPositions: {},
 
@@ -570,6 +573,10 @@ export const useAppStore = create<AppState>((set) => ({
     satelliteHierarchies: { ...state.satelliteHierarchies, [companyId]: hierarchy }
   })),
 
+  setSatelliteOrder: (companyId, order) => set((state) => ({
+    satelliteOrders: { ...state.satelliteOrders, [companyId]: order }
+  })),
+
   setTableConfig: (config) => set({ tableConfig: config }),
 
   setMapPositions: (positions) => set({ mapPositions: positions }),
@@ -587,7 +594,7 @@ export const useAppStore = create<AppState>((set) => ({
     hiddenCompanies: new Set<string>()
   }),
 
-  loadFromAPI: (apiCompanies: APICompany[], savedHierarchies?: Record<string, Record<string, string>>, savedTableConfig?: Record<string, any> | null, savedMapPositions?: Record<string, any>) => {
+  loadFromAPI: (apiCompanies: APICompany[], savedHierarchies?: Record<string, Record<string, string>>, savedTableConfig?: Record<string, any> | null, savedMapPositions?: Record<string, any>, savedOrders?: Record<string, string[]>) => {
     const companies: Company[] = [];
     const executives: Executive[] = [];
 
@@ -625,6 +632,9 @@ export const useAppStore = create<AppState>((set) => ({
       }
       updates.mapPositions = pruned;
     }
+    if (savedOrders !== undefined) {
+      updates.satelliteOrders = savedOrders ?? {};
+    }
     set(updates);
   },
 
@@ -647,6 +657,7 @@ export const useAppStore = create<AppState>((set) => ({
     hiddenCompanies: new Set<string>(),
     showAllSatellites: false,
     satelliteHierarchies: {},
+    satelliteOrders: {},
     tableConfig: null,
     mapPositions: {}
   })

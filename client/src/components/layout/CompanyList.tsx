@@ -42,16 +42,14 @@ export default function CompanyList() {
       });
     });
     const sorted = Array.from(countryMap.values()).sort((a, b) => {
-      const rA = a.companies.reduce((s, c) => s + (c.revenue_usd || 0), 0);
-      const rB = b.companies.reduce((s, c) => s + (c.revenue_usd || 0), 0);
-      return rB - rA;
+      const eA = a.companies.reduce((s, c) => s + c.executives.length, 0);
+      const eB = b.companies.reduce((s, c) => s + c.executives.length, 0);
+      return eB - eA;
     });
     sorted.forEach(country => {
-      country.companies.sort((a: any, b: any) => {
-        const aR = a.revenue_usd > 0; const bR = b.revenue_usd > 0;
-        if (aR && !bR) return -1; if (!aR && bR) return 1;
-        return (b.revenue_usd || 0) - (a.revenue_usd || 0);
-      });
+      country.companies.sort((a: any, b: any) =>
+        a.name.localeCompare(b.name)
+      );
     });
     return sorted;
   }, [companies, executives]);

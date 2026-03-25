@@ -514,7 +514,7 @@ export default function ExecutiveSatellites({
               left: pos.x,
               top: pos.y,
               transform: `translate(0, -50%) scale(${visible ? 1 : 0.3})`,
-              opacity: visible ? (isExcluded ? 0.35 : 1) : 0,
+              opacity: visible ? 1 : 0,
               transition: isDragging ? 'none' : `all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 40}ms`,
               zIndex: isDragging ? 453 : isSelected ? 452 : 451,
               cursor: isDragging ? 'grabbing' : 'grab',
@@ -558,13 +558,13 @@ export default function ExecutiveSatellites({
             data-testid={`satellite-exec-${exec.id}`}
           >
             <div
-              className="flex items-center gap-1.5 backdrop-blur-sm border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
+              className="flex items-center gap-1.5 border rounded-full pl-1.5 pr-2.5 py-1 whitespace-nowrap max-w-[180px]"
               style={{
                 backgroundColor: isExcluded
-                  ? 'hsl(0 0% 75% / 0.9)'
+                  ? 'hsl(0 0% 82%)'
                   : isUnlockReady
                   ? 'hsl(0 84% 60% / 0.12)'
-                  : isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover) / 0.95)',
+                  : isSnapTarget ? 'hsl(35 92% 50% / 0.15)' : 'hsl(var(--popover))',
                 borderColor: isUnlockReady
                   ? 'hsl(0 84% 60%)'
                   : isSelected ? 'hsl(var(--primary))'

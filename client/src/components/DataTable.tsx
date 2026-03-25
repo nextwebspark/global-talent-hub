@@ -152,7 +152,7 @@ function SelectCell({ value, options, onSave, placeholder }: {
   if (open) {
     return (
       <div ref={listRef} className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
-        <div className="absolute z-50 top-0 left-0 min-w-[140px] w-max max-h-[200px] overflow-y-auto bg-popover border border-border rounded shadow-lg" style={{ position: 'absolute' }}>
+        <div className="absolute z-50 top-0 left-0 min-w-[140px] w-max max-h-[200px] overflow-y-auto border border-border rounded shadow-lg" style={{ position: 'absolute', backgroundColor: 'hsl(var(--popover))' }}>
           {options.map(opt => (
             <div
               key={opt}
@@ -221,7 +221,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
   if (open) {
     return (
       <div className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
-        <div className="absolute z-50 top-0 left-0 min-w-[200px] w-max bg-popover border border-border rounded shadow-lg" style={{ position: 'absolute' }}>
+        <div className="absolute z-50 top-0 left-0 min-w-[200px] w-max border border-border rounded shadow-lg" style={{ position: 'absolute', backgroundColor: 'hsl(var(--popover))' }}>
           <input
             ref={inputRef}
             className="w-full bg-background border-b border-border rounded-t px-2 py-1.5 text-xs outline-none focus:bg-muted/30"
@@ -1386,7 +1386,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                   {showSuggestions && companySuggestions.length > 0 && (
                     <div
                       ref={suggestionsRef}
-                      className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-md shadow-lg max-h-48 overflow-auto"
+                      className="absolute z-50 mt-1 w-full border border-border rounded-md shadow-lg max-h-48 overflow-auto" style={{ backgroundColor: 'hsl(var(--popover))' }}
                     >
                       {companySuggestions.map((c) => (
                         <button
@@ -1433,7 +1433,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                           data-testid="input-company-country"
                         />
                         {countryDropdownOpen && newCompanyCountry.length > 0 && (
-                          <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-auto">
+                          <div className="absolute z-50 w-full mt-1 border border-border rounded-md shadow-lg max-h-40 overflow-auto" style={{ backgroundColor: 'hsl(var(--popover))' }}>
                             {COUNTRIES.filter(c =>
                               c.toLowerCase().includes(newCompanyCountry.toLowerCase())
                             ).slice(0, 10).map(country => (

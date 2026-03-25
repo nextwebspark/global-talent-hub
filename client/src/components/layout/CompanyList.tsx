@@ -265,11 +265,11 @@ export default function CompanyList() {
                       const isCompanyExcluded = companyStatusExcluded || allExecsExcluded;
 
                       return (
-                        <div key={company.id} className={`group/company ${isCompanyExcluded ? 'opacity-40' : ''}`}>
+                        <div key={company.id} className="group/company">
                           <div
                             className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-all text-xs ${
                               isSelected ? 'bg-primary/10 border-l-2 border-primary' : 'hover:bg-muted/40'
-                            }`}
+                            } ${isCompanyExcluded ? 'opacity-40' : ''}`}
                             onClick={() => { toggleCompanyExpand(company.id); selectCompany(company.id); }}
                             data-testid={`row-company-${company.id}`}
                           >

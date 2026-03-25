@@ -409,7 +409,6 @@ export default function MapComponent() {
       const radius = getRadius(value);
       const diameter = radius * 2;
       const companyExecs = executives.filter((e: Executive) => e.company_id === company.id);
-      const hasEnrichedExecs = companyExecs.some((e: Executive) => e.isEnriched);
       const companyExcluded = company.status === 'Out of Scope' || company.status === 'Off-Limits';
       const allExecsExcluded = companyExcluded || (companyExecs.length > 0 && companyExecs.every((e: Executive) => e.availability === 'Out of Scope' || e.availability === 'Off-Limits'));
       const fillColor = isSelected ? 'hsl(35 92% 50%)' : allExecsExcluded ? 'hsl(0 0% 60%)' : (company.color || 'hsl(222 47% 11%)');
@@ -552,17 +551,8 @@ export default function MapComponent() {
         justify-content:center;
       `;
 
-      let enrichDot = el.querySelector('.enrich-dot') as HTMLDivElement | null;
-      if (hasEnrichedExecs) {
-        if (!enrichDot) {
-          enrichDot = document.createElement('div');
-          enrichDot.className = 'enrich-dot';
-          bubble.appendChild(enrichDot);
-        }
-        enrichDot.style.cssText = 'position:absolute;top:-3px;right:-3px;width:10px;height:10px;background:#10b981;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);';
-      } else if (enrichDot) {
-        enrichDot.remove();
-      }
+      const enrichDot = el.querySelector('.enrich-dot') as HTMLDivElement | null;
+      if (enrichDot) enrichDot.remove();
     });
   }, [scatteredCompanies, selectedCompanyId, scalingMetric, executives, mapPositions, mapReady, getRadius]);
 

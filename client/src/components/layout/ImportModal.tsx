@@ -460,7 +460,7 @@ export default function ImportModal({ isOpen, onClose, mode: initialMode = 'impo
                     data-testid="input-country-dropdown"
                   />
                   {countryDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-40 overflow-auto">
+                    <div className="absolute z-50 w-full mt-1 border border-border rounded-md shadow-lg max-h-40 overflow-auto" style={{ backgroundColor: 'hsl(var(--popover))', color: 'hsl(var(--popover-foreground))' }}>
                       {countryOptions.filter(c =>
                         c.toLowerCase().includes(newCompany.hq_country.toLowerCase())
                       ).slice(0, 10).map(country => (

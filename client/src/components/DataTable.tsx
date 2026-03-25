@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useReactTable,
   getCoreRowModel,
@@ -129,6 +130,59 @@ const COUNTRIES = [
   'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
 ];
 
+function FixedDropdown({ anchorRef, onClose, children }: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const dropRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 2, left: rect.left });
+    }
+  }, [anchorRef]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node) &&
+          anchorRef.current && !anchorRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose, anchorRef]);
+
+  if (!coords) return null;
+
+  return createPortal(
+    <div
+      ref={dropRef}
+      style={{
+        position: 'fixed',
+        top: coords.top,
+        left: coords.left,
+        zIndex: 9999,
+        backgroundColor: 'hsl(var(--popover))',
+        color: 'hsl(var(--popover-foreground))',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: '0.375rem',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        minWidth: '140px',
+        maxHeight: '220px',
+        overflowY: 'auto',
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function SelectCell({ value, options, onSave, placeholder }: {
   value: string;
   options: readonly string[];
@@ -136,27 +190,26 @@ function SelectCell({ value, options, onSave, placeholder }: {
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (listRef.current && !listRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  if (open) {
-    return (
-      <div ref={listRef} className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
-        <div className="absolute z-50 top-0 left-0 min-w-[140px] w-max max-h-[200px] overflow-y-auto border border-border rounded shadow-lg" style={{ position: 'absolute', backgroundColor: 'hsl(var(--popover))' }}>
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        className="truncate block cursor-pointer hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+        title={value || undefined}
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        data-testid="select-cell-display"
+      >
+        {value || '-'}
+      </span>
+      {open && (
+        <FixedDropdown anchorRef={triggerRef} onClose={() => setOpen(false)}>
           {options.map(opt => (
             <div
               key={opt}
-              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'bg-accent/50 font-medium' : ''}`}
+              className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium' : ''}`}
+              style={opt === value ? { backgroundColor: 'hsl(var(--accent) / 0.5)' } : undefined}
               onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
             >
               {opt}
@@ -170,20 +223,9 @@ function SelectCell({ value, options, onSave, placeholder }: {
               Clear
             </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <span
-      className="truncate block cursor-pointer hover:bg-muted/40 rounded px-0.5 -mx-0.5"
-      title={value || undefined}
-      onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-      data-testid="select-cell-display"
-    >
-      {value || '-'}
-    </span>
+        </FixedDropdown>
+      )}
+    </>
   );
 }
 
@@ -195,6 +237,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const triggerRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -205,9 +248,9 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
   }, [options, search]);
 
   useEffect(() => {
-    if (open && inputRef.current) {
-      inputRef.current.focus();
+    if (open) {
       setSearch('');
+      setTimeout(() => inputRef.current?.focus(), 10);
     }
   }, [open]);
 
@@ -218,63 +261,50 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
     }
   }, [filtered, open]);
 
-  if (open) {
-    return (
-      <div className="relative" onClick={e => e.stopPropagation()} style={{ overflow: 'visible' }}>
-        <div className="absolute z-50 top-0 left-0 min-w-[200px] w-max border border-border rounded shadow-lg" style={{ position: 'absolute', backgroundColor: 'hsl(var(--popover))' }}>
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+        title={value || undefined}
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        data-testid="searchable-select-display"
+      >
+        {value || '-'}
+      </span>
+      {open && (
+        <FixedDropdown anchorRef={triggerRef} onClose={() => setOpen(false)}>
           <input
             ref={inputRef}
-            className="w-full bg-background border-b border-border rounded-t px-2 py-1.5 text-xs outline-none focus:bg-muted/30"
+            style={{ backgroundColor: 'hsl(var(--background))' }}
+            className="w-full border-b border-border rounded-t px-2 py-1.5 text-xs outline-none"
             value={search}
             onChange={e => setSearch(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && filtered.length > 0) {
-                onSave(filtered[0]);
-                setOpen(false);
-              }
+              if (e.key === 'Enter' && filtered.length > 0) { onSave(filtered[0]); setOpen(false); }
               if (e.key === 'Escape') { setSearch(''); setOpen(false); }
-            }}
-            onBlur={() => {
-              setTimeout(() => setOpen(false), 150);
             }}
             placeholder={placeholder || 'Type to search...'}
             data-testid="searchable-select-input"
           />
           {filtered.length > 0 && (
-            <div
-              ref={listRef}
-              className="max-h-[200px] overflow-y-auto"
-            >
-              {filtered.map(opt => (
+            <div ref={listRef} className="max-h-[180px] overflow-y-auto">
+              {filtered.map((opt, i) => (
                 <div
                   key={opt}
-                  data-highlighted={opt === filtered[0] ? 'true' : 'false'}
-                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'bg-accent/50 font-medium' : ''} ${opt === filtered[0] ? 'bg-accent/30' : ''}`}
-                  onMouseDown={e => {
-                    e.preventDefault();
-                    onSave(opt);
-                    setOpen(false);
-                  }}
+                  data-highlighted={i === 0 ? 'true' : 'false'}
+                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium' : ''}`}
+                  style={(opt === value || i === 0) ? { backgroundColor: `hsl(var(--accent) / ${opt === value ? '0.5' : '0.3'})` } : undefined}
+                  onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
                 >
                   {opt}
                 </div>
               ))}
             </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <span
-      className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
-      title={value || undefined}
-      onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-      data-testid="searchable-select-display"
-    >
-      {value || '-'}
-    </span>
+        </FixedDropdown>
+      )}
+    </>
   );
 }
 

@@ -908,7 +908,7 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
                     data-testid="input-country-dropdown"
                   />
                   {countryDropdownOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-md shadow-lg max-h-40 overflow-auto">
+                    <div className="absolute z-50 w-full mt-1 border rounded-md shadow-lg max-h-40 overflow-auto" style={{ backgroundColor: 'hsl(var(--popover))', color: 'hsl(var(--popover-foreground))' }}>
                       {countryDropdownOptions.filter(c => 
                         c.toLowerCase().includes(newCompany.hq_country.toLowerCase())
                       ).slice(0, 10).map(country => (

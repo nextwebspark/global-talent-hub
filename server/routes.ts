@@ -6,6 +6,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema, type InsertExecutive } from "@shared/schema";
 import { applyCoordinateFallback } from "./services/coordinateFallback";
+import { inferSector, inferSectorsBatch } from "./services/sectorInference";
 
 const CITY_TO_COUNTRY: Record<string, string> = {
   'dubai': 'United Arab Emirates', 'abu dhabi': 'United Arab Emirates', 'sharjah': 'United Arab Emirates',
@@ -287,7 +288,13 @@ export async function registerRoutes(
         }
       }
       const validated = insertCompanySchema.parse(data);
-      const company = await storage.createCompanyManual(validated);
+      let company = await storage.createCompanyManual(validated);
+      if (!company.sector) {
+        const inferred = await inferSector(company.name);
+        if (inferred) {
+          company = await storage.updateCompanyManual(company.id, { sector: inferred });
+        }
+      }
       res.status(201).json(company);
     } catch (error) {
       console.error("Error creating company:", error);
@@ -321,6 +328,23 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating company:", error);
       res.status(500).json({ error: "Failed to update company" });
+    }
+  });
+
+  app.post("/api/companies/infer-sectors", async (req, res) => {
+    try {
+      const { companies } = req.body as { companies: { id: number; name: string }[] };
+      if (!Array.isArray(companies) || companies.length === 0) {
+        return res.json({ results: [] });
+      }
+      const results = await inferSectorsBatch(companies);
+      for (const r of results) {
+        await storage.updateCompanyManual(r.id, { sector: r.sector });
+      }
+      res.json({ results });
+    } catch (error) {
+      console.error("Error inferring sectors:", error);
+      res.status(500).json({ error: "Sector inference failed" });
     }
   });
 
@@ -495,10 +519,11 @@ export async function registerRoutes(
             } else {
               const countryForCoords = normalizedCountry || 'Unknown';
               const coords = applyCoordinateFallback({ country: countryForCoords, city: city || undefined });
+              const finalSector = sector || await inferSector(companyName);
               const newCompany = await storage.createCompanyFromDiscovery({
                 name: companyName,
                 country: countryForCoords,
-                sector: sector,
+                sector: finalSector,
                 businessType: null,
                 region: city,
                 revenue: revenueRaw !== null ? String(revenueRaw) : null,
@@ -1953,7 +1978,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           // Create a new company with researched data
           targetCompany = await storage.createCompanyManual({
             name: researchedData.name,
-            sector: researchedData.sector,
+            sector: researchedData.sector || await inferSector(researchedData.name),
             region: researchedData.region,
             country: researchedData.country,
             streetAddress: researchedData.streetAddress || null,

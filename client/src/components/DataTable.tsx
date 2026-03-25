@@ -42,7 +42,7 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
   Columns3, Group, ChevronRight, ChevronDown,
   Rows3, Maximize2, Minimize2,
-  Minus, Trash2, X, Plus, Building2, GripVertical,
+  Minus, Trash2, X, Plus, Building2, GripVertical, Wand2,
 } from 'lucide-react';
 import { useAppStore, transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import { toast } from 'sonner';
@@ -106,6 +106,20 @@ const COMPANY_STATUS_OPTIONS = ['Active', 'Out of Scope', 'Off-Limits'] as const
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
 const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
 const ETHNICITY_OPTIONS = ['African', 'East Asian', 'European', 'Latin American', 'Middle Eastern', 'Native/Indigenous', 'Pacific Islander', 'South Asian', 'Southeast Asian', 'Mixed/Other'] as const;
+
+const STANDARD_SECTORS = [
+  'Energy',
+  'Materials',
+  'Industrials',
+  'Consumer Discretionary',
+  'Consumer Staples',
+  'Health Care',
+  'Financials',
+  'Information Technology',
+  'Communication Services',
+  'Utilities',
+  'Real Estate',
+] as const;
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -592,6 +606,36 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     }
   }, [updateCompany, updateExecutive, allExecutives]);
 
+  const [fillingSectors, setFillingSectors] = useState(false);
+
+  const handleFillSectors = useCallback(async () => {
+    const emptySectorCompanies = companies
+      .filter(c => !c.industry)
+      .map(c => ({ id: Number(c.id), name: c.name }));
+    if (emptySectorCompanies.length === 0) {
+      toast.info('All companies already have a sector assigned.');
+      return;
+    }
+    setFillingSectors(true);
+    try {
+      const res = await fetch('/api/companies/infer-sectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companies: emptySectorCompanies }),
+      });
+      if (!res.ok) throw new Error('Request failed');
+      const { results } = await res.json() as { results: { id: number; sector: string }[] };
+      for (const r of results) {
+        updateCompany(String(r.id), { industry: r.sector });
+      }
+      toast.success(`${results.length} sector${results.length !== 1 ? 's' : ''} filled automatically.`);
+    } catch {
+      toast.error('Failed to infer sectors. Please try again.');
+    } finally {
+      setFillingSectors(false);
+    }
+  }, [companies, updateCompany]);
+
   const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyCountry, setNewCompanyCountry] = useState('');
@@ -947,8 +991,30 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       }),
       columnHelper.accessor('sector', {
         header: 'Sector',
-        cell: editableCell('sector'),
-        size: 120,
+        cell: (info) => {
+          const row = info.row.original;
+          if (!row) return <span>-</span>;
+          if (info.row.getIsGrouped()) {
+            if (info.column.getIsGrouped()) {
+              return (
+                <span className="font-semibold flex items-center gap-1">
+                  {info.row.getIsExpanded() ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  {info.getValue()} ({info.row.subRows.length})
+                </span>
+              );
+            }
+            return null;
+          }
+          return (
+            <SearchableSelectCell
+              value={String(info.getValue() || '')}
+              options={STANDARD_SECTORS}
+              onSave={(val) => handleCellSave(row, 'sector', val)}
+              placeholder="Search sector..."
+            />
+          );
+        },
+        size: 140,
         enableGrouping: true,
       }),
       columnHelper.accessor('revenue', {
@@ -1392,6 +1458,18 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         )}
 
         <div className="h-4 w-px bg-border mx-1" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={handleFillSectors}
+          disabled={fillingSectors}
+          title="AI-infer sectors for companies that don't have one yet"
+          data-testid="button-fill-sectors"
+        >
+          <Wand2 className="h-3 w-3 mr-1" />
+          {fillingSectors ? 'Filling…' : 'Fill Sectors'}
+        </Button>
         <Button
           variant="outline"
           size="sm"

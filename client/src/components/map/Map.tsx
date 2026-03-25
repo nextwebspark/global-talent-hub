@@ -54,10 +54,12 @@ const EXECUTIVE_COLORS = [
 export default function MapComponent({
   initialCenter = [0, 20] as [number, number],
   initialZoom = 1.5,
+  restoredPosition = false,
   onViewChange,
 }: {
   initialCenter?: [number, number];
   initialZoom?: number;
+  restoredPosition?: boolean;
   onViewChange?: (center: [number, number], zoom: number) => void;
 } = {}) {
   const { companies, executives, selectedCompanyId, selectCompany, selectExecutive, updateCompany, addCompany, addExecutive, scalingMetric, revenueFilterRange, employeeFilterRange, hiddenCountries, hiddenCompanies, currentProject, showAllSatellites, mapPositions, updateMapPosition } = useAppStore();
@@ -96,6 +98,7 @@ export default function MapComponent({
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const styleLoadedRef = useRef(false);
   const mapZoomRef = useRef(1.5);
+  const skipInitialFitRef = useRef(restoredPosition);
 
   useEffect(() => {
     fetch('/api/config')
@@ -428,7 +431,10 @@ export default function MapComponent({
 
     if (visibleCompanies.length > 0 && visibleIdSignature !== prevIdSignatureRef.current) {
       const timeSinceLastFit = now - lastFitTimeRef.current;
-      if (prevIdSignatureRef.current === '' || timeSinceLastFit > 500) {
+      const isInitialLoad = prevIdSignatureRef.current === '';
+      if (skipInitialFitRef.current && isInitialLoad) {
+        skipInitialFitRef.current = false;
+      } else if (isInitialLoad || timeSinceLastFit > 500) {
         let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
         visibleCompanies.forEach(c => {
           if (c.displayLng < minLng) minLng = c.displayLng;

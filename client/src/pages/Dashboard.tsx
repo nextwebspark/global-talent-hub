@@ -26,7 +26,7 @@ export default function Dashboard() {
   const loadSearchResults = useLoadSearchResults();
 
   const [activeView, setActiveViewRaw] = useState<ViewMode>('map');
-  const mapViewStateRef = useRef<{ center: [number, number]; zoom: number }>({ center: [0, 20], zoom: 1.5 });
+  const mapViewStateRef = useRef<{ center: [number, number]; zoom: number; hasRestored: boolean }>({ center: [0, 20], zoom: 1.5, hasRestored: false });
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importModalMode, setImportModalMode] = useState<'import' | 'add'>('import');
@@ -407,7 +407,8 @@ export default function Dashboard() {
               <MapComponent
                 initialCenter={mapViewStateRef.current.center}
                 initialZoom={mapViewStateRef.current.zoom}
-                onViewChange={(center, zoom) => { mapViewStateRef.current = { center, zoom }; }}
+                restoredPosition={mapViewStateRef.current.hasRestored}
+                onViewChange={(center, zoom) => { mapViewStateRef.current = { center, zoom, hasRestored: true }; }}
               />
               <CompanyList />
             </div>

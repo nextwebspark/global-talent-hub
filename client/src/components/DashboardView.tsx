@@ -392,21 +392,21 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           </div>
           <div className="text-center" data-testid="stat-out-of-scope">
             <p className="text-2xl font-bold text-muted-foreground">{availability.outOfScopeCount}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Out of Scope</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Out of Scope ({availability.outOfScopePct}%)</p>
           </div>
           <div className="text-center" data-testid="stat-off-limits">
             <p className="text-2xl font-bold text-red-400">{availability.offLimitsCount}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Exec Off-Limits</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Off-Limits ({availability.offLimitsPct}%)</p>
           </div>
           {(availability.companyOutOfScopeCount || 0) + (availability.companyOffLimitsCount || 0) > 0 && (
             <>
               <div className="text-center" data-testid="stat-company-out-of-scope">
                 <p className="text-2xl font-bold text-muted-foreground">{availability.companyOutOfScopeCount || 0}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Out of Scope</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Out of Scope ({availability.companyOutOfScopePct || 0}%)</p>
               </div>
               <div className="text-center" data-testid="stat-company-off-limits">
                 <p className="text-2xl font-bold text-red-400">{availability.companyOffLimitsCount || 0}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Off-Limits</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Off-Limits ({availability.companyOffLimitsPct || 0}%)</p>
               </div>
             </>
           )}
@@ -537,13 +537,13 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                     {availability.outOfScopeCount > 0 && (
                       <div className="text-center" data-testid="avail-out-of-scope">
                         <p className="text-lg font-semibold text-muted-foreground">{availability.outOfScopeCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Exec Out of Scope</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Exec Out of Scope ({availability.outOfScopePct}%)</p>
                       </div>
                     )}
                     {availability.offLimitsCount > 0 && (
                       <div className="text-center" data-testid="avail-off-limits">
                         <p className="text-lg font-semibold text-red-400">{availability.offLimitsCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Exec Off-Limits</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Exec Off-Limits ({availability.offLimitsPct}%)</p>
                       </div>
                     )}
                   </div>
@@ -553,13 +553,13 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                     {(availability.companyOutOfScopeCount || 0) > 0 && (
                       <div className="text-center" data-testid="avail-company-out-of-scope">
                         <p className="text-lg font-semibold text-muted-foreground">{availability.companyOutOfScopeCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Co. Out of Scope</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Co. Out of Scope ({availability.companyOutOfScopePct || 0}%)</p>
                       </div>
                     )}
                     {(availability.companyOffLimitsCount || 0) > 0 && (
                       <div className="text-center" data-testid="avail-company-off-limits">
                         <p className="text-lg font-semibold text-red-400">{availability.companyOffLimitsCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Co. Off-Limits</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Co. Off-Limits ({availability.companyOffLimitsPct || 0}%)</p>
                       </div>
                     )}
                   </div>

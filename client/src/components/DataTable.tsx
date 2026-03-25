@@ -101,6 +101,7 @@ function parseRevenueInput(input: string): number {
 }
 
 const STATUS_OPTIONS = ['Interested', 'Not Interested', 'Out of Scope', 'Off-Limits'] as const;
+const COMPANY_STATUS_OPTIONS = ['Active', 'Out of Scope', 'Off-Limits'] as const;
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
 const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
 const ETHNICITY_OPTIONS = ['African', 'East Asian', 'European', 'Latin American', 'Middle Eastern', 'Native/Indigenous', 'Pacific Islander', 'South Asian', 'Southeast Asian', 'Mixed/Other'] as const;
@@ -515,6 +516,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         const num = parseInt(value.replace(/[^0-9]/g, ''), 10);
         updateCompany(row.companyId, { employees: isNaN(num) ? 0 : num });
       }
+    } else if (field === 'companyStatus' && row.isCompanyRow) {
+      updateCompany(row.companyId, { status: value || undefined });
     } else if (!row.isCompanyRow) {
       if (field.startsWith('custom_')) {
         const customKey = field.slice(7);
@@ -934,6 +937,16 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         cell: (info) => {
           const row = info.row.original;
           if (!row || info.row.getIsGrouped()) return null;
+          if (row.isCompanyRow) {
+            return (
+              <SelectCell
+                value={String(row.companyStatus || '')}
+                options={COMPANY_STATUS_OPTIONS}
+                onSave={(val) => handleCellSave(row, 'companyStatus', val)}
+                placeholder="- Co. Status -"
+              />
+            );
+          }
           return (
             <SelectCell
               value={String(info.getValue() || '')}

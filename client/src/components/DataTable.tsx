@@ -102,7 +102,7 @@ function parseRevenueInput(input: string): number {
 }
 
 const STATUS_OPTIONS = ['Interested', 'Not Interested', 'Out of Scope', 'Off-Limits'] as const;
-const COMPANY_STATUS_OPTIONS = ['Active', 'Out of Scope', 'Off-Limits'] as const;
+const COMPANY_STATUS_OPTIONS = ['Active', 'Off-Limits'] as const;
 const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
 const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
 const ETHNICITY_OPTIONS = ['African', 'East Asian', 'European', 'Latin American', 'Middle Eastern', 'Native/Indigenous', 'Pacific Islander', 'South Asian', 'Southeast Asian', 'Mixed/Other'] as const;
@@ -1933,8 +1933,9 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               const style = !isGrouped ? getRowStyles(row) : {};
               const isDragSelected = original ? dragSelectedRows.has(original.id) : false;
               const isExecExcluded = original && (original.availability === 'Out of Scope' || original.availability === 'Off-Limits' || original.availability === 'Not Interested');
+              const isFormerExec = original && !original.isCompanyRow && /\b(ex|former|fmr|prev|past)\b/i.test(original.title || '');
               const isCompanyOffLimits = original && original.companyStatus === 'Off-Limits';
-              const isExcluded = !isGrouped && (isExecExcluded || isCompanyOffLimits);
+              const isExcluded = !isGrouped && (isExecExcluded || (isCompanyOffLimits && !isFormerExec));
 
               return (
                 <tr

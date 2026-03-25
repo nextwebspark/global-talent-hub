@@ -292,7 +292,8 @@ export default function CompanyList() {
 
                           {isCExpanded && company.executives.map((exec: any) => {
                             const isExecSel = selectedExecutiveId === exec.id;
-                            const isExecExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
+                            const isFormerExec = /\b(ex|former|fmr|prev|past)\b/i.test(exec.title || '');
+                            const isExecExcluded = (exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested') || (companyStatusExcluded && !isFormerExec);
                             return (
                               <div key={exec.id}
                                 className={`flex items-center gap-1.5 ml-5 pl-2 border-l border-border/30 px-2 py-1 rounded-sm cursor-pointer text-xs group/exec ${

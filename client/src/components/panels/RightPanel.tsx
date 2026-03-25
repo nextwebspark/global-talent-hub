@@ -309,6 +309,7 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
       if (field === 'operatingModel') updateData.operatingModel = value;
       if (field === 'revenueDrivers') updateData.revenueDrivers = value;
       if (field === 'summary') updateData.summary = value;
+      if (field === 'status') updateData.status = value;
 
       await updateCompanyMutation.mutateAsync({
         id: parseInt(company.id),
@@ -489,6 +490,17 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
               </Badge>
             )}
           </div>
+          <select
+            className="mt-2 w-full bg-card border border-border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-primary cursor-pointer hover:bg-muted/30 transition-colors"
+            value={company.status || ''}
+            onChange={(e) => handleUpdateCompany('status', e.target.value || null)}
+            data-testid="select-company-status"
+          >
+            <option value="">- Company Status -</option>
+            <option value="Active">Active</option>
+            <option value="Out of Scope">Out of Scope</option>
+            <option value="Off-Limits">Off-Limits</option>
+          </select>
         </div>
 
         <ScrollArea className="flex-1">

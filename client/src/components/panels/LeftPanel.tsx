@@ -352,9 +352,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
           remunerationNotes: '',
           availability: '',
           level: '',
+          gender: '',
+          ethnicity: '',
           companyId: company.id,
           companyName: company.name,
           companyColor: company.color || '#1e3a8a',
+          companyStatus: company.status || '',
           isCompanyRow: true
         });
       } else {
@@ -374,9 +377,12 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
             remunerationNotes: exec.remunerationNotes || '',
             availability: exec.availability || '',
             level: exec.level || '',
+            gender: exec.gender || '',
+            ethnicity: exec.ethnicity || '',
             companyId: company.id,
             companyName: company.name,
             companyColor: company.color || '#1e3a8a',
+            companyStatus: company.status || '',
             isCompanyRow: false,
             customFields: exec.customFields
           });

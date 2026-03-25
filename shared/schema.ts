@@ -60,6 +60,7 @@ export const companies = pgTable("companies", {
   lastVerifiedYear: integer("last_verified_year"),
   confidence: integer("confidence").default(5),
   relevanceReason: text("relevance_reason"),
+  status: text("status"),
   color: text("color").default("#1e3a8a"),
   manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
   dataProvenance: jsonb("data_provenance").default(sql`'{}'::jsonb`),

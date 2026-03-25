@@ -2565,6 +2565,13 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       let availableCount = 0;
       let outOfScopeCount = 0;
       let offLimitsCount = 0;
+      let companyOutOfScopeCount = 0;
+      let companyOffLimitsCount = 0;
+      for (const c of allCompanies) {
+        const cs = (c.status || '').trim().toLowerCase();
+        if (cs === 'out of scope') companyOutOfScopeCount++;
+        else if (cs === 'off-limits') companyOffLimitsCount++;
+      }
       const availByLevel: Record<string, { total: number; available: number }> = {};
       const availByGeo: Record<string, { total: number; available: number }> = {};
       
@@ -2647,6 +2654,10 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
           outOfScopePct: totalExecutives > 0 ? Math.round((outOfScopeCount / totalExecutives) * 100) : 0,
           offLimitsCount,
           offLimitsPct: totalExecutives > 0 ? Math.round((offLimitsCount / totalExecutives) * 100) : 0,
+          companyOutOfScopeCount,
+          companyOutOfScopePct: totalCompanies > 0 ? Math.round((companyOutOfScopeCount / totalCompanies) * 100) : 0,
+          companyOffLimitsCount,
+          companyOffLimitsPct: totalCompanies > 0 ? Math.round((companyOffLimitsCount / totalCompanies) * 100) : 0,
           byLevel: availByLevel,
           byGeography: availByGeo,
         },

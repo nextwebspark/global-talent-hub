@@ -38,7 +38,7 @@ export default function CompanyList() {
       countryMap.get(countryName)!.companies.push({
         id: company.id, name: company.name, revenue_usd: company.revenue_usd, employees: company.employees,
         confidence: company.confidence, lat: company.lat, lng: company.lng,
-        color: company.color, executives: companyExecs
+        color: company.color, status: company.status, executives: companyExecs
       });
     });
     const sorted = Array.from(countryMap.values()).sort((a, b) => {
@@ -262,9 +262,10 @@ export default function CompanyList() {
                       const isSelected = selectedCompanyId === company.id;
                       const companyColor = company.color || '#1e3a8a';
                       const isCHidden = hiddenCompanies.has(company.id) || isHidden;
+                      const isCompanyExcluded = company.status === 'Out of Scope' || company.status === 'Off-Limits';
 
                       return (
-                        <div key={company.id} className="group/company">
+                        <div key={company.id} className={`group/company ${isCompanyExcluded ? 'opacity-40' : ''}`}>
                           <div
                             className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-all text-xs ${
                               isSelected ? 'bg-primary/10 border-l-2 border-primary' : 'hover:bg-muted/40'

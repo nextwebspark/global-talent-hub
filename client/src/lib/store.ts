@@ -14,6 +14,7 @@ async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.hq_country !== undefined) dbUpdates.country = updates.hq_country;
     if (updates.industry !== undefined) dbUpdates.sector = updates.industry;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
     
     if (Object.keys(dbUpdates).length > 0) {
       const res = await fetch(`/api/companies/${id}`, {
@@ -109,6 +110,7 @@ export interface Company {
   lastVerifiedYear?: number;
   confidence: number;
   description?: string;
+  status?: string;
   color?: string;
   source?: string;
   businessType?: string;
@@ -415,6 +417,7 @@ export function transformAPICompany(apiCompany: APICompany): Company {
     businessType: ext.businessType ? String(ext.businessType).trim() : undefined,
     relevanceReason: ext.relevanceReason ? String(ext.relevanceReason).trim() : undefined,
     confidence,
+    status: ext.status || undefined,
     color: apiCompany.color || '#1e3a8a',
     source: String(ext.source || 'Unknown').trim(),
   };

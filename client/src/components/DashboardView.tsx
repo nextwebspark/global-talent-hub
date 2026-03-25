@@ -80,6 +80,10 @@ interface DashboardData {
     outOfScopePct: number;
     offLimitsCount: number;
     offLimitsPct: number;
+    companyOutOfScopeCount?: number;
+    companyOutOfScopePct?: number;
+    companyOffLimitsCount?: number;
+    companyOffLimitsPct?: number;
     byLevel: Record<string, { total: number; available: number }>;
     byGeography: Record<string, { total: number; available: number }>;
   };
@@ -365,7 +369,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Talent Mapping Report</p>
           <h1 className="text-lg font-semibold text-foreground leading-tight">{data.reportTitle || 'Search Results'}</h1>
         </div>
-        <div className="grid grid-cols-7 gap-4 mt-4">
+        <div className="flex flex-wrap justify-center gap-6 mt-4">
           <div className="text-center">
             <p className="text-2xl font-bold text-foreground">{mappingCompletion.totalCompanies}</p>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Companies</p>
@@ -392,8 +396,20 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           </div>
           <div className="text-center" data-testid="stat-off-limits">
             <p className="text-2xl font-bold text-red-400">{availability.offLimitsCount}</p>
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Off-Limits</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Exec Off-Limits</p>
           </div>
+          {(availability.companyOutOfScopeCount || 0) + (availability.companyOffLimitsCount || 0) > 0 && (
+            <>
+              <div className="text-center" data-testid="stat-company-out-of-scope">
+                <p className="text-2xl font-bold text-muted-foreground">{availability.companyOutOfScopeCount || 0}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Out of Scope</p>
+              </div>
+              <div className="text-center" data-testid="stat-company-off-limits">
+                <p className="text-2xl font-bold text-red-400">{availability.companyOffLimitsCount || 0}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Co. Off-Limits</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -521,13 +537,29 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                     {availability.outOfScopeCount > 0 && (
                       <div className="text-center" data-testid="avail-out-of-scope">
                         <p className="text-lg font-semibold text-muted-foreground">{availability.outOfScopeCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Out of Scope</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Exec Out of Scope</p>
                       </div>
                     )}
                     {availability.offLimitsCount > 0 && (
                       <div className="text-center" data-testid="avail-off-limits">
                         <p className="text-lg font-semibold text-red-400">{availability.offLimitsCount}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase">Off-Limits</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Exec Off-Limits</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {((availability.companyOutOfScopeCount || 0) > 0 || (availability.companyOffLimitsCount || 0) > 0) && (
+                  <div className="border-l border-border pl-4 flex items-center gap-4">
+                    {(availability.companyOutOfScopeCount || 0) > 0 && (
+                      <div className="text-center" data-testid="avail-company-out-of-scope">
+                        <p className="text-lg font-semibold text-muted-foreground">{availability.companyOutOfScopeCount}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Co. Out of Scope</p>
+                      </div>
+                    )}
+                    {(availability.companyOffLimitsCount || 0) > 0 && (
+                      <div className="text-center" data-testid="avail-company-off-limits">
+                        <p className="text-lg font-semibold text-red-400">{availability.companyOffLimitsCount}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Co. Off-Limits</p>
                       </div>
                     )}
                   </div>

@@ -66,6 +66,7 @@ export interface TableRowData {
   companyId: string;
   companyName: string;
   companyColor: string;
+  companyStatus: string;
   isCompanyRow: boolean;
   customFields?: Record<string, string>;
 }
@@ -1653,7 +1654,10 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               const selected = !isGrouped && isRowSelected(row);
               const style = !isGrouped ? getRowStyles(row) : {};
               const isDragSelected = original ? dragSelectedRows.has(original.id) : false;
-              const isExcluded = !isGrouped && original && (original.availability === 'Out of Scope' || original.availability === 'Off-Limits');
+              const isExcluded = !isGrouped && original && (
+                original.availability === 'Out of Scope' || original.availability === 'Off-Limits' ||
+                original.companyStatus === 'Out of Scope' || original.companyStatus === 'Off-Limits'
+              );
 
               return (
                 <tr

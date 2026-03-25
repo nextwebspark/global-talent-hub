@@ -290,7 +290,8 @@ export default function Dashboard() {
       if (!response.ok) throw new Error('Enrichment failed');
       const result = await response.json();
       await refresh();
-      toast.success(`Enriched ${result.enrichment.companiesProcessed} companies`);
+      const sectorMsg = result.enrichment.sectorsInferred ? `, ${result.enrichment.sectorsInferred} sectors inferred` : '';
+      toast.success(`Enriched ${result.enrichment.companiesProcessed} companies${sectorMsg}`);
     } catch {
       if (pollInterval) clearInterval(pollInterval);
       toast.error('Enrichment failed');

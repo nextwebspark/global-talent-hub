@@ -2154,6 +2154,20 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       console.log(`[Routes] Starting batch multi-pass enrichment for search ${searchQueryId}`);
       const result = await enrichSearchResults(searchQueryId);
 
+      const allCompanies = await storage.getCompaniesBySearchQuery(searchQueryId);
+      const companiesNeedingSector = allCompanies
+        .filter(c => !c.sector || !c.sector.trim())
+        .map(c => ({ id: c.id, name: c.name }));
+      let sectorsInferred = 0;
+      if (companiesNeedingSector.length > 0) {
+        const sectorResults = await inferSectorsBatch(companiesNeedingSector);
+        for (const r of sectorResults) {
+          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
+        }
+        sectorsInferred = sectorResults.length;
+        console.log(`[Routes] Sector inference during enrichment: filled ${sectorsInferred}/${companiesNeedingSector.length} sectors`);
+      }
+
       const { inferDiversityForSearch } = await import("./services/pipeline/diversityInference");
       const diversityResult = await inferDiversityForSearch(searchQueryId);
       console.log(`[Routes] Diversity inference: ${diversityResult.updated}/${diversityResult.total} executives updated`);
@@ -2163,7 +2177,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       res.json({
         success: true,
         searchQuery,
-        enrichment: result,
+        enrichment: { ...result, sectorsInferred },
         diversity: diversityResult,
         companies: fullResults?.companies || []
       });

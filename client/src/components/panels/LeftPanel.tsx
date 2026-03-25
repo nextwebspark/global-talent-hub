@@ -125,7 +125,8 @@ export default function LeftPanel({ width = 360, isOpen = true, onToggle, isFull
         `${enrichment.profilesEnriched || 0} profiles, ` +
         `${enrichment.revenueEnriched} revenues, ` +
         `${enrichment.employeesEnriched} employee counts, ` +
-        `${enrichment.executivesAdded} executives added`
+        `${enrichment.executivesAdded} executives added` +
+        (enrichment.sectorsInferred ? `, ${enrichment.sectorsInferred} sectors inferred` : '')
       );
     } catch (error) {
       if (pollInterval) clearInterval(pollInterval);

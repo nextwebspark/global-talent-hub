@@ -38,6 +38,12 @@ The frontend is built with React 18 and TypeScript, utilizing Wouter for routing
 ### Backend Architecture
 The backend is a Node.js Express.js application written in TypeScript, providing a RESTful JSON API. Search supports two modes: **Quick Build** (default, LLM-direct via OpenRouter — single AI call generating companies + executives in ~5-10s) and **In-Depth Search** (Serper web search pipeline with multi-step extraction ~60s). The mode flag flows from the Landing page toggle → `useSearch`/`streamingSearch` → POST/GET `/api/search` routes → `runDiscoveryPipeline(query, limit, searchQueryId, mode)`. Quick Build is implemented in `server/services/pipeline/quickBuildSearch.ts`. Enrichment also uses Serper for targeted data lookups. Session management uses Express sessions with a PostgreSQL store.
 
+### Sector Taxonomy
+Companies are classified using a 2-level taxonomy stored in `sector` (specific sub-sector) and `sectorCategory` (broad category) columns:
+- **13 categories**: Energy, Materials, Industrials, Consumer Discretionary, Consumer Staples, Health Care, Financial Services, Information Technology, Communication Services, Utilities, Real Estate, Conglomerates & Holding Companies, Sovereign Wealth & Government
+- **~40 specific sub-sectors** (e.g., "Oil, Gas & Pipelines", "Software & SaaS", "Sovereign Wealth Funds")
+- All inference is done via OpenRouter (`anthropic/claude-sonnet-4`). `normalizeOrInferSector()` validates and fills both fields at every creation point. Sector PATCH auto-computes category server-side.
+
 ### Data Storage
 PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, `messages`, and `pipeline_log`.
 

@@ -6,7 +6,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { insertCompanySchema, insertExecutiveSchema, insertSearchQuerySchema, insertCareerHistorySchema, insertEducationSchema, insertRemunerationSchema, type InsertExecutive } from "@shared/schema";
 import { applyCoordinateFallback } from "./services/coordinateFallback";
-import { inferSector, inferSectorsBatch, normalizeOrInferSector, isStandardSector } from "./services/sectorInference";
+import { inferSector, inferSectorsBatch, normalizeOrInferSector, isStandardSector, getCategoryForSector } from "./services/sectorInference";
 
 const CITY_TO_COUNTRY: Record<string, string> = {
   'dubai': 'United Arab Emirates', 'abu dhabi': 'United Arab Emirates', 'sharjah': 'United Arab Emirates',
@@ -288,8 +288,12 @@ export async function registerRoutes(
         }
       }
       const validated = insertCompanySchema.parse(data);
-      const normalizedSector = await normalizeOrInferSector(validated.name || '', validated.sector);
-      const company = await storage.createCompanyManual({ ...validated, sector: normalizedSector || validated.sector });
+      const { sector: normalizedSector, category: normalizedCategory } = await normalizeOrInferSector(validated.name || '', validated.sector);
+      const company = await storage.createCompanyManual({
+        ...validated,
+        sector: normalizedSector || validated.sector,
+        sectorCategory: normalizedCategory || null,
+      });
       res.status(201).json(company);
     } catch (error) {
       console.error("Error creating company:", error);
@@ -302,6 +306,9 @@ export async function registerRoutes(
     try {
       const id = parseInt(String(req.params.id));
       let patchData = { ...req.body };
+      if (patchData.sector !== undefined) {
+        patchData.sectorCategory = getCategoryForSector(patchData.sector) || null;
+      }
       const existingCompany = await storage.getCompany(id);
       const hasNoCoords = !existingCompany?.latitude && !existingCompany?.longitude;
       const countryChanged = patchData.country && patchData.country !== existingCompany?.country;
@@ -334,7 +341,7 @@ export async function registerRoutes(
       }
       const results = await inferSectorsBatch(companies);
       for (const r of results) {
-        await storage.updateCompanyManual(r.id, { sector: r.sector });
+        await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
       }
       res.json({ results });
     } catch (error) {
@@ -633,7 +640,7 @@ export async function registerRoutes(
       if (newCompaniesForSectorInference.length > 0) {
         const sectorResults = await inferSectorsBatch(newCompaniesForSectorInference);
         for (const r of sectorResults) {
-          await storage.updateCompanyManual(r.id, { sector: r.sector });
+          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
         }
         console.log(`[Routes] Sector inference: filled ${sectorResults.length}/${newCompaniesForSectorInference.length} sectors`);
       }
@@ -1981,10 +1988,12 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
         // Check if research was successful (null means validation failed, e.g., Unknown company)
         if (researchedData) {
+          const { sector: resolvedSector, category: resolvedCategory } = await normalizeOrInferSector(researchedData.name, researchedData.sector);
           // Create a new company with researched data
           targetCompany = await storage.createCompanyManual({
             name: researchedData.name,
-            sector: researchedData.sector || await inferSector(researchedData.name),
+            sector: resolvedSector || researchedData.sector,
+            sectorCategory: resolvedCategory || null,
             region: researchedData.region,
             country: researchedData.country,
             streetAddress: researchedData.streetAddress || null,
@@ -2351,7 +2360,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       if (newCompaniesForSectorInference2.length > 0) {
         const sectorResults2 = await inferSectorsBatch(newCompaniesForSectorInference2);
         for (const r of sectorResults2) {
-          await storage.updateCompanyManual(r.id, { sector: r.sector });
+          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
         }
         console.log(`[ImportProject] Sector inference: filled ${sectorResults2.length}/${newCompaniesForSectorInference2.length} sectors`);
       }

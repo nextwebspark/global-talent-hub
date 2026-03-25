@@ -107,19 +107,35 @@ const LEVEL_OPTIONS = ['Board', 'C-Suite', 'N-1', 'N-2'] as const;
 const GENDER_OPTIONS = ['Male', 'Female', 'Prefer not to say'] as const;
 const ETHNICITY_OPTIONS = ['African', 'East Asian', 'European', 'Latin American', 'Middle Eastern', 'Native/Indigenous', 'Pacific Islander', 'South Asian', 'Southeast Asian', 'Mixed/Other'] as const;
 
-const STANDARD_SECTORS = [
-  'Energy',
-  'Materials',
-  'Industrials',
-  'Consumer Discretionary',
-  'Consumer Staples',
-  'Health Care',
-  'Financials',
-  'Information Technology',
-  'Communication Services',
-  'Utilities',
-  'Real Estate',
-] as const;
+const SECTOR_TAXONOMY: Record<string, string[]> = {
+  'Energy': ['Oil, Gas & Pipelines', 'Renewable Energy'],
+  'Materials': ['Metals & Mining', 'Chemicals', 'Construction Materials'],
+  'Industrials': ['Aerospace & Defense', 'Transportation & Logistics', 'Construction & Engineering', 'Industrial Machinery'],
+  'Consumer Discretionary': ['Retail & E-Commerce', 'Automotive', 'Travel, Leisure & Hospitality', 'Media & Entertainment'],
+  'Consumer Staples': ['Food & Beverage', 'Household & Personal Products', 'Grocery & Drug Retail'],
+  'Health Care': ['Pharmaceuticals & Biotech', 'Medical Devices & Equipment', 'Health Care Services'],
+  'Financial Services': ['Banking', 'Insurance', 'Asset Management', 'Fintech & Payments'],
+  'Information Technology': ['Software & SaaS', 'Hardware & Semiconductors', 'IT Services & Consulting', 'Cybersecurity'],
+  'Communication Services': ['Telecom', 'Internet & Digital Platforms', 'Gaming'],
+  'Utilities': ['Electric Utilities', 'Water & Waste Management', 'Gas Distribution'],
+  'Real Estate': ['Commercial Real Estate', 'Residential Real Estate', 'REITs & Property Management'],
+  'Conglomerates & Holding Companies': ['Family Conglomerates', 'Sovereign & State-Owned Holding Companies', 'Private Equity & Investment Holding'],
+  'Sovereign Wealth & Government': ['Sovereign Wealth Funds', 'Government & Public Sector', 'Quasi-Government Entities'],
+};
+
+const SECTOR_TO_CATEGORY: Record<string, string> = {};
+for (const [cat, subs] of Object.entries(SECTOR_TAXONOMY)) {
+  for (const s of subs) SECTOR_TO_CATEGORY[s] = cat;
+}
+
+const ALL_SUB_SECTORS = Object.values(SECTOR_TAXONOMY).flat();
+
+function getSectorCategory(sector: string | null | undefined): string | null {
+  if (!sector) return null;
+  return SECTOR_TO_CATEGORY[sector] || null;
+}
+
+const STANDARD_SECTORS = ALL_SUB_SECTORS as unknown as readonly string[];
 
 const COUNTRIES = [
   'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Australia', 'Austria',
@@ -144,10 +160,11 @@ const COUNTRIES = [
   'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
 ];
 
-function FixedDropdown({ anchorRef, onClose, children }: {
+function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
   children: React.ReactNode;
+  minWidth?: number;
 }) {
   const dropRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
@@ -185,8 +202,8 @@ function FixedDropdown({ anchorRef, onClose, children }: {
         border: '1px solid hsl(var(--border))',
         borderRadius: '0.375rem',
         boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        minWidth: '140px',
-        maxHeight: '220px',
+        minWidth: minWidth ? `${minWidth}px` : '140px',
+        maxHeight: '300px',
         overflowY: 'auto',
       }}
       onClick={e => e.stopPropagation()}
@@ -245,11 +262,89 @@ function SelectCell({ value, options, onSave, placeholder }: {
   );
 }
 
-function SearchableSelectCell({ value, options, onSave, placeholder }: {
+function SectorPickerButton({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!search) return null;
+    const lower = search.toLowerCase();
+    return ALL_SUB_SECTORS.filter(s => s.toLowerCase().includes(lower));
+  }, [search]);
+
+  useEffect(() => {
+    if (open) { setSearch(''); setTimeout(() => inputRef.current?.focus(), 10); }
+  }, [open]);
+
+  return (
+    <div className={className}>
+      <button
+        ref={btnRef}
+        type="button"
+        className="w-full flex items-center justify-between px-3 py-2 text-sm border border-input rounded-md bg-background hover:bg-muted/40 transition-colors"
+        onClick={() => setOpen(v => !v)}
+        data-testid="sector-picker-button"
+      >
+        <span className={value ? '' : 'text-muted-foreground'}>{value || 'Select sector...'}</span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 ml-2" />
+      </button>
+      {open && (
+        <FixedDropdown anchorRef={btnRef as any} onClose={() => setOpen(false)} minWidth={240}>
+          <input
+            ref={inputRef}
+            style={{ backgroundColor: 'hsl(var(--background))' }}
+            className="w-full border-b border-border rounded-t px-2 py-1.5 text-xs outline-none"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search sector..."
+          />
+          <div className="max-h-[280px] overflow-y-auto">
+            {filtered ? (
+              filtered.map(opt => (
+                <div
+                  key={opt}
+                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium bg-accent/50' : ''}`}
+                  onMouseDown={e => { e.preventDefault(); onChange(opt); setOpen(false); }}
+                >
+                  <span className="text-muted-foreground mr-1">{SECTOR_TO_CATEGORY[opt]} ›</span>{opt}
+                </div>
+              ))
+            ) : (
+              Object.entries(SECTOR_TAXONOMY).map(([cat, subs]) => (
+                <div key={cat}>
+                  <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none">
+                    {cat}
+                  </div>
+                  {subs.map(opt => (
+                    <div
+                      key={opt}
+                      className={`pl-5 pr-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium bg-accent/50' : ''}`}
+                      onMouseDown={e => { e.preventDefault(); onChange(opt); setOpen(false); }}
+                    >
+                      {opt}
+                    </div>
+                  ))}
+                </div>
+              ))
+            )}
+            {filtered && filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">No matches</div>
+            )}
+          </div>
+        </FixedDropdown>
+      )}
+    </div>
+  );
+}
+
+function SearchableSelectCell({ value, options, onSave, placeholder, groups }: {
   value: string;
   options: readonly string[];
   onSave: (val: string) => void;
   placeholder?: string;
+  groups?: Record<string, string[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -306,18 +401,37 @@ function SearchableSelectCell({ value, options, onSave, placeholder }: {
             data-testid="searchable-select-input"
           />
           {filtered.length > 0 && (
-            <div ref={listRef} className="max-h-[180px] overflow-y-auto">
-              {filtered.map((opt, i) => (
-                <div
-                  key={opt}
-                  data-highlighted={i === 0 ? 'true' : 'false'}
-                  className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium' : ''}`}
-                  style={(opt === value || i === 0) ? { backgroundColor: `hsl(var(--accent) / ${opt === value ? '0.5' : '0.3'})` } : undefined}
-                  onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
-                >
-                  {opt}
-                </div>
-              ))}
+            <div ref={listRef} className="max-h-[240px] overflow-y-auto">
+              {(groups && !search) ? (
+                Object.entries(groups).map(([cat, subs]) => (
+                  <div key={cat}>
+                    <div className="px-3 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground select-none">
+                      {cat}
+                    </div>
+                    {subs.map(opt => (
+                      <div
+                        key={opt}
+                        className={`pl-5 pr-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium bg-accent/50' : ''}`}
+                        onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
+                      >
+                        {opt}
+                      </div>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                filtered.map((opt, i) => (
+                  <div
+                    key={opt}
+                    data-highlighted={i === 0 ? 'true' : 'false'}
+                    className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-accent whitespace-nowrap ${opt === value ? 'font-medium' : ''}`}
+                    style={(opt === value || i === 0) ? { backgroundColor: `hsl(var(--accent) / ${opt === value ? '0.5' : '0.3'})` } : undefined}
+                    onMouseDown={e => { e.preventDefault(); onSave(opt); setOpen(false); }}
+                  >
+                    {opt}
+                  </div>
+                ))
+              )}
             </div>
           )}
         </FixedDropdown>
@@ -559,7 +673,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       } else if (field === 'country') {
         updateCompany(row.companyId, { hq_country: value });
       } else if (field === 'sector') {
-        updateCompany(row.companyId, { industry: value });
+        const cat = getSectorCategory(value);
+        updateCompany(row.companyId, { industry: value, ...(cat ? { sectorCategory: cat } : {}) });
       } else if (field === 'revenue') {
         updateCompany(row.companyId, { revenue_usd: parseRevenueInput(value) });
       } else if (field === 'employees') {
@@ -624,13 +739,14 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         body: JSON.stringify({ companies: emptySectorCompanies }),
       });
       if (!res.ok) throw new Error('Request failed');
-      const { results } = await res.json() as { results: { id: number; sector: string }[] };
+      const { results } = await res.json() as { results: { id: number; sector: string; category?: string }[] };
       if (results.length > 0) {
-        const filled = new Map(results.map(r => [String(r.id), r.sector]));
+        const filled = new Map(results.map(r => [String(r.id), { sector: r.sector, category: r.category || getSectorCategory(r.sector) || '' }]));
         useAppStore.setState(state => ({
-          companies: state.companies.map(c =>
-            filled.has(c.id) ? { ...c, industry: filled.get(c.id)! } : c
-          ),
+          companies: state.companies.map(c => {
+            const match = filled.get(c.id);
+            return match ? { ...c, industry: match.sector, sectorCategory: match.category } : c;
+          }),
         }));
       }
       toast.success(`${results.length} sector${results.length !== 1 ? 's' : ''} filled automatically.`);
@@ -1014,6 +1130,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
             <SearchableSelectCell
               value={String(info.getValue() || '')}
               options={STANDARD_SECTORS}
+              groups={SECTOR_TAXONOMY}
               onSave={(val) => handleCellSave(row, 'sector', val)}
               placeholder="Search sector..."
             />
@@ -1587,15 +1704,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
                       </div>
                       {columnVisibility.sector !== false && (
                         <div>
-                          <Label htmlFor="company-sector" className="text-xs font-medium">Sector</Label>
-                          <Input
-                            id="company-sector"
-                            value={newSector}
-                            onChange={(e) => setNewSector(e.target.value)}
-                            placeholder="e.g. Energy, Banking"
-                            className="mt-1"
-                            data-testid="input-company-sector"
-                          />
+                          <Label className="text-xs font-medium">Sector</Label>
+                          <SectorPickerButton value={newSector} onChange={setNewSector} className="mt-1" />
                         </div>
                       )}
                     </div>

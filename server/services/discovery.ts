@@ -1605,10 +1605,11 @@ IMPORTANT:
         ? String(validatedData.revenueFxRate)
         : null;
       
-      const normalizedSector = await normalizeOrInferSector(validatedData.name, validatedData.sector);
+      const { sector: normalizedSector, category: normalizedCategory } = await normalizeOrInferSector(validatedData.name, validatedData.sector);
       const company = await storage.createCompanyFromDiscovery({
         name: validatedData.name,
         sector: normalizedSector || validatedData.sector,
+        sectorCategory: normalizedCategory || null,
         businessType: validatedData.businessType || null,
         entityType: validatedData.entityType || null,
         isOperatingCompany: validatedData.isOperatingCompany ?? true,

@@ -25,6 +25,7 @@ export const companies = pgTable("companies", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   sector: text("sector"),
+  sectorCategory: text("sector_category"),
   businessType: text("business_type"),
   ownershipType: text("ownership_type"),
   entityType: text("entity_type"),

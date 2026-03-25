@@ -418,26 +418,37 @@ export default function ExecutiveSatellites({
           if (!pos) return null;
           const parentId = hierarchy[exec.id];
 
-          const PILL_TOP = 16;
+          const PILL_R = 15;
+          const BUBBLE_R = 16;
 
           if (parentId) {
             const parentPos = displayPositions[parentId];
             if (!parentPos) return null;
+            const dx = pos.x - parentPos.x;
+            const dy = pos.y - parentPos.y;
+            const d = Math.sqrt(dx * dx + dy * dy) || 1;
+            const ux = dx / d;
+            const uy = dy / d;
             return (
               <line
                 key={`h-${exec.id}`}
-                x1={parentPos.x} y1={parentPos.y - PILL_TOP}
-                x2={pos.x} y2={pos.y - PILL_TOP}
+                x1={parentPos.x + ux * PILL_R} y1={parentPos.y + uy * PILL_R}
+                x2={pos.x - ux * PILL_R} y2={pos.y - uy * PILL_R}
                 stroke="hsl(35 92% 50%)" strokeWidth={2} strokeOpacity={0.6}
               />
             );
           }
 
+          const dx = pos.x;
+          const dy = pos.y;
+          const d = Math.sqrt(dx * dx + dy * dy) || 1;
+          const ux = dx / d;
+          const uy = dy / d;
           return (
             <line
               key={`c-${exec.id}`}
-              x1={0} y1={0}
-              x2={pos.x} y2={pos.y - PILL_TOP}
+              x1={ux * BUBBLE_R} y1={uy * BUBBLE_R}
+              x2={pos.x - ux * PILL_R} y2={pos.y - uy * PILL_R}
               stroke="currentColor" strokeWidth={1.5} strokeOpacity={0.25}
               className="text-muted-foreground"
             />
@@ -468,7 +479,7 @@ export default function ExecutiveSatellites({
         const isSelected = selectedExecId === exec.id;
         const isUnlocking = unlockingId === exec.id;
         const isUnlockReady = unlockReadyId === exec.id;
-        const isExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits';
+        const isExcluded = exec.availability === 'Out of Scope' || exec.availability === 'Off-Limits' || exec.availability === 'Not Interested';
 
         return (
           <div

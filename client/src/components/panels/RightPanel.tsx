@@ -315,7 +315,26 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
         id: parseInt(company.id),
         data: updateData
       });
-      toast.success('Company updated');
+
+      if (field === 'status' && (value === 'Off-Limits' || value === 'Out of Scope')) {
+        const noteText = `${company.name} - ${value}`;
+        await fetch(`/api/companies/${company.id}/notes`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: noteText }),
+        });
+        setCompanyNotes(noteText);
+        await Promise.all(companyExecutives.map(exec =>
+          fetch(`/api/executives/${exec.id}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: noteText }),
+          })
+        ));
+        toast.success(`Status set — notes updated for company and ${companyExecutives.length} executive(s)`);
+      } else {
+        toast.success('Company updated');
+      }
     } catch (error) {
       toast.error('Failed to update company');
     }
@@ -329,7 +348,18 @@ export default function RightPanel({ width = 384, isOpen = true, onToggle, isFul
         id: parseInt(execId),
         data: { [field]: value }
       });
-      toast.success('Executive updated');
+      if (field === 'availability' && (value === 'Off-Limits' || value === 'Out of Scope')) {
+        const exec = executives.find(e => e.id === execId);
+        const noteText = `${company?.name || ''} - ${exec?.name || ''} - ${value}`.replace(/^- /, '');
+        await fetch(`/api/executives/${execId}/notes`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: noteText }),
+        });
+        toast.success(`Status set — note added to executive`);
+      } else {
+        toast.success('Executive updated');
+      }
     } catch (error) {
       toast.error('Failed to update executive');
     }

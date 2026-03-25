@@ -518,6 +518,22 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
       }
     } else if (field === 'companyStatus' && row.isCompanyRow) {
       updateCompany(row.companyId, { status: value || undefined });
+      if (value === 'Off-Limits' || value === 'Out of Scope') {
+        const noteText = `${row.companyName} - ${value}`;
+        fetch(`/api/companies/${row.companyId}/notes`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: noteText }),
+        });
+        const compExecs = allExecutives.filter(e => e.company_id === row.companyId);
+        compExecs.forEach(exec => {
+          fetch(`/api/executives/${exec.id}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: noteText }),
+          });
+        });
+      }
     } else if (!row.isCompanyRow) {
       if (field.startsWith('custom_')) {
         const customKey = field.slice(7);
@@ -528,9 +544,17 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         const updates: Record<string, string> = {};
         updates[field] = value;
         updateExecutive(row.id, updates);
+        if (field === 'availability' && (value === 'Off-Limits' || value === 'Out of Scope')) {
+          const noteText = `${row.companyName} - ${row.name} - ${value}`;
+          fetch(`/api/executives/${row.id}/notes`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: noteText }),
+          });
+        }
       }
     }
-  }, [updateCompany, updateExecutive]);
+  }, [updateCompany, updateExecutive, allExecutives]);
 
   const [addCompanyDialogOpen, setAddCompanyDialogOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');

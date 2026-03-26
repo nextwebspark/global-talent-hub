@@ -447,13 +447,37 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cellRef = useRef<HTMLSpanElement>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const usePopup = !isNumeric && !formatFn;
 
   useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
+    if (editing) {
+      if (usePopup && cellRef.current) {
+        const rect = cellRef.current.getBoundingClientRect();
+        const popupW = 320;
+        const popupH = 160;
+        let left = rect.left;
+        let top = rect.bottom + 4;
+        if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16;
+        if (left < 8) left = 8;
+        if (top + popupH > window.innerHeight - 16) top = rect.top - popupH - 4;
+        setPopupPos({ top, left });
+      }
+      requestAnimationFrame(() => {
+        if (usePopup && textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(textareaRef.current.value.length, textareaRef.current.value.length);
+        } else if (inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      });
+    } else {
+      setPopupPos(null);
     }
-  }, [editing]);
+  }, [editing, usePopup]);
 
   const commit = () => {
     setEditing(false);
@@ -462,7 +486,7 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
     }
   };
 
-  if (editing) {
+  if (editing && !usePopup) {
     return (
       <input
         ref={inputRef}
@@ -482,16 +506,50 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
 
   const display = formatFn ? formatFn(value) : (value || '-');
   return (
-    <span
-      className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
-      title={value || undefined}
-      onMouseDown={e => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
-      data-testid="editable-cell-display"
-      data-no-drag-select
-    >
-      {display}
-    </span>
+    <>
+      <span
+        ref={cellRef}
+        className="truncate block cursor-text hover:bg-muted/40 rounded px-0.5 -mx-0.5"
+        title={value || undefined}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); setEditValue(value); setEditing(true); }}
+        data-testid="editable-cell-display"
+        data-no-drag-select
+      >
+        {display}
+      </span>
+      {editing && usePopup && popupPos && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={(e) => { e.stopPropagation(); commit(); }} />
+          <div
+            className="fixed z-[9999] rounded-lg border border-border shadow-xl"
+            style={{ top: popupPos.top, left: popupPos.left, width: 320, backgroundColor: 'hsl(var(--popover))' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <textarea
+              ref={textareaRef}
+              className="w-full bg-transparent rounded-lg px-3 py-2 text-xs outline-none resize-none"
+              style={{ height: 140 }}
+              value={editValue}
+              onChange={e => setEditValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
+                if (e.key === 'Escape') { setEditValue(value); setEditing(false); }
+              }}
+              data-testid="editable-cell-textarea"
+            />
+            <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/50 text-[10px] text-muted-foreground">
+              <span>Shift+Enter for new line</span>
+              <div className="flex gap-1.5">
+                <button className="px-2 py-0.5 rounded hover:bg-muted" onClick={() => { setEditValue(value); setEditing(false); }}>Cancel</button>
+                <button className="px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90" onClick={commit}>Save</button>
+              </div>
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+    </>
   );
 }
 

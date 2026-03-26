@@ -191,14 +191,28 @@ function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
   minWidth?: number;
 }) {
   const dropRef = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; maxHeight: number; openUpward: boolean } | null>(null);
 
   useEffect(() => {
     if (anchorRef.current) {
       const rect = anchorRef.current.getBoundingClientRect();
-      setCoords({ top: rect.bottom + 2, left: rect.left });
+      const dropMaxH = 300;
+      const spaceBelow = window.innerHeight - rect.bottom - 8;
+      const spaceAbove = rect.top - 8;
+      const openUpward = spaceBelow < Math.min(dropMaxH, 160) && spaceAbove > spaceBelow;
+      let left = rect.left;
+      const mw = minWidth ?? 140;
+      if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+      if (left < 8) left = 8;
+      const maxHeight = openUpward
+        ? Math.min(dropMaxH, spaceAbove)
+        : Math.min(dropMaxH, spaceBelow);
+      const top = openUpward
+        ? rect.top - Math.min(dropMaxH, spaceAbove) - 2
+        : rect.bottom + 2;
+      setCoords({ top, left, maxHeight, openUpward });
     }
-  }, [anchorRef]);
+  }, [anchorRef, minWidth]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -227,7 +241,7 @@ function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
         borderRadius: '0.375rem',
         boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
         minWidth: minWidth ? `${minWidth}px` : '140px',
-        maxHeight: '300px',
+        maxHeight: `${coords.maxHeight}px`,
         overflowY: 'auto',
       }}
       onClick={e => e.stopPropagation()}
@@ -476,7 +490,7 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
   const [search, setSearch] = useState(value);
   const cellRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const companies = useAppStore(s => s.companies);
 
   const suggestions = useMemo(() => {
@@ -491,11 +505,16 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
     if (editing && cellRef.current) {
       const rect = cellRef.current.getBoundingClientRect();
       const popupW = 300;
+      const popupMaxH = 320;
       let left = rect.left;
-      let top = rect.bottom + 4;
       if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16;
       if (left < 8) left = 8;
-      setPopupPos({ top, left });
+      const spaceBelow = window.innerHeight - rect.bottom - 8;
+      const spaceAbove = rect.top - 8;
+      const openUpward = spaceBelow < Math.min(popupMaxH, 140) && spaceAbove > spaceBelow;
+      const maxHeight = openUpward ? Math.min(popupMaxH, spaceAbove) : Math.min(popupMaxH, spaceBelow);
+      const top = openUpward ? rect.top - maxHeight - 4 : rect.bottom + 4;
+      setPopupPos({ top, left, maxHeight });
       requestAnimationFrame(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
@@ -529,13 +548,13 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
         <>
           <div className="fixed inset-0 z-[9998]" onClick={(e) => { e.stopPropagation(); commitRename(); }} />
           <div
-            className="fixed z-[9999] rounded-lg border border-border shadow-xl"
-            style={{ top: popupPos.top, left: popupPos.left, width: 300, backgroundColor: 'hsl(var(--popover))' }}
+            className="fixed z-[9999] rounded-lg border border-border shadow-xl overflow-hidden"
+            style={{ top: popupPos.top, left: popupPos.left, width: 300, maxHeight: popupPos.maxHeight, backgroundColor: 'hsl(var(--popover))', display: 'flex', flexDirection: 'column' }}
             onClick={e => e.stopPropagation()}
           >
             <input
               ref={inputRef}
-              className="w-full bg-transparent rounded-t-lg px-3 py-2 text-xs outline-none border-b border-border/50"
+              className="w-full bg-transparent rounded-t-lg px-3 py-2 text-xs outline-none border-b border-border/50 shrink-0"
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={e => {
@@ -546,8 +565,8 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
               data-testid="company-autocomplete-input"
             />
             {suggestions.length > 0 && (
-              <div className="max-h-[200px] overflow-y-auto">
-                <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <div className="px-3 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
                   Assign to existing company
                 </div>
                 {suggestions.map(c => (
@@ -567,7 +586,7 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
                 ))}
               </div>
             )}
-            <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/50 text-[10px] text-muted-foreground">
+            <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/50 text-[10px] text-muted-foreground shrink-0">
               <span>Enter to rename company</span>
               <div className="flex gap-1.5">
                 <button className="px-2 py-0.5 rounded hover:bg-muted" onClick={() => { setSearch(value); setEditing(false); }}>Cancel</button>

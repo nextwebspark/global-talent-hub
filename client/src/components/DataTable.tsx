@@ -184,6 +184,16 @@ const COUNTRIES = [
   'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
 ];
 
+function findScrollableParent(el: HTMLElement): HTMLElement | null {
+  let parent = el.parentElement;
+  while (parent && parent !== document.body) {
+    const style = window.getComputedStyle(parent);
+    if (style.overflowY === 'auto' || style.overflowY === 'scroll') return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
 function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
   anchorRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
@@ -191,27 +201,38 @@ function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
   minWidth?: number;
 }) {
   const dropRef = useRef<HTMLDivElement>(null);
-  const [coords, setCoords] = useState<{ top: number; left: number; maxHeight: number; openUpward: boolean } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
 
   useEffect(() => {
-    if (anchorRef.current) {
+    if (!anchorRef.current) return;
+    const dropMaxH = 280;
+    const gap = 4;
+    const mw = minWidth ?? 140;
+
+    const positionDropdown = () => {
+      if (!anchorRef.current) return;
       const rect = anchorRef.current.getBoundingClientRect();
-      const dropMaxH = 300;
-      const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const spaceAbove = rect.top - 8;
-      const openUpward = spaceBelow < Math.min(dropMaxH, 160) && spaceAbove > spaceBelow;
       let left = rect.left;
-      const mw = minWidth ?? 140;
       if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
       if (left < 8) left = 8;
-      const maxHeight = openUpward
-        ? Math.min(dropMaxH, spaceAbove)
-        : Math.min(dropMaxH, spaceBelow);
-      const top = openUpward
-        ? rect.top - Math.min(dropMaxH, spaceAbove) - 2
-        : rect.bottom + 2;
-      setCoords({ top, left, maxHeight, openUpward });
+      const spaceBelow = window.innerHeight - rect.bottom - 8;
+      const maxHeight = Math.min(dropMaxH, Math.max(spaceBelow, 80));
+      setCoords({ top: rect.bottom + gap, left, maxHeight });
+    };
+
+    // Scroll to make room if near bottom
+    const rect = anchorRef.current.getBoundingClientRect();
+    const needed = dropMaxH + gap + 8;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < needed) {
+      const scrollable = findScrollableParent(anchorRef.current);
+      if (scrollable) {
+        scrollable.scrollTop += needed - spaceBelow;
+        requestAnimationFrame(positionDropdown);
+        return;
+      }
     }
+    positionDropdown();
   }, [anchorRef, minWidth]);
 
   useEffect(() => {
@@ -243,6 +264,8 @@ function FixedDropdown({ anchorRef, onClose, children, minWidth }: {
         minWidth: minWidth ? `${minWidth}px` : '140px',
         maxHeight: `${coords.maxHeight}px`,
         overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -502,26 +525,36 @@ function CompanyAutocompleteCell({ value, companyId, execId, row, onRename, onRe
   }, [search, companies, companyId]);
 
   useEffect(() => {
-    if (editing && cellRef.current) {
+    if (!editing || !cellRef.current) { setPopupPos(null); return; }
+    const popupW = 300;
+    const popupMaxH = 300;
+    const gap = 4;
+
+    const positionPopup = () => {
+      if (!cellRef.current) return;
       const rect = cellRef.current.getBoundingClientRect();
-      const popupW = 300;
-      const popupMaxH = 320;
       let left = rect.left;
       if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16;
       if (left < 8) left = 8;
       const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const spaceAbove = rect.top - 8;
-      const openUpward = spaceBelow < Math.min(popupMaxH, 140) && spaceAbove > spaceBelow;
-      const maxHeight = openUpward ? Math.min(popupMaxH, spaceAbove) : Math.min(popupMaxH, spaceBelow);
-      const top = openUpward ? rect.top - maxHeight - 4 : rect.bottom + 4;
-      setPopupPos({ top, left, maxHeight });
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      });
-    } else {
-      setPopupPos(null);
+      const maxHeight = Math.min(popupMaxH, Math.max(spaceBelow, 80));
+      setPopupPos({ top: rect.bottom + gap, left, maxHeight });
+      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select(); });
+    };
+
+    // Scroll table to reveal room below the cell before positioning
+    const rect = cellRef.current.getBoundingClientRect();
+    const needed = popupMaxH + gap + 8;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < needed) {
+      const scrollable = findScrollableParent(cellRef.current);
+      if (scrollable) {
+        scrollable.scrollTop += needed - spaceBelow;
+        requestAnimationFrame(positionPopup);
+        return;
+      }
     }
+    positionPopup();
   }, [editing]);
 
   const commitRename = () => {
@@ -630,25 +663,43 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
   useEffect(() => {
     if (editing) {
       if (usePopup && cellRef.current) {
-        const rect = cellRef.current.getBoundingClientRect();
         const popupW = 320;
         const popupH = 160;
-        let left = rect.left;
-        let top = rect.bottom + 4;
-        if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16;
-        if (left < 8) left = 8;
-        if (top + popupH > window.innerHeight - 16) top = rect.top - popupH - 4;
-        setPopupPos({ top, left });
-      }
-      requestAnimationFrame(() => {
-        if (usePopup && textareaRef.current) {
-          textareaRef.current.focus();
-          textareaRef.current.setSelectionRange(textareaRef.current.value.length, textareaRef.current.value.length);
-        } else if (inputRef.current) {
-          inputRef.current.focus();
-          inputRef.current.select();
+        const gap = 4;
+
+        const positionPopup = () => {
+          if (!cellRef.current) return;
+          const rect = cellRef.current.getBoundingClientRect();
+          let left = rect.left;
+          if (left + popupW > window.innerWidth - 16) left = window.innerWidth - popupW - 16;
+          if (left < 8) left = 8;
+          setPopupPos({ top: rect.bottom + gap, left });
+          requestAnimationFrame(() => {
+            if (textareaRef.current) {
+              textareaRef.current.focus();
+              textareaRef.current.setSelectionRange(textareaRef.current.value.length, textareaRef.current.value.length);
+            }
+          });
+        };
+
+        const rect = cellRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        if (spaceBelow < popupH + gap + 8) {
+          const scrollable = findScrollableParent(cellRef.current);
+          if (scrollable) {
+            scrollable.scrollTop += popupH + gap + 8 - spaceBelow;
+            requestAnimationFrame(positionPopup);
+          } else {
+            positionPopup();
+          }
+        } else {
+          positionPopup();
         }
-      });
+      } else {
+        requestAnimationFrame(() => {
+          if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+        });
+      }
     } else {
       setPopupPos(null);
     }

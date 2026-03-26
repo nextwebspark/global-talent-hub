@@ -1,5 +1,31 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
+
+let activeCellId: string | null = null;
+const CLOSE_EVENT = 'datatable:close-editors';
+function broadcastCloseEditors(exceptId: string) {
+  activeCellId = exceptId;
+  window.dispatchEvent(new CustomEvent(CLOSE_EVENT, { detail: exceptId }));
+}
+function useExclusiveOpen() {
+  const cellId = useId();
+  const [open, setOpenRaw] = useState(false);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if ((e as CustomEvent).detail !== cellId) setOpenRaw(false);
+    };
+    window.addEventListener(CLOSE_EVENT, handler);
+    return () => window.removeEventListener(CLOSE_EVENT, handler);
+  }, [cellId]);
+  const setOpen = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    setOpenRaw(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      if (next) broadcastCloseEditors(cellId);
+      return next;
+    });
+  }, [cellId]);
+  return [open, setOpen] as const;
+}
 import {
   useReactTable,
   getCoreRowModel,
@@ -218,7 +244,7 @@ function SelectCell({ value, options, onSave, placeholder }: {
   onSave: (val: string) => void;
   placeholder?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useExclusiveOpen();
   const triggerRef = useRef<HTMLSpanElement>(null);
 
   return (
@@ -344,7 +370,7 @@ function SearchableSelectCell({ value, options, onSave, placeholder, groups }: {
   placeholder?: string;
   groups?: Record<string, string[]>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useExclusiveOpen();
   const [search, setSearch] = useState('');
   const triggerRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -444,13 +470,25 @@ function EditableCell({ value, onSave, isNumeric, formatFn }: {
   isNumeric?: boolean;
   formatFn?: (val: string) => string;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useExclusiveOpen();
   const [editValue, setEditValue] = useState(value);
+  const editValueRef = useRef(editValue);
+  editValueRef.current = editValue;
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
   const inputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cellRef = useRef<HTMLSpanElement>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const usePopup = !isNumeric && !formatFn;
+
+  useEffect(() => {
+    if (!editing && editValueRef.current !== valueRef.current) {
+      onSaveRef.current(editValueRef.current);
+    }
+  }, [editing]);
 
   useEffect(() => {
     if (editing) {

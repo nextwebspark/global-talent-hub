@@ -2341,6 +2341,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
             })}
           </tbody>
         </table>
+        <div style={{ height: '320px' }} aria-hidden="true" />
       </div>
 
       {dragSelectedRows.size > 1 && !isDragSelecting && (

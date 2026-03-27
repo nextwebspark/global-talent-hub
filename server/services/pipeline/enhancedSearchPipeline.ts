@@ -339,6 +339,9 @@ function isValidCompanyName(name: string): boolean {
     /\/{2,}/,
     /\.\.\./,
     /\bcompanies\b.*\bmarket\b/i,
+    /\.(?:qxd|pdf|doc|docx|ppt|pptx|xls|xlsx)\b/i,
+    /\bcommuniqu[eé]\b/i,
+    /\bpgs\b.*\bqxd\b/i,
   ];
   if (badPatterns.some(p => p.test(name))) return false;
   if (/^[a-z\s-]+$/.test(lower) && lower.split(/\s+/).length > 5) return false;
@@ -367,6 +370,10 @@ function cleanCompanyName(rawName: string): string {
   name = name.replace(/\s*\(\d{4}(?:\s+List)?\)\s*$/i, "");
   name = name.replace(/\s*[-–—|/]\s*(?:about|contact|services|careers|home|products|solutions|team|blog|news|press|media|investors|faq).*$/i, "");
   name = name.replace(/\/[a-z-]+$/i, "");
+  name = name.replace(/\s*[-–—]\s*(?:Your\s+|We\s+|The\s+|A\s+|An\s+|Our\s+|trusted|leading|premier|one[\s-]stop|partner|providing|delivering|excellence).*$/i, "");
+  name = name.replace(/\s*[-–—]\s+\w+\s+\w+\s+\w+\s+\w+.*$/i, "");
+  name = name.replace(/\.\s*(?:qxd|pdf|doc|docx|ppt|pptx|xls|xlsx)\b.*$/i, "");
+  name = name.replace(/^.*?(?:pgs|pages?)\s*\.\s*\w+\s*[-–—]\s*/i, "");
   return name.trim();
 }
 
@@ -435,11 +442,17 @@ SCORING RULES (universal — no hardcoded industry logic):
    - If commercialRole is "any" → skip this check
    - If the company is in the right sector but the WRONG function (e.g., a restaurant when searching for distributors, a retailer when searching for manufacturers, a law firm when searching for fintech operators) → sectorMatch: false, confidenceScore ≤ 35
    - If the company's function overlaps with the target (e.g., a wholesaler/logistics company that distributes the target product) → sectorMatch: true with appropriate confidence
+   - IMPORTANT: Large conglomerates that BOTH manufacture AND distribute products in the target sector should return sectorMatch: true. A manufacturer with a distribution arm IS a distributor. Do not penalise vertically-integrated companies.
 
-3. CONFIDENCE CALIBRATION:
-   - 80-100: Perfect match on sector + function + geography
-   - 60-79: Good match with minor gaps (e.g., slightly adjacent sector, different city but same country)
-   - 40-59: Partial match (overlapping sector, plausible function)
+3. SECTOR BOUNDARY RULES:
+   - "FMCG" primarily means food & beverage, household goods, personal care basics, and tobacco. It does NOT primarily mean beauty, cosmetics, luxury personal care, or healthcare.
+   - If the search is for "FMCG" and the company is primarily a beauty/cosmetics/luxury personal care specialist, set confidenceScore ≤ 55 (partial match, not core FMCG).
+   - Conversely, an FMCG conglomerate that also sells personal care/beauty products IS core FMCG — do not downgrade.
+
+4. CONFIDENCE CALIBRATION:
+   - 80-100: Perfect match on sector + function + geography. A well-known company in the exact target sector, performing the exact target function, in the target geography.
+   - 60-79: Good match with minor gaps (e.g., slightly adjacent sub-sector, different city but same country)
+   - 40-59: Partial match (overlapping sector, plausible function, or sub-segment specialist)
    - ≤ 39: Poor match — wrong sector, wrong function, or unverifiable company
 
 Return ONLY the JSON.`;
@@ -645,6 +658,15 @@ export async function* runEnhancedSearchPipeline(
         continue;
       }
 
+      // ── Confidence/tag consistency ──────────────────────────────────────────
+      // A company tagged "Direct" must have confidence ≥ 70%. If below, demote.
+      let finalRelevanceType = relevanceType;
+      const score = enriched.confidenceScore ?? 50;
+      if (finalRelevanceType === "Direct" && score < 70) {
+        finalRelevanceType = "Adjacent";
+      }
+      enriched.relevanceType = finalRelevanceType;
+
       const companyId = await persistCompany(raw.name, enriched, intent, searchQueryId, sessionId);
 
       const company: SearchSessionCompany = {
@@ -659,9 +681,9 @@ export async function* runEnhancedSearchPipeline(
         summary: enriched.summary || null,
         latitude: null,
         longitude: null,
-        relevanceType,
+        relevanceType: finalRelevanceType,
         relevanceRationale: enriched.relevanceRationale || `Relevant to ${sector}`,
-        confidenceScore: enriched.confidenceScore || 50,
+        confidenceScore: score,
         isUserAccepted: false,
         isUserRejected: false,
       };
@@ -789,6 +811,13 @@ export async function* runEnhancedSearchPipeline(
                 enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
               }
 
+              let expRelevanceType: "Direct" | "Adjacent" | "AI Inferred" = "Direct";
+              const expScore = enriched.confidenceScore ?? 50;
+              if (expRelevanceType === "Direct" && expScore < 70) {
+                expRelevanceType = "Adjacent";
+              }
+              enriched.relevanceType = expRelevanceType;
+
               const companyId = await persistCompany(name, enriched, intent, searchQueryId, sessionId);
 
               const company: SearchSessionCompany = {
@@ -803,9 +832,9 @@ export async function* runEnhancedSearchPipeline(
                 summary: enriched.summary || null,
                 latitude: null,
                 longitude: null,
-                relevanceType: "Direct",
+                relevanceType: expRelevanceType,
                 relevanceRationale: enriched.relevanceRationale || "Found in expansion search",
-                confidenceScore: enriched.confidenceScore || 50,
+                confidenceScore: expScore,
                 isUserAccepted: false,
                 isUserRejected: false,
               };

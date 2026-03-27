@@ -18,6 +18,7 @@ export interface UseSearchStreamReturn {
   isStreaming: boolean;
   isRefining: boolean;
   startSearch: (query: string, sessionId: string) => void;
+  stopSearch: () => void;
   startRefinement: (sessionId: string, refinementMessage: string) => Promise<void>;
   acceptCompany: (id: number) => void;
   rejectCompany: (id: number) => void;
@@ -129,6 +130,21 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     };
   }, [resetSearchSession, setSearchPhase, setSearchSessionId, setIsSearchStreaming, addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames]);
 
+  const stopSearch = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close();
+      esRef.current = null;
+    }
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    clearPendingCompanyNames();
+    setIsSearchStreaming(false);
+    setIsSearchRefining(false);
+    setSearchPhase('complete');
+  }, [clearPendingCompanyNames, setIsSearchStreaming, setIsSearchRefining, setSearchPhase]);
+
   const startRefinement = useCallback(async (sessionId: string, refinementMessage: string) => {
     if (abortRef.current) { abortRef.current.abort(); }
     const controller = new AbortController();
@@ -224,6 +240,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     isStreaming,
     isRefining,
     startSearch,
+    stopSearch,
     startRefinement,
     acceptCompany,
     rejectCompany,

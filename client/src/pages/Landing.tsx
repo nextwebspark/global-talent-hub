@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Search, Loader2, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon,
   FolderOpen, FileText, CheckCircle2, Building2, Globe, Users, TrendingUp,
-  Sparkles, SendHorizonal, ArrowRight, CheckCheck, RotateCcw, ListFilter, Activity
+  Sparkles, SendHorizonal, ArrowRight, CheckCheck, RotateCcw, ListFilter, Activity, Square
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -403,6 +403,7 @@ export default function Landing() {
     isStreaming,
     isRefining,
     startSearch,
+    stopSearch,
     startRefinement,
     acceptCompany,
     rejectCompany,
@@ -1109,13 +1110,25 @@ export default function Landing() {
             <div className="h-12 shrink-0 border-b border-border bg-background/95 backdrop-blur flex items-center px-4 gap-3 z-10">
               <div className="flex items-center gap-2">
                 {isStreaming ? (
-                  <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                    </span>
-                    Live Search
-                  </div>
+                  <>
+                    <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                      </span>
+                      Live Search
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={stopSearch}
+                      className="h-6 px-2 gap-1 text-xs"
+                      data-testid="button-stop-search"
+                    >
+                      <Square className="w-3 h-3 fill-current" />
+                      Stop
+                    </Button>
+                  </>
                 ) : (
                   <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
                     <CheckCircle2 className="w-3.5 h-3.5" />

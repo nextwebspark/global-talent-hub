@@ -303,20 +303,22 @@ function isGenericPhrase(text: string): boolean {
   return bad.some(p => lower === p || lower.startsWith(p + " ") || lower.endsWith(" " + p));
 }
 
-const COUNTRY_NAMES_SET = new Set([
+const COUNTRY_AND_CITY_NAMES = new Set([
   "saudi arabia", "ksa", "uae", "united arab emirates", "qatar", "kuwait", "bahrain", "oman",
   "egypt", "jordan", "lebanon", "iraq", "iran", "syria", "turkey", "israel", "yemen",
   "united states", "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
   "united kingdom", "uk", "germany", "france", "italy", "spain", "netherlands", "switzerland",
   "china", "japan", "south korea", "india", "australia", "singapore", "hong kong", "malaysia",
   "south africa", "nigeria", "kenya", "ghana",
+  "riyadh", "jeddah", "dammam", "dubai", "abu dhabi", "doha", "muscat", "manama", "kuwait city",
+  "cairo", "amman", "beirut", "london", "new york", "tokyo", "mumbai",
 ]);
 
 function isValidCompanyName(name: string): boolean {
   if (name.length > 60) return false;
   if (name.endsWith("...") || name.endsWith("…")) return false;
   const lower = name.toLowerCase().trim();
-  if (COUNTRY_NAMES_SET.has(lower)) return false;
+  if (COUNTRY_AND_CITY_NAMES.has(lower)) return false;
   const badPatterns = [
     /\bcompanies\s+in\b/i,
     /\blist\s+of\b/i,
@@ -327,6 +329,8 @@ function isValidCompanyName(name: string): boolean {
     /^major\s+/i,
     /^key\s+/i,
     /^biggest\s+/i,
+    /\bdirectory\b/i,
+    /\bservices\s+in\b/i,
     /\bwww\./i,
     /\.com\b/i,
     /\.org\b/i,
@@ -353,16 +357,33 @@ function extractTargetCount(query: string): number {
   return 15;
 }
 
+const PAGE_PREFIXES_RE = /^(?:about\s+us|employee\s+directory|contact\s*(?:us)?|home|services|careers|jobs|overview|profile|who\s+we\s+are|our\s+team)\s*[-–—:|]\s*/i;
+const COMPANY_SUFFIX_STRIP_RE = /\s*(?:trd\.?\s*co\.?|trading\s+co\.?|l\.?l\.?c\.?|inc\.?|corp\.?|ltd\.?|pvt\.?|p\.?l\.?c\.?|s\.?a\.?|gmbh|ag|bv|nv)\s*\.?\s*$/i;
+
+function cleanCompanyName(rawName: string): string {
+  let name = rawName.trim();
+  name = name.replace(PAGE_PREFIXES_RE, "");
+  name = name.replace(/\s*[-–—|]\s*(?:Home|About|Contact|Overview|Profile|Wikipedia|LinkedIn|Careers|Jobs|Official).*$/i, "");
+  name = name.replace(/\s*\(\d{4}(?:\s+List)?\)\s*$/i, "");
+  name = name.replace(/\s*[-–—|/]\s*(?:about|contact|services|careers|home|products|solutions|team|blog|news|press|media|investors|faq).*$/i, "");
+  name = name.replace(/\/[a-z-]+$/i, "");
+  return name.trim();
+}
+
+function fuzzyCompanySlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(COMPANY_SUFFIX_STRIP_RE, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
 function normalizeCompanyKey(name: string, website?: string): string {
-  // Deduplicate by name slug + optional domain
-  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const slug = fuzzyCompanySlug(name);
   if (website) {
     try {
       const domain = new URL(website).hostname.replace(/^www\./, "");
       return `${slug}::${domain}`;
-    } catch (_urlErr) {
-      // Invalid URL — fall back to slug-only key
-    }
+    } catch (_urlErr) {}
   }
   return slug;
 }
@@ -376,10 +397,19 @@ async function enrichCompany(
 ): Promise<Partial<SearchSessionCompany> & { sectorMatch?: boolean }> {
   const geoStr = geographies.join(", ");
   const primarySectorList = intent.primarySectors.join(", ") || sector;
+  const commercialRole = intent.commercialRole || "any";
 
-  const prompt = `Research the company "${companyName}".
+  const prompt = `You are a Talent Advisory (TA) research analyst evaluating a company for an executive search mandate.
 
-You are validating whether this company belongs in a search for: "${primarySectorList}" companies in ${geoStr}.
+SEARCH CONTEXT:
+- Target sectors: "${primarySectorList}"
+- Target commercial function: "${commercialRole}"
+- Target geography: ${geoStr}
+- Original query: "${intent.searchRationale || primarySectorList + " in " + geoStr}"
+
+COMPANY TO EVALUATE: "${companyName}"
+
+Your job: determine if "${companyName}" is a genuine operating company that matches BOTH the target sector AND the target commercial function.
 
 Return JSON with this EXACT structure:
 {
@@ -391,15 +421,26 @@ Return JSON with this EXACT structure:
   "employees": 5000,
   "website": "https://example.com or null",
   "summary": "2-3 sentence factual company overview",
-  "relevanceRationale": "one sentence: why this company is or is not relevant",
+  "relevanceRationale": "one sentence: why this company matches or does not match",
   "confidenceScore": 75
 }
 
-CRITICAL for sectorMatch:
-- Set "sectorMatch": true if this company's PRIMARY business is in the target sector ("${primarySectorList}"), or if it primarily distributes/wholesales products in that sector.
-- In GCC and Middle East markets, distribution and logistics/supply chain are heavily overlapping. A company whose primary business is distributing or wholesaling consumer goods, food & beverage, or household products should return sectorMatch: true even if they also operate logistics infrastructure.
-- Set "sectorMatch": false ONLY for companies in clearly unrelated sectors: banks, insurers, telcos, energy producers, government entities, pure IT/software companies, or any sector with no meaningful overlap with the target.
-- When in doubt, return sectorMatch: true with a lower confidenceScore — let confidence handle the nuance, not binary rejection.
+SCORING RULES (universal — no hardcoded industry logic):
+
+1. SECTOR CHECK: Does this company primarily operate in or directly serve "${primarySectorList}"?
+   - Yes → proceed to function check
+   - No → sectorMatch: false, confidenceScore ≤ 30
+
+2. FUNCTION CHECK: Does this company's primary business function match "${commercialRole}"?
+   - If commercialRole is "any" → skip this check
+   - If the company is in the right sector but the WRONG function (e.g., a restaurant when searching for distributors, a retailer when searching for manufacturers, a law firm when searching for fintech operators) → sectorMatch: false, confidenceScore ≤ 35
+   - If the company's function overlaps with the target (e.g., a wholesaler/logistics company that distributes the target product) → sectorMatch: true with appropriate confidence
+
+3. CONFIDENCE CALIBRATION:
+   - 80-100: Perfect match on sector + function + geography
+   - 60-79: Good match with minor gaps (e.g., slightly adjacent sector, different city but same country)
+   - 40-59: Partial match (overlapping sector, plausible function)
+   - ≤ 39: Poor match — wrong sector, wrong function, or unverifiable company
 
 Return ONLY the JSON.`;
 
@@ -557,11 +598,16 @@ export async function* runEnhancedSearchPipeline(
     const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, intent.commercialRole);
     for (const raw of rawCompanies) {
       if (signal?.aborted) return;
+
+      raw.name = cleanCompanyName(raw.name);
+      if (!raw.name || raw.name.length < 2) continue;
       
-      // Deduplicate by name+domain key
       const key = normalizeCompanyKey(raw.name, raw.website);
       if (seenKeys.has(key)) continue;
+      const fuzzyKey = fuzzyCompanySlug(raw.name);
+      if (seenKeys.has(fuzzyKey)) continue;
       seenKeys.add(key);
+      seenKeys.add(fuzzyKey);
 
       yield emit("company_found", `Found: ${raw.name}`, { companyName: raw.name, name: raw.name, sector, relevanceType });
 
@@ -664,10 +710,11 @@ export async function* runEnhancedSearchPipeline(
     }
   }
 
-  // ── Adjacent sector passes (only if primary returned < 5 valid companies) ─
+  // ── Adjacent sector passes — ALWAYS run to populate AI Suggested tab ─────
+  // Not gated by runSectors or primary count — AI Suggested is a core feature.
   let adjacentValid = 0;
-  const MIN_BEFORE_ADJACENT = 5;
-  if (runSectors && primaryValid < MIN_BEFORE_ADJACENT) {
+  if (intent.adjacentSectors.length > 0) {
+    yield emit("status", `Searching ${intent.adjacentSectors.length} adjacent sectors...`);
     for (const sector of intent.adjacentSectors) {
       if (signal?.aborted) return;
       yield emit("adjacent_sector_found", `Expanding to adjacent sector: ${sector}`, { sector });
@@ -677,8 +724,9 @@ export async function* runEnhancedSearchPipeline(
     }
   }
 
-  // ── Inferred sector passes (only if primary+adjacent still < 5 valid) ───
-  if (runSectors && (primaryValid + adjacentValid) < MIN_BEFORE_ADJACENT) {
+  // ── Inferred sector passes — ALWAYS run to populate AI Suggested tab ────
+  if ((intent.inferredSectors || []).length > 0) {
+    yield emit("status", `Searching ${(intent.inferredSectors || []).length} AI-inferred sectors...`);
     for (const sector of (intent.inferredSectors || [])) {
       if (signal?.aborted) return;
       yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
@@ -716,11 +764,16 @@ export async function* runEnhancedSearchPipeline(
               ? extractCompanyNamesFromListicle(r.snippet || "")
               : extractCompanyNamesFromResult(r.title, r.snippet, r.url);
 
-            for (const name of names) {
+            for (let name of names) {
+              name = cleanCompanyName(name);
+              if (!name || name.length < 2) continue;
               if (!isValidCompanyName(name)) continue;
               const key = normalizeCompanyKey(name, r.url);
               if (seenKeys.has(key)) continue;
+              const fuzzyKey = fuzzyCompanySlug(name);
+              if (seenKeys.has(fuzzyKey)) continue;
               seenKeys.add(key);
+              seenKeys.add(fuzzyKey);
 
               if (companyCounter >= 50) break;
 

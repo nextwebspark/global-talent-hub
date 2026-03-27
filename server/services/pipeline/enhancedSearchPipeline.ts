@@ -124,8 +124,12 @@ async function searchCompaniesForSector(
   const serper = createSerperAdapter();
   if (!serper) return [];
 
-  const geoStr = geographies.slice(0, 3).join(", ");
-  const searchQuery = `top ${sector} companies ${geoStr} list 2024 2025`;
+  // Use the primary geography only — more geographies increases listicle noise
+  const mainGeo = geographies[0] || "";
+
+  // Avoid "list" / years — they attract listicle articles that mix all sectors.
+  // Use a focused query: sector + geography without ranking bait words.
+  const searchQuery = `${sector} companies in ${mainGeo}`;
 
   try {
     const result = await serper.searchWithAnswer(searchQuery, 10);
@@ -145,6 +149,11 @@ async function searchCompaniesForSector(
   }
 }
 
+// Patterns that indicate an article/listicle title rather than a company name.
+// E.g. "Top 20 Logistics Companies In Dubai", "Best FMCG Companies 2025",
+// "List of distributors in UAE", "10 Leading companies in GCC"
+const ARTICLE_TITLE_RE = /^(?:top\s+\d+|top\s+ten|top\s+five|best\s+|leading\s+\w+\s+companies|list\s+of|the\s+\d+|biggest\s+|major\s+|key\s+\w+\s+companies|\d+\s+\w+\s+companies)/i;
+
 function extractCompanyNamesFromResult(title: string, snippet: string, url: string): string[] {
   const names: string[] = [];
 
@@ -154,11 +163,18 @@ function extractCompanyNamesFromResult(title: string, snippet: string, url: stri
   const titleName = title
     .replace(/\s*[-–—|:]\s*(?:Wikipedia|Forbes|Bloomberg|Reuters|Company Profile|Overview|About|Review|Careers|Jobs|News|Home|Official|Top \d+|List of|Best .+).*$/i, "")
     .replace(/\s*\|\s*.*$/, "")
+    .replace(/\s*\(\d{4}(?:\s+List)?\)\s*$/i, "")  // strip "(2024)" / "(2025 List)"
     .trim();
 
   const COMPANY_SUFFIXES = /\b(?:group|corp|inc|ltd|co|holdings|company|llc|sa|saog|international|trading|distribution|retail|enterprises|plc|ag|gmbh|spa|nv|bv|industries|partners|capital|investments|bank|logistics|solutions|services|ventures|associates|consulting)\b/i;
   
-  if (titleName.length > 2 && titleName.length < 80 && COMPANY_SUFFIXES.test(titleName)) {
+  // Only add a title-derived name if it looks like an actual company (not an article headline)
+  if (
+    titleName.length > 2 &&
+    titleName.length < 80 &&
+    COMPANY_SUFFIXES.test(titleName) &&
+    !ARTICLE_TITLE_RE.test(titleName)
+  ) {
     names.push(titleName);
   }
 
@@ -166,11 +182,11 @@ function extractCompanyNamesFromResult(title: string, snippet: string, url: stri
   let match;
   while ((match = listPattern.exec(text)) !== null) {
     const n = match[1].trim().replace(/[,:]$/, "").trim();
-    if (n.length > 2 && n.length < 80 && !isGenericPhrase(n)) names.push(n);
+    if (n.length > 2 && n.length < 80 && !isGenericPhrase(n) && !ARTICLE_TITLE_RE.test(n)) names.push(n);
   }
   while ((match = bulletPattern.exec(text)) !== null) {
     const n = match[1].trim().replace(/[,:]$/, "").trim();
-    if (n.length > 2 && n.length < 80 && !isGenericPhrase(n)) names.push(n);
+    if (n.length > 2 && n.length < 80 && !isGenericPhrase(n) && !ARTICLE_TITLE_RE.test(n)) names.push(n);
   }
 
   return Array.from(new Set(names)).slice(0, 5);
@@ -196,34 +212,44 @@ function normalizeCompanyKey(name: string, website?: string): string {
   return slug;
 }
 
-async function enrichCompanyWithGPT4o(
+async function enrichCompany(
   companyName: string,
   sector: string,
   geographies: string[],
   intent: InferredIntent,
   relevanceType: "Direct" | "Adjacent" | "AI Inferred"
-): Promise<Partial<SearchSessionCompany>> {
+): Promise<Partial<SearchSessionCompany> & { sectorMatch?: boolean }> {
   const geoStr = geographies.join(", ");
-  const prompt = `Research the company "${companyName}" in the ${sector} sector, operating in ${geoStr}.
+  const primarySectorList = intent.primarySectors.join(", ") || sector;
 
-Return JSON with this structure:
+  const prompt = `Research the company "${companyName}".
+
+You are validating whether this company belongs in a search for: "${primarySectorList}" companies in ${geoStr}.
+
+Return JSON with this EXACT structure:
 {
-  "sector": "specific sector",
-  "country": "headquarters country",
-  "geography": "e.g. 'UAE', 'Middle East', 'GCC' — primary market geography",
-  "revenue": "e.g. '$500M' or null",
+  "sectorMatch": true,
+  "sector": "specific sector this company actually operates in",
+  "country": "headquarters country (e.g. 'Saudi Arabia', 'UAE')",
+  "geography": "primary market geography (e.g. 'GCC', 'Middle East')",
+  "revenue": "$500M or null",
   "employees": 5000,
   "website": "https://example.com or null",
-  "summary": "2-3 sentence company overview",
-  "relevanceRationale": "one sentence why this company is relevant to the search",
+  "summary": "2-3 sentence factual company overview",
+  "relevanceRationale": "one sentence: why this company is or is not relevant",
   "confidenceScore": 75
 }
+
+CRITICAL for sectorMatch:
+- Set "sectorMatch": true ONLY if this company's PRIMARY business is in the target sector ("${primarySectorList}").
+- Set "sectorMatch": false if it is primarily a bank, insurer, telco, energy producer, government entity, or any sector NOT matching the target.
+- Be strict. Adjacent sector companies (e.g., a logistics company in an FMCG distributor search) should return false.
 
 Return ONLY the JSON.`;
 
   try {
     const response = await openrouter.chat.completions.create({
-      model: "openai/gpt-4o",
+      model: "anthropic/claude-sonnet-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
       max_tokens: 600,
@@ -232,9 +258,10 @@ Return ONLY the JSON.`;
     const content = response.choices[0]?.message?.content || "";
     const parsed = parseJsonSafe(content);
 
-    if (!parsed) return { relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 50 };
+    if (!parsed) return { sectorMatch: true, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 50 };
 
     return {
+      sectorMatch: parsed.sectorMatch !== false, // default true if not present
       sector: parsed.sector || sector,
       country: parsed.country || null,
       geography: parsed.geography || null,
@@ -248,6 +275,7 @@ Return ONLY the JSON.`;
     };
   } catch {
     return {
+      sectorMatch: true,
       relevanceType,
       relevanceRationale: `Relevant to ${sector} in ${geoStr}`,
       confidenceScore: 40,
@@ -382,7 +410,14 @@ export async function* runEnhancedSearchPipeline(
 
       if (companyCounter >= 40) continue;
 
-      const enriched = await enrichCompanyWithGPT4o(raw.name, sector, intent.targetGeographies, intent, relevanceType);
+      const enriched = await enrichCompany(raw.name, sector, intent.targetGeographies, intent, relevanceType);
+
+      // ── Sector validation ──────────────────────────────────────────────────
+      // Reject companies whose primary business doesn't match the target sector.
+      if (enriched.sectorMatch === false) {
+        yield emit("status", `Filtered (sector mismatch): ${raw.name} — ${enriched.sector || "wrong sector"}`);
+        continue;
+      }
 
       // ── Geographic validation ──────────────────────────────────────────────
       // If target geographies are specified, only accept companies whose enriched

@@ -181,6 +181,42 @@ function generateSearchQueries(sector: string, mainGeo: string, commercialRole?:
   return unique.slice(0, 7);
 }
 
+function isSpamAggregator(title: string, snippet: string, url: string): boolean {
+  const lower = (title + " " + snippet).toLowerCase();
+  const domain = url.toLowerCase();
+
+  const spamDomains = [
+    "quora.com", "reddit.com/r/", "answers.yahoo", "wiki.answers",
+    "ehow.com", "wikihow.com", "hubpages.com", "buzzfeed.com",
+    "listverse.com", "ranker.com", "thetoptens.com",
+  ];
+  if (spamDomains.some(d => domain.includes(d))) return true;
+
+  const spamSignals = [
+    /you\s+(?:should|must|need|can)\s+(?:check|visit|try|consider)/i,
+    /click\s+here/i,
+    /sign\s+up\s+(?:for|now|today)/i,
+    /(?:get|grab)\s+(?:your|a)\s+(?:free|quote)/i,
+    /\b(?:affiliate|sponsored|ad|promo)\b/i,
+  ];
+  let spamCount = 0;
+  for (const re of spamSignals) {
+    if (re.test(lower)) spamCount++;
+  }
+  if (spamCount >= 2) return true;
+
+  const hasNamedCompanies = /[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Group|Corp|Inc|Ltd|Co|Holdings|Company|LLC|Trading|Distribution|Industries|Enterprises)/g.test(snippet);
+  const hasNumbers = /\d+[\.\)]\s*[A-Z]/.test(snippet);
+  const hasBullets = /[-•*]\s*[A-Z]/.test(snippet);
+
+  if (!hasNamedCompanies && !hasNumbers && !hasBullets) {
+    const vagueSuperlatives = (lower.match(/\b(?:best|top|amazing|awesome|incredible|fantastic|great|superb|outstanding|premier|finest)\b/g) || []).length;
+    if (vagueSuperlatives >= 3) return true;
+  }
+
+  return false;
+}
+
 function extractCompanyNamesFromListicle(snippet: string): string[] {
   const names: string[] = [];
 
@@ -237,8 +273,11 @@ async function searchCompaniesForSector(
         const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
 
         if (isListicle) {
+          if (isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
           const listicleNames = extractCompanyNamesFromListicle(r.snippet || "");
           for (const n of listicleNames) addCompany(n, r.url, r.snippet);
+          const resultNames = extractCompanyNamesFromResult(r.title, r.snippet, r.url);
+          for (const n of resultNames) addCompany(n, r.url, r.snippet);
         } else {
           const names = extractCompanyNamesFromResult(r.title, r.snippet, r.url);
           for (const n of names) addCompany(n, r.url, r.snippet);
@@ -444,7 +483,10 @@ SCORING RULES (universal — no hardcoded industry logic):
    - If the company's function overlaps with the target (e.g., a wholesaler/logistics company that distributes the target product) → sectorMatch: true with appropriate confidence
    - IMPORTANT: Large conglomerates that BOTH manufacture AND distribute products in the target sector should return sectorMatch: true. A manufacturer with a distribution arm IS a distributor. Do not penalise vertically-integrated companies.
 
-3. SECTOR BOUNDARY RULES:
+3. CONGLOMERATE AND MULTI-BUSINESS RULE:
+   Many of the most important companies in any market are diversified — they may operate in manufacturing, distribution, retail, and services simultaneously. Evaluate whether the target sector is a SIGNIFICANT business line, not whether it is the company's ONLY business. If a company derives meaningful revenue from the searched sector and would credibly employ executives with the relevant expertise, return sectorMatch: true and tag it Direct regardless of what other businesses it operates. This applies to conglomerates, holding companies, family groups, and diversified corporations across all markets and sectors. Do NOT penalise a company for also operating in other sectors — only penalise if the target sector is trivial or non-existent in their portfolio.
+
+4. SECTOR BOUNDARY RULES:
    - "FMCG" primarily means food & beverage, household goods, personal care basics, and tobacco. It does NOT primarily mean beauty, cosmetics, luxury personal care, or healthcare.
    - If the search is for "FMCG" and the company is primarily a beauty/cosmetics/luxury personal care specialist, set confidenceScore ≤ 55 (partial match, not core FMCG).
    - Conversely, an FMCG conglomerate that also sells personal care/beauty products IS core FMCG — do not downgrade.
@@ -783,8 +825,9 @@ export async function* runEnhancedSearchPipeline(
             if (companies.length >= targetCount) break;
 
             const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
+            if (isListicle && isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
             const names = isListicle
-              ? extractCompanyNamesFromListicle(r.snippet || "")
+              ? [...extractCompanyNamesFromListicle(r.snippet || ""), ...extractCompanyNamesFromResult(r.title, r.snippet, r.url)]
               : extractCompanyNamesFromResult(r.title, r.snippet, r.url);
 
             for (let name of names) {

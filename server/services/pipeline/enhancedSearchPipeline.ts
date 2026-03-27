@@ -746,8 +746,9 @@ export async function* runEnhancedSearchPipeline(
     const expansionQueries: string[] = [];
     for (const sector of intent.primarySectors) {
       expansionQueries.push(`"${sector}" "${mainGeo}" company directory`);
-      if (role) expansionQueries.push(`${sector} ${role} ${mainGeo} list 2024 2025`);
+      if (role) expansionQueries.push(`${sector} ${role} companies ${mainGeo} 2024`);
       expansionQueries.push(`${sector} businesses ${mainGeo}`);
+      expansionQueries.push(`${sector} supply chain companies ${mainGeo}`);
     }
 
     const serper = createSerperAdapter();

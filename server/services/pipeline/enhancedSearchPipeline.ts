@@ -464,36 +464,40 @@ SEARCH CONTEXT:
 
 COMPANY TO EVALUATE: "${companyName}"
 
-The question is not just what sector this company operates in — it is whether executives at "${companyName}" would have expertise transferable to ${commercialRole} in ${primarySectorList}. Classify using this three-tier system:
+STEP 1 — Identify what "${companyName}" actually does. What is this company's primary business activity? Is it a manufacturer, distributor, retailer, service provider, brand owner, trading house, logistics company, or something else? Where is it headquartered?
+
+STEP 2 — Apply the three-tier test. The question is: would executives at "${companyName}" have expertise transferable to ${commercialRole} in ${primarySectorList}?
 
 TIER 1 — DIRECT (sectorMatch: true, confidenceScore 70-100):
-The company's PRIMARY business is ${commercialRole} in ${primarySectorList}. They would be the first companies any industry professional thinks of when asked about this space. This includes vertically-integrated companies and conglomerates where ${commercialRole} in ${primarySectorList} is a major business line — even if they also do other things.
+The company's PRIMARY business activity is ${commercialRole} in ${primarySectorList}. They are the first companies any industry professional thinks of when asked about ${commercialRole} in this space. This includes conglomerates where ${commercialRole} in ${primarySectorList} is a major business line.
+${commercialRole !== "any" ? `CRITICAL: A company that operates in ${primarySectorList} but whose primary activity is NOT ${commercialRole} does NOT qualify as Direct. A brand owner is not a distributor. A retailer is not a manufacturer. A product company is not a trading house. Classify based on PRIMARY business activity, not sector presence.` : ""}
 
 TIER 2 — ADJACENT (sectorMatch: true, confidenceScore 55-69):
-The company operates meaningful capability in ${commercialRole} but it is not their primary business. Their leadership would have directly transferable expertise. They belong on a talent map because executives there have done the work, even if the company is better known for something else.
+The company operates meaningful capability in ${commercialRole} but it is not their primary business. Their leadership would have directly transferable expertise in ${commercialRole}.
 
-TRANSFERABILITY TEST — apply before tagging any company as Adjacent:
-Would a senior executive from this company be a credible candidate for a leadership role in ${commercialRole} within ${primarySectorList}? If the answer is no — because their expertise is in a fundamentally different commercial activity — exclude the company entirely rather than tagging it Adjacent. Adjacent means genuinely transferable expertise, not just loose sector proximity.
+TRANSFERABILITY TEST — apply before tagging Adjacent:
+Would a senior executive from this company be a credible candidate for a leadership role in ${commercialRole} within ${primarySectorList}? If the answer is no — because their expertise is in a fundamentally different commercial activity (e.g., retail vs distribution, brand management vs trading) — exclude entirely.
 
 TIER 3 — EXCLUDE (sectorMatch: false, confidenceScore ≤ 30):
-The company has no meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise would exist there. This includes: companies in a completely different sector, companies in the right sector but wrong function with no overlap, companies whose expertise is in a fundamentally different commercial activity, and entities that are not real operating companies.
+No meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise. This includes: wrong sector, wrong function with no overlap, brand owners when searching for distributors, retailers when searching for manufacturers, and entities that are not real operating companies.
 
-Return JSON with this EXACT structure (lightweight classification only — no enrichment data):
+Return JSON with this EXACT structure:
 {
+  "primaryBusinessActivity": "what this company actually does (e.g. 'FMCG distributor', 'retail chain', 'food manufacturer', 'cosmetics brand owner')",
   "sectorMatch": true,
   "sector": "specific sector this company actually operates in",
   "country": "headquarters country (e.g. 'Saudi Arabia', 'UAE')",
   "geography": "primary market geography (e.g. 'GCC', 'Middle East')",
-  "relevanceRationale": "one sentence explaining the tier classification — why executives here would or would not have transferable expertise",
+  "relevanceRationale": "one sentence: why this company's primary activity does or does not match ${commercialRole} in ${primarySectorList}",
   "confidenceScore": 75
 }
 
 CONFIDENCE CALIBRATION:
-- 85-100: Tier 1 — obvious, well-known player. Primary business is exactly what was searched.
-- 70-84: Tier 1 — strong match. Primary business aligns well, minor gaps (e.g., slightly different sub-sector, adjacent city).
-- 55-69: Tier 2 — adjacent. Passes the transferability test. Meaningful capability, executives would be credible candidates.
-- ≤ 30: Tier 3 — exclude. No meaningful connection or fails the transferability test.
-- IMPORTANT: Do not score any company between 31 and 54. If a company does not clearly pass the transferability test for Tier 2, it belongs in Tier 3.
+- 85-100: Tier 1 — primary business activity is exactly ${commercialRole} in ${primarySectorList}.
+- 70-84: Tier 1 — strong match, primary activity aligns well with ${commercialRole}.
+- 55-69: Tier 2 — passes transferability test, meaningful ${commercialRole} capability but secondary.
+- ≤ 30: Tier 3 — primary activity is fundamentally different from ${commercialRole}, or wrong sector.
+- IMPORTANT: Do not score between 31 and 54. Either passes transferability test (≥55) or belongs in Tier 3 (≤30).
 
 Return ONLY the JSON.`;
 
@@ -502,7 +506,7 @@ Return ONLY the JSON.`;
       model: "anthropic/claude-sonnet-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
-      max_tokens: 300,
+      max_tokens: 400,
     });
 
     const content = response.choices[0]?.message?.content || "";
@@ -610,18 +614,30 @@ async function generateSeedList(
   let prompt: string;
 
   if (relevanceType === "Direct") {
+    const geoCountries = intent.targetGeographies.join(", ");
     const roleInstruction = hasRole
-      ? `List the most significant companies whose PRIMARY business is ${role} in the ${sector} sector operating in ${geoStr}. Focus specifically on ${role} companies — not manufacturers, not retailers, not logistics providers unless their primary business is ${role}.`
-      : `List the most significant companies in the ${sector} sector operating in ${geoStr}.`;
+      ? `List the most significant companies whose PRIMARY business activity is ${role} in the ${sector} sector, headquartered in or with major operations in ${geoStr}.`
+      : `List the most significant companies in the ${sector} sector headquartered in or with major operations in ${geoStr}.`;
 
     prompt = `${roleInstruction}
+
+COMMERCIAL ROLE FILTER — apply carefully:
+${hasRole ? `The target commercial role is "${role}". Classify each candidate before including:
+- Type A (MANUFACTURER/BRAND OWNER): Companies that make or own products. Their primary expertise is in production, R&D, brand management. Examples: product companies, brand owners, factories. → EXCLUDE unless they are also primarily known as a ${role}.
+- Type B (RETAILER/END SELLER): Companies that sell directly to consumers. Their primary expertise is in retail operations, store management, consumer experience. Examples: supermarket chains, retail stores, e-commerce platforms. → EXCLUDE.
+- Type C (${role.toUpperCase()}): Companies whose primary revenue comes from ${role} — acting as intermediaries between manufacturers/brand owners and retailers/end customers. Their expertise is in supply chain, channel management, partner relationships, warehousing, ${role} logistics. → INCLUDE.
+ONLY include Type C companies. If a conglomerate has a significant Type C business line alongside other activities, include it.` : `Include companies across all commercial functions in ${sector}.`}
+
+GEOGRAPHY FILTER:
+- Companies must be HEADQUARTERED in ${geoCountries} — not just selling products there
+- A global company headquartered elsewhere (e.g., P&G headquartered in USA) does NOT qualify even if it operates in ${geoCountries}
+- Regional headquarters count only if the company is primarily managed from ${geoCountries}
 
 Requirements:
 - Return ONLY a JSON array of company names, ordered by market significance
 - Include ${count} names
-- Focus on real, operating companies — not trade associations, government bodies, brand owners, or generic brands
-${hasRole ? `- Every company must be primarily a ${role} — not a brand owner that also distributes, not a retailer, not a manufacturer unless they are primarily known as a ${role}\n` : ""}- Include a mix of: major players, established regional companies, and notable mid-sized companies
-- For conglomerates/holding companies, include ONLY if ${sector} ${hasRole ? role : "operations"} is a significant business line
+- Focus on real, operating companies — not trade associations, government bodies, or generic product brand names
+- Include a mix of: major players, established regional companies, and notable mid-sized companies
 - Do NOT include parent company and subsidiary separately
 
 Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
@@ -630,16 +646,16 @@ Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
       ? `\n- Do NOT include any of these companies (they are already in the core results): ${excludeNames.slice(0, 30).join(", ")}`
       : "";
 
-    prompt = `List companies in the ${sector} sector operating in ${geoStr} that are DIFFERENT from typical ${intent.primarySectors.join("/")} companies.
+    prompt = `List companies in the ${sector} sector operating in ${geoStr} that are DIFFERENT from typical ${intent.primarySectors.join("/")} companies${hasRole ? ` but whose executives would have transferable expertise in ${role}` : ""}.
 
-These are for an "AI Suggested" tab showing adjacent/related companies that a search for "${intent.primarySectors.join(", ")}" might also want to consider.
+These are for an "AI Suggested" tab showing adjacent/related companies that a search for "${intent.primarySectors.join(", ")}${hasRole ? ` (${role})` : ""}" might also want to consider.
 
 Requirements:
 - Return ONLY a JSON array of company names, ordered by relevance
 - Include ${count} names
 - Focus on companies in ${sector} that are genuinely different from mainstream ${intent.primarySectors.join("/")} companies
 - These should be companies from a related but distinct sector${excludeList}
-${hasRole ? `- Prefer companies that employ ${role}-type executives\n` : ""}- Real, operating companies only
+${hasRole ? `- IMPORTANT: Every company must have meaningful ${role} operations or employ executives with ${role} expertise. Do NOT include companies that are only in ${sector} generally — they must be relevant to ${role} specifically.\n` : ""}- Real, operating companies only
 
 Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
   }

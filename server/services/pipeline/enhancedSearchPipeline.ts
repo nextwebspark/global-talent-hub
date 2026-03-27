@@ -459,11 +459,14 @@ The question is not just what sector this company operates in — it is whether 
 TIER 1 — DIRECT (sectorMatch: true, confidenceScore 70-100):
 The company's PRIMARY business is ${commercialRole} in ${primarySectorList}. They would be the first companies any industry professional thinks of when asked about this space. This includes vertically-integrated companies and conglomerates where ${commercialRole} in ${primarySectorList} is a major business line — even if they also do other things.
 
-TIER 2 — ADJACENT (sectorMatch: true, confidenceScore 45-69):
+TIER 2 — ADJACENT (sectorMatch: true, confidenceScore 55-69):
 The company operates meaningful capability in ${commercialRole} but it is not their primary business. Their leadership would have directly transferable expertise. They belong on a talent map because executives there have done the work, even if the company is better known for something else.
 
+TRANSFERABILITY TEST — apply before tagging any company as Adjacent:
+Would a senior executive from this company be a credible candidate for a leadership role in ${commercialRole} within ${primarySectorList}? If the answer is no — because their expertise is in a fundamentally different commercial activity — exclude the company entirely rather than tagging it Adjacent. Adjacent means genuinely transferable expertise, not just loose sector proximity.
+
 TIER 3 — EXCLUDE (sectorMatch: false, confidenceScore ≤ 30):
-The company has no meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise would exist there. This includes: companies in a completely different sector, companies in the right sector but wrong function with no overlap, and entities that are not real operating companies.
+The company has no meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise would exist there. This includes: companies in a completely different sector, companies in the right sector but wrong function with no overlap, companies whose expertise is in a fundamentally different commercial activity, and entities that are not real operating companies.
 
 Return JSON with this EXACT structure:
 {
@@ -482,9 +485,9 @@ Return JSON with this EXACT structure:
 CONFIDENCE CALIBRATION:
 - 85-100: Tier 1 — obvious, well-known player. Primary business is exactly what was searched.
 - 70-84: Tier 1 — strong match. Primary business aligns well, minor gaps (e.g., slightly different sub-sector, adjacent city).
-- 55-69: Tier 2 — adjacent. Meaningful capability exists, executives would have transferable skills, but it is not the company's primary identity.
-- 45-54: Tier 2 — weak adjacent. Some relevant capability, limited transferable expertise.
-- ≤ 30: Tier 3 — exclude. No meaningful connection.
+- 55-69: Tier 2 — adjacent. Passes the transferability test. Meaningful capability, executives would be credible candidates.
+- ≤ 30: Tier 3 — exclude. No meaningful connection or fails the transferability test.
+- IMPORTANT: Do not score any company between 31 and 54. If a company does not clearly pass the transferability test for Tier 2, it belongs in Tier 3.
 
 Return ONLY the JSON.`;
 
@@ -699,16 +702,18 @@ async function enrichBatch(
       enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
     }
 
+    const score = enriched.confidenceScore ?? 0;
+    if (score < 55) {
+      onFiltered?.(name, `below confidence floor (${score}%)`);
+      return;
+    }
+
     if (!isCountryInScope(enriched.country, geoSet)) {
       onFiltered?.(name, `out of region: ${enriched.country || "unknown"}`);
       return;
     }
-    if (!enriched.country && geoSet.size > 0) {
-      enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
-    }
 
     let finalRelevanceType = relevanceType;
-    const score = enriched.confidenceScore ?? 50;
     if (finalRelevanceType === "Direct" && score < 70) {
       finalRelevanceType = "Adjacent";
     }

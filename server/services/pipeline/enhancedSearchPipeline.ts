@@ -43,6 +43,28 @@ const REGION_COUNTRIES: Record<string, string[]> = {
   "sub-saharan africa": ["south africa", "nigeria", "kenya", "ghana", "ethiopia", "tanzania", "uganda", "rwanda", "angola", "mozambique", "zimbabwe", "zambia", "senegal", "cameroon"],
 };
 
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  "uae": ["united arab emirates", "uae"],
+  "united arab emirates": ["united arab emirates", "uae"],
+  "usa": ["united states", "usa", "united states of america", "us"],
+  "united states": ["united states", "usa", "united states of america", "us"],
+  "united states of america": ["united states", "usa", "united states of america", "us"],
+  "us": ["united states", "usa", "united states of america", "us"],
+  "uk": ["united kingdom", "uk", "great britain", "britain"],
+  "united kingdom": ["united kingdom", "uk", "great britain", "britain"],
+  "great britain": ["united kingdom", "uk", "great britain", "britain"],
+  "britain": ["united kingdom", "uk", "great britain", "britain"],
+  "ksa": ["saudi arabia", "ksa"],
+  "saudi arabia": ["saudi arabia", "ksa"],
+  "south korea": ["south korea", "korea", "republic of korea"],
+  "korea": ["south korea", "korea", "republic of korea"],
+};
+
+function normalizeCountryAliases(name: string): string[] {
+  const norm = name.toLowerCase().trim();
+  return COUNTRY_ALIASES[norm] || [norm];
+}
+
 /** Expand target geographies (which may be region names or country names) into a
  *  flat normalised set of country names. */
 function resolveGeoSet(targetGeographies: string[]): Set<string> {
@@ -50,9 +72,11 @@ function resolveGeoSet(targetGeographies: string[]): Set<string> {
   for (const geo of targetGeographies) {
     const norm = geo.toLowerCase().trim();
     if (REGION_COUNTRIES[norm]) {
-      for (const c of REGION_COUNTRIES[norm]) resolved.add(c);
+      for (const c of REGION_COUNTRIES[norm]) {
+        for (const alias of normalizeCountryAliases(c)) resolved.add(alias);
+      }
     } else {
-      resolved.add(norm);
+      for (const alias of normalizeCountryAliases(norm)) resolved.add(alias);
     }
   }
   return resolved;
@@ -62,8 +86,9 @@ function resolveGeoSet(targetGeographies: string[]): Set<string> {
  *  Returns true (don't filter) when targetGeographies is empty or country is unknown. */
 function isCountryInScope(country: string | null | undefined, geoSet: Set<string>): boolean {
   if (geoSet.size === 0) return true;
-  if (!country) return true; // unknown — allow through (low confidence)
-  return geoSet.has(country.toLowerCase().trim());
+  if (!country) return true;
+  const aliases = normalizeCountryAliases(country);
+  return aliases.some(a => geoSet.has(a));
 }
 
 async function extractIntent(query: string, pdContent?: string): Promise<InferredIntent> {
@@ -723,7 +748,7 @@ async function classifyBatch(
     }
 
     const score = classified.confidenceScore ?? 0;
-    if (score < 55) {
+    if (score < 45) {
       onFiltered?.(name, `below confidence floor (${score}%)`);
       return;
     }

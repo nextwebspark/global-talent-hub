@@ -615,9 +615,12 @@ async function generateSeedList(
 
   if (relevanceType === "Direct") {
     const geoCountries = intent.targetGeographies.join(", ");
+    const excludeList = excludeNames && excludeNames.length > 0
+      ? `\n- The following companies are already known — do NOT include them. Focus on companies NOT on this list: ${excludeNames.slice(0, 50).join(", ")}`
+      : "";
     const roleInstruction = hasRole
-      ? `List the most significant companies whose PRIMARY business activity is ${role} in the ${sector} sector, headquartered in or with major operations in ${geoStr}.`
-      : `List the most significant companies in the ${sector} sector headquartered in or with major operations in ${geoStr}.`;
+      ? `List ${excludeNames && excludeNames.length > 0 ? "additional " : ""}companies whose PRIMARY business activity is ${role} in the ${sector} sector, headquartered in ${geoStr}.`
+      : `List ${excludeNames && excludeNames.length > 0 ? "additional " : ""}companies in the ${sector} sector headquartered in ${geoStr}.`;
 
     prompt = `${roleInstruction}
 
@@ -638,7 +641,7 @@ Requirements:
 - Include ${count} names
 - Focus on real, operating companies — not trade associations, government bodies, or generic product brand names
 - Include a mix of: major players, established regional companies, and notable mid-sized companies
-- Do NOT include parent company and subsidiary separately
+- Do NOT include parent company and subsidiary separately${excludeList}
 
 Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
   } else {
@@ -832,27 +835,102 @@ export async function* runEnhancedSearchPipeline(
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 1 — AI Seed List (fast, Claude's knowledge)
+  // PHASE 1 — Web-First Seed Discovery (Serper)
   // ══════════════════════════════════════════════════════════════════════════
-  yield emit("status", "Phase 1: Generating company list from AI knowledge...");
+  const mainGeo = intent.targetGeographies[0] || "";
+  const hasRole = intent.commercialRole && intent.commercialRole !== "any";
+  const role = hasRole ? intent.commercialRole! : "";
+  const primarySector = intent.primarySectors[0] || "";
+  const currentYear = new Date().getFullYear();
 
-  const seedNames = await generateSeedList(intent, null, "Direct", Math.max(targetCount + 5, 30));
+  const serper = createSerperAdapter();
+  const webSeedNames: string[] = [];
+
+  if (serper) {
+    yield emit("status", "Phase 1: Searching web for companies...");
+  } else {
+    yield emit("status", "Web search unavailable — using AI knowledge as primary source");
+  }
+
+  if (serper) {
+
+    const webQueries: string[] = hasRole
+      ? [
+          `${primarySector} ${role} companies ${mainGeo}`,
+          `${primarySector} ${role} companies ${mainGeo} site:linkedin.com/company`,
+          `top ${role} ${primarySector} ${mainGeo} ${currentYear}`,
+          `${primarySector} ${role} ${mainGeo} established companies`,
+          `${mainGeo} ${primarySector} ${role} market leaders`,
+        ]
+      : [
+          `${primarySector} companies ${mainGeo}`,
+          `${primarySector} companies ${mainGeo} site:linkedin.com/company`,
+          `top ${primarySector} companies ${mainGeo} ${currentYear}`,
+          `${primarySector} ${mainGeo} established companies`,
+          `${mainGeo} ${primarySector} market leaders`,
+        ];
+
+    for (const q of webQueries) {
+      if (signal?.aborted) break;
+      try {
+        yield emit("status", `Searching: "${q.slice(0, 60)}..."`);
+        const result = await serper.searchWithAnswer(q, 10);
+        for (const r of result.results.slice(0, 10)) {
+          const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
+          if (isListicle && isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
+          const names = isListicle
+            ? [...extractCompanyNamesFromListicle(r.snippet || ""), ...extractCompanyNamesFromResult(r.title, r.snippet, r.url)]
+            : extractCompanyNamesFromResult(r.title, r.snippet, r.url);
+
+          for (let name of names) {
+            name = cleanCompanyName(name);
+            if (!name || name.length < 2) continue;
+            if (!isValidCompanyName(name)) continue;
+            webSeedNames.push(name);
+          }
+        }
+      } catch (err) {
+        console.warn(`[Pipeline] Web search failed for "${q}":`, err);
+      }
+    }
+  }
 
   if (signal?.aborted) return;
 
-  yield emit("status", `AI identified ${seedNames.length} companies — classifying in parallel...`);
+  const uniqueWebSeeds = Array.from(new Set(webSeedNames));
+  yield emit("status", `Web search found ${uniqueWebSeeds.length} company candidates`);
 
-  // Emit all seed names as "found" immediately so the UI shows placeholders
-  for (const name of seedNames) {
-    yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 2 — Claude Knowledge Supplement (gap-filling only)
+  // ══════════════════════════════════════════════════════════════════════════
+  yield emit("status", "Phase 2: Checking AI knowledge for additional companies...");
+
+  const claudeSupplementNames = await generateSeedList(
+    intent, null, "Direct",
+    Math.max(15, targetCount - uniqueWebSeeds.length + 10),
+    uniqueWebSeeds,
+  );
+
+  if (signal?.aborted) return;
+
+  const allSeedNames = [...uniqueWebSeeds, ...claudeSupplementNames];
+  const deduplicatedSeeds = Array.from(new Set(allSeedNames.map(n => {
+    const key = fuzzyCompanySlug(n);
+    return { key, name: n };
+  }).filter((item, i, arr) => arr.findIndex(x => x.key === item.key) === i).map(x => x.name)));
+
+  yield emit("status", `${deduplicatedSeeds.length} candidates (${uniqueWebSeeds.length} web + ${claudeSupplementNames.length} AI supplement) — classifying...`);
+
+  for (const name of deduplicatedSeeds) {
+    yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: primarySector, relevanceType: "Direct" });
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 2 — Parallel Classification of seed list (lightweight — no enrichment)
+  // PHASE 3 — Parallel Classification
   // ══════════════════════════════════════════════════════════════════════════
   const seedCompanies = await classifyBatch(
-    seedNames,
-    intent.primarySectors[0] || "",
+    deduplicatedSeeds,
+    primarySector,
     intent,
     "Direct",
     geoSet,
@@ -871,92 +949,6 @@ export async function* runEnhancedSearchPipeline(
 
   companies.push(...seedCompanies);
   yield* flushEvents();
-
-  if (signal?.aborted) return;
-
-  yield emit("status", `Phase 1 complete: ${companies.length} companies validated`);
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 3 — Web Search Supplement (catches what Claude missed)
-  // ══════════════════════════════════════════════════════════════════════════
-  if (companies.length < targetCount && !signal?.aborted) {
-    yield emit("status", `Phase 3: Web search for additional companies (${companies.length}/${targetCount})...`);
-
-    const serper = createSerperAdapter();
-    if (serper) {
-      const mainGeo = intent.targetGeographies[0] || "";
-      const role = intent.commercialRole && intent.commercialRole !== "any" ? intent.commercialRole : "";
-      const primarySector = intent.primarySectors[0] || "";
-      const webSearchNames: string[] = [];
-
-      const supplementQueries: string[] = [];
-      if (role) {
-        supplementQueries.push(`${primarySector} ${role} companies ${mainGeo} site:linkedin.com/company`);
-        supplementQueries.push(`"${primarySector}" "${role}" "${mainGeo}" company directory 2024`);
-        supplementQueries.push(`${primarySector} ${role} ${mainGeo} smaller regional companies`);
-      } else {
-        supplementQueries.push(`${primarySector} companies ${mainGeo} site:linkedin.com/company`);
-        supplementQueries.push(`"${primarySector}" "${mainGeo}" company directory 2024`);
-        supplementQueries.push(`${primarySector} emerging companies ${mainGeo}`);
-      }
-
-      for (const q of supplementQueries) {
-        if (signal?.aborted) break;
-        try {
-          const result = await serper.searchWithAnswer(q, 10);
-          for (const r of result.results.slice(0, 8)) {
-            const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
-            if (isListicle && isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
-            const names = isListicle
-              ? [...extractCompanyNamesFromListicle(r.snippet || ""), ...extractCompanyNamesFromResult(r.title, r.snippet, r.url)]
-              : extractCompanyNamesFromResult(r.title, r.snippet, r.url);
-
-            for (let name of names) {
-              name = cleanCompanyName(name);
-              if (!name || name.length < 2) continue;
-              if (!isValidCompanyName(name)) continue;
-              const fuzzyKey = fuzzyCompanySlug(name);
-              if (seenKeys.has(fuzzyKey)) continue;
-              webSearchNames.push(name);
-            }
-          }
-        } catch (err) {
-          console.warn(`[Pipeline] Web search failed for "${q}":`, err);
-        }
-      }
-
-      if (webSearchNames.length > 0 && !signal?.aborted) {
-        const uniqueWebNames = Array.from(new Set(webSearchNames));
-        yield emit("status", `Found ${uniqueWebNames.length} additional candidates from web — classifying...`);
-
-        for (const name of uniqueWebNames) {
-          yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
-        }
-
-        const webCompanies = await classifyBatch(
-          uniqueWebNames,
-          intent.primarySectors[0] || "",
-          intent,
-          "Direct",
-          geoSet,
-          seenKeys,
-          searchQueryId,
-          sessionId,
-          signal,
-          undefined,
-          (company) => {
-            pendingEvents.push(emit("company_enriched", `Classified: ${company.name}`, { company }));
-          },
-          (name, reason) => {
-            pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`));
-          },
-        );
-
-        companies.push(...webCompanies);
-        yield* flushEvents();
-      }
-    }
-  }
 
   if (signal?.aborted) return;
 

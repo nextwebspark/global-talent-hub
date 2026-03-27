@@ -116,6 +116,98 @@ Return ONLY the JSON, no other text.`
   };
 }
 
+const GEO_CITY_MAP: Record<string, string> = {
+  "Saudi Arabia": "Riyadh Jeddah Dammam",
+  "UAE": "Dubai Abu Dhabi",
+  "Qatar": "Doha",
+  "Kuwait": "Kuwait City",
+  "Bahrain": "Manama",
+  "Oman": "Muscat",
+  "Egypt": "Cairo",
+  "Jordan": "Amman",
+};
+
+const ROLE_SYNONYMS: Record<string, string[]> = {
+  distributor: ["wholesalers", "distribution companies", "distributors"],
+  manufacturer: ["manufacturers", "producers", "manufacturing companies"],
+  retailer: ["retailers", "retail companies", "retail chains"],
+  operator: ["operators", "operating companies"],
+};
+
+const GEO_TRANSLITERATIONS: Record<string, string[]> = {
+  "Saudi Arabia": ["السعودية", "KSA"],
+  "UAE": ["الامارات", "Emirates"],
+  "Qatar": ["قطر"],
+  "Kuwait": ["الكويت"],
+  "Egypt": ["مصر"],
+  "Bahrain": ["البحرين"],
+  "Oman": ["عمان"],
+  "Jordan": ["الاردن"],
+};
+
+function generateSearchQueries(sector: string, mainGeo: string, commercialRole?: string): string[] {
+  const role = commercialRole && commercialRole !== "any" ? commercialRole : "";
+  const roleStr = role ? ` ${role}` : "";
+  const queries: string[] = [];
+
+  queries.push(`${sector}${roleStr} companies in ${mainGeo}`);
+
+  if (role && ROLE_SYNONYMS[role]) {
+    for (const syn of ROLE_SYNONYMS[role]) {
+      queries.push(`${sector} ${syn} ${mainGeo}`);
+    }
+  }
+
+  queries.push(`${sector} companies ${mainGeo} market`);
+
+  const cities = GEO_CITY_MAP[mainGeo];
+  if (cities) {
+    queries.push(`${sector}${roleStr} companies ${cities}`);
+  }
+
+  queries.push(`"${sector}"${roleStr ? ` "${role}"` : ""} "${mainGeo}"`);
+
+  const translits = GEO_TRANSLITERATIONS[mainGeo];
+  if (translits) {
+    for (const t of translits) {
+      queries.push(`${sector}${roleStr} ${t}`);
+    }
+  }
+
+  queries.push(`${sector} industry leaders${roleStr ? ` ${role}s` : ""} ${mainGeo}`);
+  queries.push(`${sector} top companies ${mainGeo}`);
+
+  const unique = Array.from(new Set(queries));
+  return unique.slice(0, 7);
+}
+
+function extractCompanyNamesFromListicle(snippet: string): string[] {
+  const names: string[] = [];
+
+  const numberedRe = /(?:\d+[\.\)]\s*)([A-Z][A-Za-z0-9\s&\-'\.,:()]{2,55}?)(?=\s*(?:\d+[\.\)]|$|\n|[,;]|–|—))/g;
+  let m;
+  while ((m = numberedRe.exec(snippet)) !== null) {
+    const n = m[1].trim().replace(/[,;:]$/, "").trim();
+    if (n.length > 2 && n.length < 60 && !isGenericPhrase(n) && isValidCompanyName(n)) names.push(n);
+  }
+
+  const bulletRe = /(?:^|\n)\s*[-•*]\s*([A-Z][A-Za-z0-9\s&\-'\.]{2,55}?)(?=\s*(?:[-•*]|$|\n))/gm;
+  while ((m = bulletRe.exec(snippet)) !== null) {
+    const n = m[1].trim().replace(/[,;:]$/, "").trim();
+    if (n.length > 2 && n.length < 60 && !isGenericPhrase(n) && isValidCompanyName(n)) names.push(n);
+  }
+
+  const commaRe = /(?:including|such as|like|are|:)\s*((?:[A-Z][A-Za-z0-9\s&\-'\.]+,?\s*){2,})/gi;
+  while ((m = commaRe.exec(snippet)) !== null) {
+    const parts = m[1].split(/,\s*|;\s*|\band\b/i).map(p => p.trim()).filter(p => p.length > 2 && p.length < 60);
+    for (const p of parts) {
+      if (/^[A-Z]/.test(p) && !isGenericPhrase(p) && isValidCompanyName(p)) names.push(p);
+    }
+  }
+
+  return Array.from(new Set(names)).slice(0, 15);
+}
+
 async function searchCompaniesForSector(
   sector: string,
   geographies: string[],
@@ -124,37 +216,40 @@ async function searchCompaniesForSector(
   const serper = createSerperAdapter();
   if (!serper) return [];
 
-  // Use the primary geography only — more geographies increases listicle noise
   const mainGeo = geographies[0] || "";
+  const queries = generateSearchQueries(sector, mainGeo, commercialRole);
+  const companies: Array<{ name: string; website?: string; snippet?: string; url?: string }> = [];
+  const seenNames = new Set<string>();
 
-  // Include commercial role (e.g. "distributor", "manufacturer") when it is specific.
-  // Omit when it is "any" or empty so the query stays clean.
-  const roleStr = commercialRole && commercialRole !== "any" ? ` ${commercialRole}` : "";
+  const addCompany = (name: string, url?: string, snippet?: string) => {
+    if (!isValidCompanyName(name)) return;
+    const key = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (seenNames.has(key)) return;
+    seenNames.add(key);
+    companies.push({ name, website: url, snippet, url });
+  };
 
-  // Avoid "list" / years — they attract listicle articles that mix all sectors.
-  // Avoid "top" — it attracts ranking pages. Use focused query with role.
-  const searchQuery = `${sector}${roleStr} companies in ${mainGeo}`;
+  for (const q of queries) {
+    if (companies.length >= 30) break;
+    try {
+      const result = await serper.searchWithAnswer(q, 10);
+      for (const r of result.results.slice(0, 8)) {
+        const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
 
-  try {
-    const result = await serper.searchWithAnswer(searchQuery, 10);
-    const companies: Array<{ name: string; website?: string; snippet?: string; url?: string }> = [];
-
-    for (const r of result.results.slice(0, 8)) {
-      // Skip results whose title looks like a listicle/ranking article entirely.
-      // These snippets contain mixed-sector company lists that can't be trusted.
-      if (ARTICLE_TITLE_RE.test(r.title || "")) continue;
-
-      const names = extractCompanyNamesFromResult(r.title, r.snippet, r.url);
-      for (const name of names) {
-        companies.push({ name, website: r.url, snippet: r.snippet, url: r.url });
+        if (isListicle) {
+          const listicleNames = extractCompanyNamesFromListicle(r.snippet || "");
+          for (const n of listicleNames) addCompany(n, r.url, r.snippet);
+        } else {
+          const names = extractCompanyNamesFromResult(r.title, r.snippet, r.url);
+          for (const n of names) addCompany(n, r.url, r.snippet);
+        }
       }
+    } catch (err) {
+      console.warn(`[EnhancedPipeline] Serper search failed for query "${q}":`, err);
     }
-
-    return companies.slice(0, 12);
-  } catch (err) {
-    console.warn(`[EnhancedPipeline] Serper search failed for ${sector}:`, err);
-    return [];
   }
+
+  return companies;
 }
 
 // Patterns that indicate an article/listicle title rather than a company name.
@@ -208,6 +303,56 @@ function isGenericPhrase(text: string): boolean {
   return bad.some(p => lower === p || lower.startsWith(p + " ") || lower.endsWith(" " + p));
 }
 
+const COUNTRY_NAMES_SET = new Set([
+  "saudi arabia", "ksa", "uae", "united arab emirates", "qatar", "kuwait", "bahrain", "oman",
+  "egypt", "jordan", "lebanon", "iraq", "iran", "syria", "turkey", "israel", "yemen",
+  "united states", "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
+  "united kingdom", "uk", "germany", "france", "italy", "spain", "netherlands", "switzerland",
+  "china", "japan", "south korea", "india", "australia", "singapore", "hong kong", "malaysia",
+  "south africa", "nigeria", "kenya", "ghana",
+]);
+
+function isValidCompanyName(name: string): boolean {
+  if (name.length > 60) return false;
+  if (name.endsWith("...") || name.endsWith("…")) return false;
+  const lower = name.toLowerCase().trim();
+  if (COUNTRY_NAMES_SET.has(lower)) return false;
+  const badPatterns = [
+    /\bcompanies\s+in\b/i,
+    /\blist\s+of\b/i,
+    /\btop\s+\d+/i,
+    /^top\s+/i,
+    /^best\s+/i,
+    /^leading\s+/i,
+    /^major\s+/i,
+    /^key\s+/i,
+    /^biggest\s+/i,
+    /\bwww\./i,
+    /\.com\b/i,
+    /\.org\b/i,
+    /\.net\b/i,
+    /https?:/i,
+    /\/{2,}/,
+    /\.\.\./,
+    /\bcompanies\b.*\bmarket\b/i,
+  ];
+  if (badPatterns.some(p => p.test(name))) return false;
+  if (/^[a-z\s-]+$/.test(lower) && lower.split(/\s+/).length > 5) return false;
+  return true;
+}
+
+function extractTargetCount(query: string): number {
+  const patterns = [
+    /\b(?:top|find|get|show|list|identify)\s+(\d+)\b/i,
+    /\b(\d+)\s+(?:companies|distributors|manufacturers|retailers|operators|firms|businesses|players|brands)\b/i,
+  ];
+  for (const p of patterns) {
+    const m = query.match(p);
+    if (m) return Math.min(parseInt(m[1], 10), 50);
+  }
+  return 15;
+}
+
 function normalizeCompanyKey(name: string, website?: string): string {
   // Deduplicate by name slug + optional domain
   const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -251,9 +396,10 @@ Return JSON with this EXACT structure:
 }
 
 CRITICAL for sectorMatch:
-- Set "sectorMatch": true ONLY if this company's PRIMARY business is in the target sector ("${primarySectorList}").
-- Set "sectorMatch": false if it is primarily a bank, insurer, telco, energy producer, government entity, or any sector NOT matching the target.
-- Be strict. Adjacent sector companies (e.g., a logistics company in an FMCG distributor search) should return false.
+- Set "sectorMatch": true if this company's PRIMARY business is in the target sector ("${primarySectorList}"), or if it primarily distributes/wholesales products in that sector.
+- In GCC and Middle East markets, distribution and logistics/supply chain are heavily overlapping. A company whose primary business is distributing or wholesaling consumer goods, food & beverage, or household products should return sectorMatch: true even if they also operate logistics infrastructure.
+- Set "sectorMatch": false ONLY for companies in clearly unrelated sectors: banks, insurers, telcos, energy producers, government entities, pure IT/software companies, or any sector with no meaningful overlap with the target.
+- When in doubt, return sectorMatch: true with a lower confidenceScore — let confidence handle the nuance, not binary rejection.
 
 Return ONLY the JSON.`;
 
@@ -395,6 +541,7 @@ export async function* runEnhancedSearchPipeline(
   const seenKeys = new Set<string>();
   const companies: SearchSessionCompany[] = [];
   let companyCounter = 0;
+  const targetCount = extractTargetCount(query);
 
   // Pre-resolve target geographies to a flat country set for fast O(1) membership checks
   const geoSet = resolveGeoSet(intent.targetGeographies);
@@ -445,6 +592,11 @@ export async function* runEnhancedSearchPipeline(
       if (!enriched.country && geoSet.size > 0) {
         // Unknown country — penalise confidence so these sort below verified results
         enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
+      }
+
+      if (!isValidCompanyName(raw.name)) {
+        yield emit("status", `Filtered (invalid name): ${raw.name}`);
+        continue;
       }
 
       const companyId = await persistCompany(raw.name, enriched, intent, searchQueryId, sessionId);
@@ -531,6 +683,88 @@ export async function* runEnhancedSearchPipeline(
       if (signal?.aborted) return;
       yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
       for await (const ev of searchAndEmit(sector, "AI Inferred")) yield ev;
+    }
+  }
+
+  // ── Expansion round (Fix 4) ────────────────────────────────────────────────
+  // If we have fewer companies than the user requested, run a second round
+  // with broader query terms to try to fill the gap.
+  if (companies.length < targetCount && !signal?.aborted) {
+    yield emit("status", `Found ${companies.length}/${targetCount} — running expansion searches...`);
+
+    const mainGeo = intent.targetGeographies[0] || "";
+    const role = intent.commercialRole && intent.commercialRole !== "any" ? intent.commercialRole : "";
+
+    const expansionQueries: string[] = [];
+    for (const sector of intent.primarySectors) {
+      expansionQueries.push(`"${sector}" "${mainGeo}" company directory`);
+      if (role) expansionQueries.push(`${sector} ${role} ${mainGeo} list 2024 2025`);
+      expansionQueries.push(`${sector} businesses ${mainGeo}`);
+    }
+
+    const serper = createSerperAdapter();
+    if (serper) {
+      for (const q of expansionQueries) {
+        if (companies.length >= targetCount || signal?.aborted) break;
+        try {
+          const result = await serper.searchWithAnswer(q, 10);
+          for (const r of result.results.slice(0, 8)) {
+            if (companies.length >= targetCount) break;
+
+            const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
+            const names = isListicle
+              ? extractCompanyNamesFromListicle(r.snippet || "")
+              : extractCompanyNamesFromResult(r.title, r.snippet, r.url);
+
+            for (const name of names) {
+              if (!isValidCompanyName(name)) continue;
+              const key = normalizeCompanyKey(name, r.url);
+              if (seenKeys.has(key)) continue;
+              seenKeys.add(key);
+
+              if (companyCounter >= 50) break;
+
+              const enriched = await enrichCompany(name, intent.primarySectors[0] || "", intent.targetGeographies, intent, "Direct");
+
+              if (enriched.sectorMatch === false) continue;
+              if (enriched.sectorMatch === undefined) {
+                enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
+              }
+              if (!isCountryInScope(enriched.country, geoSet)) continue;
+              if (!enriched.country && geoSet.size > 0) {
+                enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
+              }
+
+              const companyId = await persistCompany(name, enriched, intent, searchQueryId, sessionId);
+
+              const company: SearchSessionCompany = {
+                id: companyId ?? companyCounter,
+                name,
+                sector: enriched.sector || intent.primarySectors[0] || "",
+                country: enriched.country || null,
+                geography: enriched.geography || null,
+                revenue: enriched.revenue || null,
+                employees: enriched.employees || null,
+                website: enriched.website || null,
+                summary: enriched.summary || null,
+                latitude: null,
+                longitude: null,
+                relevanceType: "Direct",
+                relevanceRationale: enriched.relevanceRationale || "Found in expansion search",
+                confidenceScore: enriched.confidenceScore || 50,
+                isUserAccepted: false,
+                isUserRejected: false,
+              };
+
+              companies.push(company);
+              companyCounter++;
+              yield emit("company_enriched", `Enriched: ${name}`, { company });
+            }
+          }
+        } catch (err) {
+          console.warn(`[EnhancedPipeline] Expansion search failed for "${q}":`, err);
+        }
+      }
     }
   }
 

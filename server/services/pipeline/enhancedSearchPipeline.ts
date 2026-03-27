@@ -585,6 +585,159 @@ async function persistCompany(
   }
 }
 
+// ─── Phase 1: Claude Seed List Generation ─────────────────────────────────
+async function generateSeedList(
+  intent: InferredIntent,
+  relevanceType: "Direct" | "Adjacent" | "AI Inferred",
+  count: number = 25,
+): Promise<string[]> {
+  const sectors = relevanceType === "Direct"
+    ? intent.primarySectors
+    : relevanceType === "Adjacent"
+      ? intent.adjacentSectors
+      : (intent.inferredSectors || []);
+
+  const sectorStr = sectors.join(", ");
+  if (!sectorStr) return [];
+
+  const geoStr = intent.targetGeographies.join(", ") || "globally";
+  const role = intent.commercialRole && intent.commercialRole !== "any"
+    ? intent.commercialRole
+    : "companies";
+
+  const prompt = `List the most well-known and significant ${role} in ${sectorStr} operating in ${geoStr}.
+
+Requirements:
+- Return ONLY a JSON array of company names, ordered by significance
+- Include ${count} names
+- Focus on real, operating companies — not trade associations, government bodies, or generic brands
+- Include a mix of: major multinationals with operations in the region, large local/regional players, and notable mid-sized companies
+- For conglomerates and holding companies, include them if ${sectorStr} is a significant business line
+- Do NOT include parent company and subsidiary separately — pick whichever is more commonly known for ${sectorStr}
+
+Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
+
+  try {
+    const response = await openrouter.chat.completions.create({
+      model: "anthropic/claude-sonnet-4",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3,
+      max_tokens: 1500,
+    });
+
+    const content = response.choices[0]?.message?.content || "";
+    let cleaned = content.trim();
+    const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) cleaned = jsonMatch[1].trim();
+    const arrStart = cleaned.indexOf("[");
+    const arrEnd = cleaned.lastIndexOf("]");
+    if (arrStart !== -1 && arrEnd !== -1) cleaned = cleaned.substring(arrStart, arrEnd + 1);
+
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((n: unknown) => typeof n === "string" && n.length > 1).slice(0, count + 5);
+    }
+  } catch (err) {
+    console.warn("[Pipeline] Seed list generation failed:", err);
+  }
+  return [];
+}
+
+// ─── Phase 2: Parallel Enrichment ──────────────────────────────────────────
+const PARALLEL_CONCURRENCY = 5;
+
+async function enrichBatch(
+  names: string[],
+  sector: string,
+  intent: InferredIntent,
+  relevanceType: "Direct" | "Adjacent" | "AI Inferred",
+  geoSet: Set<string>,
+  seenKeys: Set<string>,
+  searchQueryId: number,
+  sessionId: string,
+  signal?: AbortSignal,
+  onFound?: (name: string, sector: string, relevanceType: string) => void,
+  onEnriched?: (company: SearchSessionCompany) => void,
+  onFiltered?: (name: string, reason: string) => void,
+): Promise<SearchSessionCompany[]> {
+  const results: SearchSessionCompany[] = [];
+  let counter = 0;
+
+  const processOne = async (rawName: string) => {
+    if (signal?.aborted) return;
+
+    const name = cleanCompanyName(rawName);
+    if (!name || name.length < 2) return;
+    if (!isValidCompanyName(name)) return;
+
+    const fuzzyKey = fuzzyCompanySlug(name);
+    if (seenKeys.has(fuzzyKey)) return;
+    seenKeys.add(fuzzyKey);
+
+    onFound?.(name, sector, relevanceType);
+
+    const enriched = await enrichCompany(name, sector, intent.targetGeographies, intent, relevanceType);
+
+    if (enriched.sectorMatch === false) {
+      onFiltered?.(name, `sector mismatch: ${enriched.sector || "wrong sector"}`);
+      return;
+    }
+    if (enriched.sectorMatch === undefined) {
+      enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
+    }
+
+    if (!isCountryInScope(enriched.country, geoSet)) {
+      onFiltered?.(name, `out of region: ${enriched.country || "unknown"}`);
+      return;
+    }
+    if (!enriched.country && geoSet.size > 0) {
+      enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
+    }
+
+    let finalRelevanceType = relevanceType;
+    const score = enriched.confidenceScore ?? 50;
+    if (finalRelevanceType === "Direct" && score < 70) {
+      finalRelevanceType = "Adjacent";
+    }
+    enriched.relevanceType = finalRelevanceType;
+
+    const companyId = await persistCompany(name, enriched, intent, searchQueryId, sessionId);
+
+    const company: SearchSessionCompany = {
+      id: companyId ?? counter++,
+      name,
+      sector: enriched.sector || sector,
+      country: enriched.country || null,
+      geography: enriched.geography || null,
+      revenue: enriched.revenue || null,
+      employees: enriched.employees || null,
+      website: enriched.website || null,
+      summary: enriched.summary || null,
+      latitude: null,
+      longitude: null,
+      relevanceType: finalRelevanceType,
+      relevanceRationale: enriched.relevanceRationale || `Relevant to ${sector}`,
+      confidenceScore: score,
+      isUserAccepted: false,
+      isUserRejected: false,
+    };
+
+    results.push(company);
+    onEnriched?.(company);
+  };
+
+  // Process in batches of PARALLEL_CONCURRENCY for controlled parallelism
+  for (let i = 0; i < names.length; i += PARALLEL_CONCURRENCY) {
+    if (signal?.aborted) break;
+    const batch = names.slice(i, i + PARALLEL_CONCURRENCY);
+    await Promise.all(batch.map(n => processOne(n).catch(err => {
+      console.warn(`[Pipeline] Enrichment failed for "${n}":`, err);
+    })));
+  }
+
+  return results;
+}
+
 export async function* runEnhancedSearchPipeline(
   query: string,
   sessionId: string,
@@ -592,23 +745,22 @@ export async function* runEnhancedSearchPipeline(
   pdContent?: string,
   signal?: AbortSignal,
   precomputedIntent?: InferredIntent,
-  changedCriteria?: string[]  // If set, only run passes for these changed dimensions
+  changedCriteria?: string[]
 ): AsyncGenerator<ActivityEvent> {
 
   const emit = (type: ActivityEvent["type"], message: string, data?: any): ActivityEvent => {
     return makeActivity(type, message, data);
   };
 
-  // Update session to searching
   try {
     await storage.updateSearchSession(sessionId, { status: "searching", searchQueryId });
   } catch (sessionErr) {
     console.warn("[Pipeline] Could not update session status to searching:", sessionErr);
   }
 
+  // ── Intent Extraction ──────────────────────────────────────────────────────
   let intent: InferredIntent;
   if (precomputedIntent) {
-    // Use the already-computed intent (e.g. from refinement path) — skip extraction
     intent = precomputedIntent;
     yield emit("status", "Using refined search intent...");
     yield emit("intent_extracted", "Refined intent applied", { intent });
@@ -616,14 +768,11 @@ export async function* runEnhancedSearchPipeline(
     yield emit("status", "Extracting search intent...");
     try {
       intent = await extractIntent(query, pdContent);
-      
-      // Persist intent to session
       try {
         await storage.updateSearchSession(sessionId, { inferredIntent: intent });
       } catch (intentErr) {
         console.warn("[Pipeline] Could not persist inferred intent:", intentErr);
       }
-      
       yield emit("intent_extracted", "Intent understood", { intent });
     } catch (err: any) {
       await storage.updateSearchSession(sessionId, { status: "error" }).catch(() => {});
@@ -636,194 +785,83 @@ export async function* runEnhancedSearchPipeline(
 
   const seenKeys = new Set<string>();
   const companies: SearchSessionCompany[] = [];
-  let companyCounter = 0;
   const targetCount = extractTargetCount(query);
-
-  // Pre-resolve target geographies to a flat country set for fast O(1) membership checks
   const geoSet = resolveGeoSet(intent.targetGeographies);
 
-  const searchAndEmit = async function* (
-    sector: string,
-    relevanceType: "Direct" | "Adjacent" | "AI Inferred"
-  ): AsyncGenerator<ActivityEvent> {
-    if (signal?.aborted) return;
+  // Queues for events generated by parallel enrichment (since we can't yield from callbacks)
+  const pendingEvents: ActivityEvent[] = [];
 
-    yield emit("status", `Searching ${sector}...`);
-
-    const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, intent.commercialRole);
-    for (const raw of rawCompanies) {
-      if (signal?.aborted) return;
-
-      raw.name = cleanCompanyName(raw.name);
-      if (!raw.name || raw.name.length < 2) continue;
-      
-      const key = normalizeCompanyKey(raw.name, raw.website);
-      if (seenKeys.has(key)) continue;
-      const fuzzyKey = fuzzyCompanySlug(raw.name);
-      if (seenKeys.has(fuzzyKey)) continue;
-      seenKeys.add(key);
-      seenKeys.add(fuzzyKey);
-
-      yield emit("company_found", `Found: ${raw.name}`, { companyName: raw.name, name: raw.name, sector, relevanceType });
-
-      if (companyCounter >= 40) continue;
-
-      const enriched = await enrichCompany(raw.name, sector, intent.targetGeographies, intent, relevanceType);
-
-      // ── Sector validation ──────────────────────────────────────────────────
-      // Reject companies whose primary business doesn't match the target sector.
-      if (enriched.sectorMatch === false) {
-        yield emit("status", `Filtered (sector mismatch): ${raw.name} — ${enriched.sector || "wrong sector"}`);
-        continue;
-      }
-      if (enriched.sectorMatch === undefined) {
-        // Enrichment failed or returned ambiguous result — penalise heavily so
-        // these sort at the bottom and don't pollute high-confidence results.
-        enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
-      }
-
-      // ── Geographic validation ──────────────────────────────────────────────
-      // If target geographies are specified, only accept companies whose enriched
-      // country falls within the resolved country set. Unknown/null country is
-      // provisionally allowed but marked with reduced confidence.
-      if (!isCountryInScope(enriched.country, geoSet)) {
-        yield emit("status", `Filtered (out of region): ${raw.name} — ${enriched.country || "unknown country"}`);
-        continue;
-      }
-      if (!enriched.country && geoSet.size > 0) {
-        // Unknown country — penalise confidence so these sort below verified results
-        enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
-      }
-
-      if (!isValidCompanyName(raw.name)) {
-        yield emit("status", `Filtered (invalid name): ${raw.name}`);
-        continue;
-      }
-
-      // ── Confidence/tag consistency ──────────────────────────────────────────
-      // A company tagged "Direct" must have confidence ≥ 70%. If below, demote.
-      let finalRelevanceType = relevanceType;
-      const score = enriched.confidenceScore ?? 50;
-      if (finalRelevanceType === "Direct" && score < 70) {
-        finalRelevanceType = "Adjacent";
-      }
-      enriched.relevanceType = finalRelevanceType;
-
-      const companyId = await persistCompany(raw.name, enriched, intent, searchQueryId, sessionId);
-
-      const company: SearchSessionCompany = {
-        id: companyId ?? companyCounter,
-        name: raw.name,
-        sector: enriched.sector || sector,
-        country: enriched.country || null,
-        geography: enriched.geography || null,
-        revenue: enriched.revenue || null,
-        employees: enriched.employees || null,
-        website: enriched.website || null,
-        summary: enriched.summary || null,
-        latitude: null,
-        longitude: null,
-        relevanceType: finalRelevanceType,
-        relevanceRationale: enriched.relevanceRationale || `Relevant to ${sector}`,
-        confidenceScore: score,
-        isUserAccepted: false,
-        isUserRejected: false,
-      };
-
-      companies.push(company);
-      companyCounter++;
-
-      yield emit("company_enriched", `Enriched: ${raw.name}`, { company });
+  const flushEvents = function* (): Generator<ActivityEvent> {
+    while (pendingEvents.length > 0) {
+      yield pendingEvents.shift()!;
     }
   };
 
-  // If changedCriteria is specified (refinement mode), determine which passes to run.
-  // Any non-sector/geo criteria (commercialRole, revenue, employees, titleFocus, etc.)
-  // maps to the "filters" dimension — which triggers a fresh primary-sector search pass
-  // with the updated intent/filters applied. This ensures no refinement can ever be a no-op.
-  const SECTOR_CRITERIA = ["sectors", "primarySectors", "adjacentSectors", "inferredSectors"];
-  const GEO_CRITERIA = ["geographies", "targetGeographies", "geography"];
-  const FILTER_CRITERIA = ["filters", "commercialRole", "revenue", "employees", "titleFocus", "companySize", "other"];
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 1 — AI Seed List (fast, Claude's knowledge)
+  // ══════════════════════════════════════════════════════════════════════════
+  yield emit("status", "Phase 1: Generating company list from AI knowledge...");
 
-  let runSectors = true;
-  let runGeographies = true;
-  let runFilters = true;
+  const seedNames = await generateSeedList(intent, "Direct", Math.max(targetCount + 5, 25));
 
-  if (changedCriteria && changedCriteria.length > 0 && !changedCriteria.includes("all")) {
-    runSectors = changedCriteria.some(c => SECTOR_CRITERIA.includes(c));
-    runGeographies = changedCriteria.some(c => GEO_CRITERIA.includes(c));
-    // Any non-sector, non-geo criteria triggers a "filters" pass on primary sectors
-    const hasFilterCriteria = changedCriteria.some(c => FILTER_CRITERIA.includes(c) || (!SECTOR_CRITERIA.includes(c) && !GEO_CRITERIA.includes(c)));
-    runFilters = hasFilterCriteria;
-    // Safety: if nothing is set to run, fall back to running all primary sector passes
-    if (!runSectors && !runGeographies && !runFilters) {
-      runSectors = true;
-      runGeographies = true;
-      runFilters = true;
-    }
+  if (signal?.aborted) return;
+
+  yield emit("status", `AI identified ${seedNames.length} companies — enriching in parallel...`);
+
+  // Emit all seed names as "found" immediately so the UI shows skeletons
+  for (const name of seedNames) {
+    yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
   }
 
-  // ── Primary sector passes ────────────────────────────────────────────────
-  let primaryValid = 0;
-  if (runSectors || runGeographies || runFilters) {
-    for (const sector of intent.primarySectors) {
-      if (signal?.aborted) return;
-      const before = companies.length;
-      for await (const ev of searchAndEmit(sector, "Direct")) yield ev;
-      primaryValid += companies.length - before;
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 2 — Parallel Enrichment of seed list
+  // ══════════════════════════════════════════════════════════════════════════
+  const seedCompanies = await enrichBatch(
+    seedNames,
+    intent.primarySectors[0] || "",
+    intent,
+    "Direct",
+    geoSet,
+    seenKeys,
+    searchQueryId,
+    sessionId,
+    signal,
+    undefined,
+    (company) => {
+      pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company }));
+    },
+    (name, reason) => {
+      pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`));
+    },
+  );
 
-  // ── Adjacent sector passes — ALWAYS run to populate AI Suggested tab ─────
-  // Not gated by runSectors or primary count — AI Suggested is a core feature.
-  let adjacentValid = 0;
-  if (intent.adjacentSectors.length > 0) {
-    yield emit("status", `Searching ${intent.adjacentSectors.length} adjacent sectors...`);
-    for (const sector of intent.adjacentSectors) {
-      if (signal?.aborted) return;
-      yield emit("adjacent_sector_found", `Expanding to adjacent sector: ${sector}`, { sector });
-      const before = companies.length;
-      for await (const ev of searchAndEmit(sector, "Adjacent")) yield ev;
-      adjacentValid += companies.length - before;
-    }
-  }
+  companies.push(...seedCompanies);
+  yield* flushEvents();
 
-  // ── Inferred sector passes — ALWAYS run to populate AI Suggested tab ────
-  if ((intent.inferredSectors || []).length > 0) {
-    yield emit("status", `Searching ${(intent.inferredSectors || []).length} AI-inferred sectors...`);
-    for (const sector of (intent.inferredSectors || [])) {
-      if (signal?.aborted) return;
-      yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
-      for await (const ev of searchAndEmit(sector, "AI Inferred")) yield ev;
-    }
-  }
+  if (signal?.aborted) return;
 
-  // ── Expansion round (Fix 4) ────────────────────────────────────────────────
-  // If we have fewer companies than the user requested, run a second round
-  // with broader query terms to try to fill the gap.
+  yield emit("status", `Phase 1 complete: ${companies.length} companies validated`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 3 — Web Search Supplement (catches what Claude missed)
+  // ══════════════════════════════════════════════════════════════════════════
   if (companies.length < targetCount && !signal?.aborted) {
-    yield emit("status", `Found ${companies.length}/${targetCount} — running expansion searches...`);
-
-    const mainGeo = intent.targetGeographies[0] || "";
-    const role = intent.commercialRole && intent.commercialRole !== "any" ? intent.commercialRole : "";
-
-    const expansionQueries: string[] = [];
-    for (const sector of intent.primarySectors) {
-      expansionQueries.push(`"${sector}" "${mainGeo}" company directory`);
-      if (role) expansionQueries.push(`${sector} ${role} companies ${mainGeo} 2024`);
-      expansionQueries.push(`${sector} businesses ${mainGeo}`);
-      expansionQueries.push(`${sector} supply chain companies ${mainGeo}`);
-    }
+    yield emit("status", `Phase 3: Web search for additional companies (${companies.length}/${targetCount})...`);
 
     const serper = createSerperAdapter();
     if (serper) {
-      for (const q of expansionQueries) {
-        if (companies.length >= targetCount || signal?.aborted) break;
+      const mainGeo = intent.targetGeographies[0] || "";
+      const role = intent.commercialRole && intent.commercialRole !== "any" ? intent.commercialRole : "";
+      const webSearchNames: string[] = [];
+
+      const webQueries = generateSearchQueries(intent.primarySectors[0] || "", mainGeo, intent.commercialRole);
+      const supplementQueries = webQueries.slice(0, 3);
+
+      for (const q of supplementQueries) {
+        if (signal?.aborted) break;
         try {
           const result = await serper.searchWithAnswer(q, 10);
           for (const r of result.results.slice(0, 8)) {
-            if (companies.length >= targetCount) break;
-
             const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
             if (isListicle && isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
             const names = isListicle
@@ -834,67 +872,119 @@ export async function* runEnhancedSearchPipeline(
               name = cleanCompanyName(name);
               if (!name || name.length < 2) continue;
               if (!isValidCompanyName(name)) continue;
-              const key = normalizeCompanyKey(name, r.url);
-              if (seenKeys.has(key)) continue;
               const fuzzyKey = fuzzyCompanySlug(name);
               if (seenKeys.has(fuzzyKey)) continue;
-              seenKeys.add(key);
-              seenKeys.add(fuzzyKey);
-
-              if (companyCounter >= 50) break;
-
-              const enriched = await enrichCompany(name, intent.primarySectors[0] || "", intent.targetGeographies, intent, "Direct");
-
-              if (enriched.sectorMatch === false) continue;
-              if (enriched.sectorMatch === undefined) {
-                enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
-              }
-              if (!isCountryInScope(enriched.country, geoSet)) continue;
-              if (!enriched.country && geoSet.size > 0) {
-                enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
-              }
-
-              let expRelevanceType: "Direct" | "Adjacent" | "AI Inferred" = "Direct";
-              const expScore = enriched.confidenceScore ?? 50;
-              if (expRelevanceType === "Direct" && expScore < 70) {
-                expRelevanceType = "Adjacent";
-              }
-              enriched.relevanceType = expRelevanceType;
-
-              const companyId = await persistCompany(name, enriched, intent, searchQueryId, sessionId);
-
-              const company: SearchSessionCompany = {
-                id: companyId ?? companyCounter,
-                name,
-                sector: enriched.sector || intent.primarySectors[0] || "",
-                country: enriched.country || null,
-                geography: enriched.geography || null,
-                revenue: enriched.revenue || null,
-                employees: enriched.employees || null,
-                website: enriched.website || null,
-                summary: enriched.summary || null,
-                latitude: null,
-                longitude: null,
-                relevanceType: expRelevanceType,
-                relevanceRationale: enriched.relevanceRationale || "Found in expansion search",
-                confidenceScore: expScore,
-                isUserAccepted: false,
-                isUserRejected: false,
-              };
-
-              companies.push(company);
-              companyCounter++;
-              yield emit("company_enriched", `Enriched: ${name}`, { company });
+              webSearchNames.push(name);
             }
           }
         } catch (err) {
-          console.warn(`[EnhancedPipeline] Expansion search failed for "${q}":`, err);
+          console.warn(`[Pipeline] Web search failed for "${q}":`, err);
         }
+      }
+
+      if (webSearchNames.length > 0 && !signal?.aborted) {
+        const uniqueWebNames = Array.from(new Set(webSearchNames));
+        yield emit("status", `Found ${uniqueWebNames.length} additional candidates from web — enriching...`);
+
+        for (const name of uniqueWebNames) {
+          yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
+        }
+
+        const webCompanies = await enrichBatch(
+          uniqueWebNames,
+          intent.primarySectors[0] || "",
+          intent,
+          "Direct",
+          geoSet,
+          seenKeys,
+          searchQueryId,
+          sessionId,
+          signal,
+          undefined,
+          (company) => {
+            pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company }));
+          },
+          (name, reason) => {
+            pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`));
+          },
+        );
+
+        companies.push(...webCompanies);
+        yield* flushEvents();
       }
     }
   }
 
-  // Mark session complete
+  if (signal?.aborted) return;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 3b — Adjacent & Inferred Sectors (for AI Suggested tab)
+  // ══════════════════════════════════════════════════════════════════════════
+  const adjacentSectors = intent.adjacentSectors || [];
+  const inferredSectors = intent.inferredSectors || [];
+  const aiSuggestedSectors = [...adjacentSectors, ...inferredSectors];
+
+  if (aiSuggestedSectors.length > 0 && !signal?.aborted) {
+    yield emit("status", `Exploring ${aiSuggestedSectors.length} adjacent/inferred sectors...`);
+
+    for (const sector of adjacentSectors) {
+      if (signal?.aborted) break;
+      const relType: "Adjacent" | "AI Inferred" = "Adjacent";
+      yield emit("adjacent_sector_found", `Adjacent sector: ${sector}`, { sector });
+
+      const sectorSeedNames = await generateSeedList(
+        { ...intent, primarySectors: [sector] } as InferredIntent,
+        relType,
+        10,
+      );
+
+      if (sectorSeedNames.length > 0 && !signal?.aborted) {
+        for (const name of sectorSeedNames) {
+          yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector, relevanceType: relType });
+        }
+
+        const sectorCompanies = await enrichBatch(
+          sectorSeedNames, sector, intent, relType,
+          geoSet, seenKeys, searchQueryId, sessionId, signal,
+          undefined,
+          (company) => { pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company })); },
+          (name, reason) => { pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`)); },
+        );
+        companies.push(...sectorCompanies);
+        yield* flushEvents();
+      }
+    }
+
+    for (const sector of inferredSectors) {
+      if (signal?.aborted) break;
+      const relType: "Adjacent" | "AI Inferred" = "AI Inferred";
+      yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
+
+      const sectorSeedNames = await generateSeedList(
+        { ...intent, primarySectors: [sector] } as InferredIntent,
+        relType,
+        8,
+      );
+
+      if (sectorSeedNames.length > 0 && !signal?.aborted) {
+        for (const name of sectorSeedNames) {
+          yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector, relevanceType: relType });
+        }
+
+        const sectorCompanies = await enrichBatch(
+          sectorSeedNames, sector, intent, relType,
+          geoSet, seenKeys, searchQueryId, sessionId, signal,
+          undefined,
+          (company) => { pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company })); },
+          (name, reason) => { pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`)); },
+        );
+        companies.push(...sectorCompanies);
+        yield* flushEvents();
+      }
+    }
+  }
+
+  // ── Mark complete ──────────────────────────────────────────────────────────
   try {
     await storage.updateSearchSession(sessionId, { status: "complete" });
   } catch (completionErr) {

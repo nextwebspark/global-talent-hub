@@ -1,0 +1,184 @@
+Here it is. Paste this entire prompt into Replit as a single instruction.
+
+REPLIT PROMPT — Enhanced AI Search & Talent Mapping Intelligence
+
+You are working on an existing Talent Mapping application built with React 19 + TypeScript (Vite, Tailwind CSS, Radix UI/shadcn, Wouter, TanStack Query, Zustand, Framer Motion) on the frontend, and Node.js + Express (TypeScript, tsx) with PostgreSQL via Drizzle ORM on the backend. The AI pipeline uses both OpenAI and Anthropic SDKs. Everything shares types via shared/schema.ts.
+You are going to completely replace the existing search page and its underlying pipeline with a significantly more intelligent, high-value system. Do not break any other part of the application. Work through this systematically — schema first, then backend, then frontend.
+
+PART 1 — DATABASE SCHEMA CHANGES (shared/schema.ts and migration)
+Extend the existing schema with the following. Do not delete existing tables — only add new columns and tables.
+On the existing search results / company table, add these columns if they do not already exist:
+
+relevanceType — enum: 'direct' | 'adjacent' | 'inferred'
+relevanceRationale — text: one sentence explaining why this company was included
+confidenceScore — integer 1–100
+sector — text
+subSector — text
+geography — text (country or region)
+companySize — text (e.g. "500–5,000 employees")
+revenueRange — text
+isUserAccepted — boolean, default false
+isUserRejected — boolean, default false
+searchSessionId — foreign key to a new searchSessions table
+
+Create a new searchSessions table with:
+
+id, userId, createdAt, updatedAt
+rawQuery — the original text the user typed
+pdContent — nullable text (extracted text from uploaded PD document)
+inferredIntent — JSON object (see structure below)
+status — enum: 'running' | 'complete' | 'failed'
+refinementHistory — JSON array of refinement messages
+
+The inferredIntent JSON object must follow this structure exactly:
+ts{
+  primarySectors: string[],
+  adjacentSectors: string[],
+  inferredSectors: string[],
+  targetGeographies: string[],
+  companySizeRange: string,
+  seniorityLevel: string,
+  roleFunction: string,
+  keyResponsibilities: string[],
+  exclusions: string[],
+  searchRationale: string, // 2–3 sentence explanation of what the AI understood
+  confidenceInInterpretation: number // 1–100
+}
+Run the Drizzle migration after making these changes.
+
+PART 2 — BACKEND AI PIPELINE (server-side)
+Replace the existing search pipeline with the following multi-step streaming pipeline. The pipeline must emit Server-Sent Events (SSE) so the frontend receives live progress updates at every step. Each SSE event has a type field and a data payload.
+SSE event types to emit:
+
+intent_extracted — emitted after step 1, payload is the full inferredIntent object
+company_found — emitted each time a single company is discovered, payload is a partial company object
+company_enriched — emitted when a company's metadata is filled in (sector, size, rationale, confidence), payload is the enriched company object
+adjacent_sector_found — emitted when an adjacent or inferred sector search begins, payload includes sector name and rationale for why it was included
+executive_found — emitted when a senior executive is found at a discovered company
+refinement_applied — emitted when the user sends a refinement message and the AI re-interprets
+search_complete — emitted when all steps are done, payload includes summary stats
+error — emitted on any failure with a message
+
+The pipeline must execute in this order:
+Step 1 — Deep Intent Extraction
+Use Claude (claude-opus-4-5 or best available Anthropic model) for this step. It is the most important step.
+Send the user's raw query AND any uploaded PD content to Claude with this system prompt logic:
+You are an expert Talent Acquisition research analyst with deep knowledge of global industries, sectors, and executive talent markets. Your job is to deeply understand what a TA professional is looking for when they submit a search query or position description.
+Analyse the input and extract a structured intent object. Be highly specific about sectors — do not use vague terms like "technology." Say "B2B SaaS — Supply Chain Software" or "FMCG Distribution — GCC Region" instead.
+For adjacentSectors, think like a senior headhunter: which other industries have deep concentrations of people with the same skills, responsibilities, and commercial experience? Always provide 3–5 adjacent sectors with a one-line rationale for each.
+For inferredSectors, go one level further — what non-obvious sectors might contain the right talent profile? These are the "out of the box" additions a great researcher would suggest.
+If a company name is present in the query or PD, identify its exact industry and use that as the anchor for all sector inference.
+If the document is confidential (no company name), infer sector from the specific responsibilities, KPIs, reporting lines, and commercial context described.
+Return only valid JSON matching the inferredIntent schema. No preamble, no explanation outside the JSON.
+Emit intent_extracted SSE event with the result.
+Step 2 — Primary Company Search
+Use the existing Serper web search integration. Run searches for companies in primarySectors × targetGeographies. For each company discovered, immediately emit a company_found SSE event so the frontend can display it in real time. Do not wait for all companies to be found before emitting.
+Step 3 — Company Enrichment
+Use OpenAI (gpt-4o) for this step. For each discovered company, extract and enrich: sector, sub-sector, geography, company size, revenue range, relevance type, confidence score, and a one-line relevance rationale. Emit company_enriched for each company as it completes.
+Step 4 — Adjacent and Inferred Sector Search
+Repeat Step 2 and Step 3 for adjacentSectors and inferredSectors. Tag all results with their relevanceType (adjacent or inferred). Emit adjacent_sector_found before beginning each new sector search so the user can see the AI expanding its thinking.
+Step 5 — Executive Search
+For the top companies by confidence score (limit 20 to manage performance), run executive extraction. Use the existing executive search logic but ensure results are tagged to their parent company and search session. Emit executive_found for each result.
+Step 6 — Deduplication, Validation and Persistence
+Deduplicate companies by name and domain. Validate against the original inferredIntent. Save everything to the database under the searchSessionId. Emit search_complete.
+Refinement endpoint:
+Create a separate POST /api/search/refine endpoint that accepts { sessionId, refinementMessage }. It passes the refinement message plus the existing inferredIntent to Claude, produces an updated inferredIntent, appends the message to refinementHistory, and triggers a new targeted search pass for only the changed criteria. Stream results back via SSE in the same format.
+PD Upload endpoint:
+Create POST /api/search/upload-pd that accepts multipart form data. Support PDF (use pdf-parse), DOCX (use mammoth), and plain text. Extract the full text, store it in the session as pdContent, and return the extracted text to the frontend for confirmation display. Do not run the search yet — wait for the user to confirm and submit.
+
+PART 3 — FRONTEND (replace the existing search page entirely)
+Replace the current search page with a new full-page experience. The design must feel premium, intelligent and purposeful — not like a standard search bar. Use the existing Tailwind, Radix UI, Framer Motion, and TanStack Query setup throughout.
+The page has three distinct states:
+
+STATE 1 — INPUT STATE (before search is submitted)
+Layout: Centred, generous whitespace. This should feel like the start of a strategic conversation, not a Google search box.
+Components:
+
+A headline that reads: "Map your talent market" with a subtle subtitle: "Describe what you're looking for — a role, a sector, a geography, or a mix of all three."
+A large, multi-line text input (not a single-line search bar). Placeholder text: "e.g. Top FMCG distribution companies in the UAE and Saudi Arabia, focusing on commercial leadership talent"
+A PD Upload zone below the text input — a clean drag-and-drop area labelled: "Optional: Upload a Position Description" with sub-label "PDF, Word, or paste text — the AI will extract context automatically." Support drag-and-drop and click-to-browse. On upload, show a loading state, then display the extracted text in a collapsible preview panel so the user can confirm it was read correctly. Include a toggle: "This document is confidential (hide company name from search)" — when toggled on, instruct the backend to infer sector from responsibilities only.
+A "Begin Mapping" primary button (full width on mobile, fixed width on desktop). Disabled until either the text input has content or a PD has been uploaded.
+Below the button, a small row of example prompts as clickable chips: "Senior Finance leaders — GCC region", "Top logistics companies — Southeast Asia", "FMCG to retail crossover talent — UK". Clicking a chip populates the text input.
+
+
+STATE 2 — LIVE SEARCH STATE (after submission, while streaming)
+This is the most important state. It must feel like watching an intelligent analyst work in real time.
+Layout: Split into two columns on desktop (60/40 split). Single column stack on mobile.
+Left column — "Search Intelligence Panel" (40% width):
+This panel shows the AI's thinking process live as SSE events arrive.
+
+At the top, display the Intent Summary Card — populated immediately when intent_extracted fires. Show: primary sectors (as coloured tags), target geographies (as flag + text chips), seniority level, role function, and the searchRationale paragraph in italics. Include a small confidence badge (e.g. "87% confidence in interpretation"). This card is the AI explaining what it understood — it builds trust immediately.
+Below the Intent Summary Card, a Live Activity Feed — a vertically scrolling list of activity events. Each event appears with a subtle slide-in animation (Framer Motion). Event types have distinct icons and colours:
+
+🔍 Searching [sector] in [geography]...
+🏢 Found: [Company Name]
+✨ Enriched: [Company Name] — [one-line rationale]
+🌐 Expanding search to adjacent sector: [Sector Name] — [rationale]
+👤 Executive found: [Name] at [Company]
+✅ Search complete — [X] companies, [Y] executives found
+
+
+At the bottom of this panel, a Refinement Input — a text box labelled: "Refine your search..." with placeholder "e.g. Exclude family-owned businesses" or "Focus only on companies 500–5,000 employees". This is active during and after the search. Submitting sends to the /api/search/refine endpoint and the activity feed continues.
+
+Right column — "Results Panel" (60% width):
+Companies appear here in real time as company_found and company_enriched events arrive. Each company card animates in (Framer Motion slide-up).
+The results panel has two tabs at the top:
+
+"Core Companies" — results from primarySectors (relevanceType: direct)
+"AI Suggested" — results from adjacentSectors and inferredSectors (relevanceType: adjacent or inferred)
+
+Each company card must display:
+
+Company name and geography flag
+Sector + sub-sector tags
+Company size and revenue range (when enriched, shown as skeleton loaders before data arrives)
+A relevance badge: "Direct Match" (green), "Adjacent Sector" (blue), "AI Inferred" (purple)
+Confidence score as a subtle progress bar or numeric badge
+The one-line relevance rationale in small italic text beneath the company name
+A toggle switch (large, obvious, satisfying to interact with) — OFF by default. Label: "Add to Project". When toggled ON, the card highlights with a green border and the company is marked isUserAccepted: true in the database.
+A small "✕ Exclude" button that marks the company isUserRejected: true and removes it from view with an animation.
+
+A sticky bar at the top of the results panel shows a live count: "[X] companies selected" with a primary CTA button: "Add Selected to Project →". This button is disabled until at least one company is toggled on. When clicked, it saves all accepted companies to the project and transitions to State 3.
+Also show an executive sub-section within each company card (collapsed by default, expandable) that lists executives found at that company with their title.
+
+STATE 3 — COMPLETION STATE
+After the user clicks "Add Selected to Project", show a clean completion screen:
+
+Summary: "X companies and Y executives added to your project"
+A breakdown by relevance type: "Z direct matches, A adjacent sector finds, B AI-inferred additions"
+Two CTA buttons: "View Project" (primary) and "Refine & Search Again" (secondary, which resets to State 1 with the current session preserved)
+A small insight card: the AI's searchRationale shown as a takeaway — "Your search suggests you are mapping commercial leadership talent at the intersection of FMCG distribution and modern trade. The 3 adjacent sectors added represent companies where this profile is common but less obvious." This makes the TA user feel like they had a research analyst working with them.
+
+
+PART 4 — STATE MANAGEMENT
+Use Zustand to manage the search session state globally:
+ts{
+  sessionId: string | null,
+  status: 'idle' | 'running' | 'complete' | 'failed',
+  inferredIntent: InferredIntent | null,
+  companies: EnrichedCompany[],
+  executives: Executive[],
+  activityFeed: ActivityEvent[],
+  selectedCompanyIds: Set<string>,
+  refinementHistory: string[],
+  pdContent: string | null,
+  pdConfidential: boolean
+}
+The SSE stream must update Zustand state directly as events arrive. Use a custom hook useSearchStream(sessionId) that opens the EventSource connection and dispatches updates to the store.
+
+PART 5 — IMPORTANT IMPLEMENTATION NOTES
+
+Do not use any <form> HTML elements. Use onClick and onChange handlers throughout.
+All new DB columns and tables must be added via Drizzle schema changes and a migration — do not use raw SQL directly.
+The SSE endpoint must handle client disconnection gracefully — abort the pipeline if the client disconnects.
+All TypeScript types for the new structures (InferredIntent, EnrichedCompany, ActivityEvent, SearchSession) must be defined in shared/schema.ts and imported on both client and server — never duplicated.
+Skeleton loaders must be used for all company card fields that are pending enrichment — do not show empty fields.
+The Refinement Input must be debounced (300ms) and only submit on Enter key or button click — not on every keystroke.
+The PD upload must show clear error states for unsupported file types and files over 10MB.
+On mobile, the split layout collapses to a tabbed interface: "Search Intelligence" tab and "Results" tab.
+Use Framer Motion AnimatePresence for all card entry and exit animations. Keep animations under 300ms — purposeful not decorative.
+The existing Ctrl+K command palette for navigating loaded companies and executives must remain functional and unchanged.
+Preserve all existing authentication, routing, and project management functionality. This change only affects the search page and its pipeline.
+
+
+Begin with Part 1 (schema), confirm the migration runs cleanly, then proceed to Part 2, then Part 3. Do not proceed to the next part until the current part compiles without errors.

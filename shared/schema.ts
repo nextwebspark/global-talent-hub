@@ -3,6 +3,69 @@ import { pgTable, serial, integer, text, varchar, timestamp, numeric, boolean, j
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// ─── Enhanced Search Types ────────────────────────────────────────────────────
+
+export interface InferredIntent {
+  primarySectors: string[];
+  adjacentSectors: string[];
+  inferredSectors: string[];
+  targetGeographies: string[];
+  commercialRole: string;
+  companySize?: string;
+  revenueRange?: string;
+  searchRationale: string;
+  confidenceScore: number;
+  keyInclusions: string[];
+  keyExclusions: string[];
+  refinementSummary?: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  type: 'intent_extracted' | 'company_found' | 'company_enriched' | 'adjacent_sector_found' | 'executive_found' | 'search_complete' | 'error' | 'status' | 'refinement_started';
+  message: string;
+  timestamp: Date;
+  data?: any;
+}
+
+export interface SearchSessionCompany {
+  id: number;
+  name: string;
+  sector: string | null;
+  country: string | null;
+  geography: string | null;
+  revenue: string | null;
+  employees: number | null;
+  website: string | null;
+  summary: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  relevanceType: 'Direct' | 'Adjacent' | 'AI Inferred';
+  relevanceRationale: string;
+  confidenceScore: number;
+  isUserAccepted: boolean;
+  isUserRejected: boolean;
+  executives?: Array<{ name: string; title: string }>;
+}
+
+// Alias used by the enhanced search pipeline to represent a GPT-4o enriched company result
+export type EnrichedCompany = SearchSessionCompany;
+
+export interface SearchSession {
+  id: string;
+  rawQuery: string;
+  pdContent?: string;
+  pdConfidential?: boolean;
+  inferredIntent?: InferredIntent;
+  companies: SearchSessionCompany[];
+  activityFeed: ActivityEvent[];
+  status: 'pending' | 'searching' | 'complete' | 'error';
+  searchQueryId?: number;
+  userId?: string;
+  refinementHistory: Array<{ message: string; timestamp: Date }>;
+  createdAt: Date;
+}
+
 export const pipelineLog = pgTable("pipeline_log", {
   id: serial("id").primaryKey(),
   companyName: text("company_name").notNull(),
@@ -66,6 +129,30 @@ export const companies = pgTable("companies", {
   manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
   dataProvenance: jsonb("data_provenance").default(sql`'{}'::jsonb`),
   searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
+  relevanceType: text("relevance_type"),
+  relevanceRationale: text("relevance_rationale"),
+  confidenceScore: integer("confidence_score"),
+  subSector: text("sub_sector"),
+  companySize: text("company_size"),
+  revenueRange: text("revenue_range"),
+  isUserAccepted: boolean("is_user_accepted").default(false),
+  isUserRejected: boolean("is_user_rejected").default(false),
+  geography: text("geography"),
+  searchSessionId: text("search_session_id").references(() => searchSessions.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const searchSessions = pgTable("search_sessions", {
+  id: text("id").primaryKey(),
+  rawQuery: text("raw_query").notNull(),
+  pdContent: text("pd_content"),
+  pdConfidential: boolean("pd_confidential").default(false),
+  inferredIntent: jsonb("inferred_intent"),
+  status: text("status").default("pending").notNull(),
+  searchQueryId: integer("search_query_id").references(() => searchQueries.id, { onDelete: "set null" }),
+  refinementHistory: jsonb("refinement_history").default(sql`'[]'::jsonb`),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -306,3 +393,11 @@ export type InsertCompanyNotes = z.infer<typeof insertCompanyNotesSchema>;
 export type InsertExecutiveNotes = z.infer<typeof insertExecutiveNotesSchema>;
 export type PipelineLog = typeof pipelineLog.$inferSelect;
 export type InsertPipelineLog = z.infer<typeof insertPipelineLogSchema>;
+
+export const insertSearchSessionSchema = createInsertSchema(searchSessions).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type SearchSessionRecord = typeof searchSessions.$inferSelect;
+export type InsertSearchSession = z.infer<typeof insertSearchSessionSchema>;

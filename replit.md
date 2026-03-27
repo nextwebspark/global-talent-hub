@@ -45,7 +45,15 @@ Companies are classified using a 2-level taxonomy stored in `sector` (specific s
 - All inference is done via OpenRouter (`anthropic/claude-sonnet-4`). `normalizeOrInferSector()` validates and fills both fields at every creation point. Sector PATCH auto-computes category server-side.
 
 ### Data Storage
-PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, `messages`, and `pipeline_log`.
+PostgreSQL is the primary database, managed with Drizzle ORM and drizzle-zod for schema validation. Key tables include `users`, `companies`, `executives`, `searchQueries`, `conversations`, `messages`, `pipeline_log`, and `search_sessions` (Enhanced AI Search sessions).
+
+### Enhanced AI Search System (Task #18)
+A premium three-state streaming search system on the Landing page:
+- **State 1 (Input)**: Search text area with PD (Position Description) file upload (PDF/DOCX/TXT via `/api/search/upload-pd`), mode tabs, and `⌘Enter` shortcut.
+- **State 2 (Live)**: Split-panel — left shows real-time activity feed (SSE events via `/api/search/enhanced-stream`), right shows company cards appearing progressively. Intent is extracted via Claude Opus 4.5; companies discovered via Serper search per sector + GPT-4o enrichment via OpenRouter.
+- **State 3 (Complete)**: Summary with tab-filtered company grid (Core / AI Suggested), accept/reject per company card, refinement input (POST `/api/search/refine` with re-extraction), and save-to-project CTA.
+
+Key files: `server/services/pipeline/enhancedSearchPipeline.ts` (AsyncGenerator pipeline), routes at `/api/search/upload-pd`, `/api/search/enhanced-stream`, `/api/search/refine`, `/api/search/add-to-project`. Frontend: `client/src/pages/Landing.tsx` (all three states). Schema additions: `search_sessions` table, `relevanceType`, `relevanceRationale`, `confidenceScore`, `searchSessionId` columns on companies. TypeScript types: `InferredIntent`, `ActivityEvent`, `SearchSessionCompany` in `shared/schema.ts`.
 
 ### Satellite Hierarchy Persistence
 Executive satellite parent-child hierarchies (created by drag-and-drop on the map) are stored in the `satellite_hierarchies` JSONB column on `search_queries`. The structure is `{companyId: {childExecId: parentExecId}}`. Changes are auto-saved to the backend with a 1-second debounce (via a Zustand subscription in Dashboard.tsx). Hierarchies are restored when loading a previous search via `loadFromAPI(results, data.satelliteHierarchies)`. The `loadFromAPI` function preserves existing hierarchies when called without the second argument (e.g., during data refreshes).

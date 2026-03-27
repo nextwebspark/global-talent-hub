@@ -11,6 +11,7 @@ import {
   executiveNotes,
   companyNotes,
   pipelineLog,
+  searchSessions,
   type InsertUser,
   type User,
   type Company,
@@ -133,6 +134,11 @@ export interface IStorage {
     remuneration: Remuneration[];
     notes: ExecutiveNotes | undefined;
   } | null>;
+
+  // Search Sessions
+  createSearchSession(session: { id: string; rawQuery: string; pdContent?: string; pdConfidential?: boolean; userId?: string }): Promise<void>;
+  updateSearchSession(id: string, data: { status?: string; inferredIntent?: any; searchQueryId?: number; refinementHistory?: any[]; pdContent?: string; pdConfidential?: boolean }): Promise<void>;
+  getSearchSession(id: string): Promise<{ id: string; rawQuery: string; pdContent: string | null; pdConfidential: boolean; inferredIntent: any; status: string; searchQueryId: number | null; refinementHistory: any[] } | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1098,6 +1104,57 @@ export class DatabaseStorage implements IStorage {
       .where(eq(searchResults.id, id))
       .returning();
     return updated;
+  }
+
+  async createSearchSession(session: { id: string; rawQuery: string; pdContent?: string; pdConfidential?: boolean; userId?: string }): Promise<void> {
+    await db.insert(searchSessions).values({
+      id: session.id,
+      rawQuery: session.rawQuery,
+      pdContent: session.pdContent || null,
+      pdConfidential: session.pdConfidential ?? false,
+      status: 'pending',
+      refinementHistory: sql`'[]'::jsonb`,
+      userId: session.userId || null,
+    }).onConflictDoUpdate({
+      target: searchSessions.id,
+      set: {
+        // Refresh rawQuery if incoming value is non-empty (session may be pre-created by PD upload)
+        rawQuery: sql`CASE WHEN EXCLUDED.raw_query IS NOT NULL AND EXCLUDED.raw_query != '' THEN EXCLUDED.raw_query ELSE search_sessions.raw_query END`,
+        // Only update pdContent if the incoming value is non-null (don't overwrite existing)
+        pdContent: sql`COALESCE(EXCLUDED.pd_content, search_sessions.pd_content)`,
+        // Never downgrade pdConfidential: if existing row has true, keep it
+        pdConfidential: sql`CASE WHEN search_sessions.pd_confidential = true THEN true ELSE COALESCE(EXCLUDED.pd_confidential, search_sessions.pd_confidential) END`,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  async updateSearchSession(id: string, data: { status?: string; inferredIntent?: any; searchQueryId?: number; refinementHistory?: any[]; pdContent?: string; pdConfidential?: boolean }): Promise<void> {
+    const updates: Record<string, any> = {
+      updatedAt: new Date(),
+    };
+    if (data.status !== undefined) updates.status = data.status;
+    if (data.inferredIntent !== undefined) updates.inferredIntent = data.inferredIntent;
+    if (data.searchQueryId !== undefined) updates.searchQueryId = data.searchQueryId;
+    if (data.refinementHistory !== undefined) updates.refinementHistory = data.refinementHistory;
+    if (data.pdContent !== undefined) updates.pdContent = data.pdContent;
+    if (data.pdConfidential !== undefined) updates.pdConfidential = data.pdConfidential;
+    await db.update(searchSessions).set(updates).where(eq(searchSessions.id, id));
+  }
+
+  async getSearchSession(id: string): Promise<{ id: string; rawQuery: string; pdContent: string | null; pdConfidential: boolean; inferredIntent: any; status: string; searchQueryId: number | null; refinementHistory: any[] } | undefined> {
+    const [row] = await db.select().from(searchSessions).where(eq(searchSessions.id, id));
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      rawQuery: row.rawQuery,
+      pdContent: row.pdContent ?? null,
+      pdConfidential: row.pdConfidential ?? false,
+      inferredIntent: row.inferredIntent,
+      status: row.status,
+      searchQueryId: row.searchQueryId || null,
+      refinementHistory: (row.refinementHistory as any[]) || [],
+    };
   }
 }
 

@@ -1,6 +1,68 @@
 import { create } from 'zustand';
 import type { Company as APICompany, Executive as APIExecutive } from './api';
 import { normalizeCountryName } from './countries';
+import type { InferredIntent, ActivityEvent } from '@shared/schema';
+
+// ─── Search Session Types ─────────────────────────────────────────────────────
+export type SearchStreamPhase = 'input' | 'streaming' | 'complete';
+
+export interface StreamCompany {
+  id: number;
+  name: string;
+  sector: string | null;
+  country: string | null;
+  geography: string | null;
+  revenue: string | null;
+  employees: number | null;
+  website: string | null;
+  summary: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  relevanceType: 'Direct' | 'Adjacent' | 'AI Inferred';
+  relevanceRationale: string;
+  confidenceScore: number;
+  isUserAccepted: boolean;
+  isUserRejected: boolean;
+  executives?: Array<{ name: string; title: string }>;
+  accepted: boolean;
+  rejected: boolean;
+}
+
+export interface SearchSessionState {
+  searchPhase: SearchStreamPhase;
+  searchSessionId: string | null;
+  searchIntent: InferredIntent | null;
+  searchActivities: ActivityEvent[];
+  searchCompanies: StreamCompany[];
+  pendingCompanyNames: string[];  // company_found names awaiting enrichment (skeleton cards)
+  searchQueryId: number | null;
+  selectedSearchCompanyIds: Set<number>;
+  searchRefinementHistory: Array<{ message: string; timestamp: string }>;
+  searchPdContent: string | null;
+  searchPdConfidential: boolean;
+  isSearchStreaming: boolean;
+  isSearchRefining: boolean;
+}
+
+export interface SearchSessionActions {
+  setSearchPhase: (phase: SearchStreamPhase) => void;
+  setSearchSessionId: (id: string | null) => void;
+  setSearchIntent: (intent: InferredIntent | null) => void;
+  addSearchActivity: (item: ActivityEvent) => void;
+  addPendingCompanyName: (name: string) => void;
+  removePendingCompanyName: (name: string) => void;
+  clearPendingCompanyNames: () => void;
+  addSearchCompany: (company: StreamCompany) => void;
+  addExecutiveToCompany: (companyId: number, executive: { name: string; title: string }) => void;
+  acceptSearchCompany: (id: number) => void;
+  rejectSearchCompany: (id: number) => void;
+  setSearchQueryId: (id: number | null) => void;
+  setIsSearchStreaming: (v: boolean) => void;
+  setIsSearchRefining: (v: boolean) => void;
+  addSearchRefinement: (entry: { message: string; timestamp: string }) => void;
+  setSearchPdContent: (content: string | null, confidential?: boolean) => void;
+  resetSearchSession: () => void;
+}
 
 async function persistCompanyUpdate(id: string, updates: Partial<any>): Promise<void> {
   try {
@@ -221,7 +283,7 @@ export interface ExecutiveDetails {
 
 export type DiscoveryStatus = 'complete' | 'partial' | 'degraded';
 
-interface AppState {
+interface AppState extends SearchSessionState, SearchSessionActions {
   currentProject: Project | null;
   companies: Company[];
   executives: Executive[];
@@ -472,6 +534,86 @@ export function transformAPIExecutive(apiExec: APIExecutive, companyId: string):
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  // ─── Search Session State ───────────────────────────────────────────────────
+  searchPhase: 'input',
+  searchSessionId: null,
+  searchIntent: null,
+  searchActivities: [],
+  searchCompanies: [],
+  pendingCompanyNames: [],
+  searchQueryId: null,
+  selectedSearchCompanyIds: new Set<number>(),
+  searchRefinementHistory: [],
+  searchPdContent: null,
+  searchPdConfidential: false,
+  isSearchStreaming: false,
+  isSearchRefining: false,
+
+  setSearchPhase: (phase) => set({ searchPhase: phase }),
+  setSearchSessionId: (id) => set({ searchSessionId: id }),
+  setSearchIntent: (intent) => set({ searchIntent: intent }),
+  addSearchActivity: (item) => set((state) => ({
+    searchActivities: [...state.searchActivities.slice(-150), item],
+  })),
+  addPendingCompanyName: (name) => set((state) => ({
+    pendingCompanyNames: [...state.pendingCompanyNames, name],
+  })),
+  removePendingCompanyName: (name) => set((state) => ({
+    pendingCompanyNames: state.pendingCompanyNames.filter(n => n !== name),
+  })),
+  clearPendingCompanyNames: () => set({ pendingCompanyNames: [] }),
+  addSearchCompany: (company) => set((state) => {
+    if (state.searchCompanies.some(c => c.id === company.id)) return {};
+    // Remove matching pending skeleton when enriched company arrives
+    const pendingCompanyNames = state.pendingCompanyNames.filter(
+      n => n.toLowerCase() !== company.name.toLowerCase()
+    );
+    return { searchCompanies: [...state.searchCompanies, company], pendingCompanyNames };
+  }),
+  addExecutiveToCompany: (companyId, executive) => set((state) => ({
+    searchCompanies: state.searchCompanies.map(c => {
+      if (c.id !== companyId) return c;
+      const existing = c.executives || [];
+      if (existing.some(e => e.name === executive.name)) return c;
+      return { ...c, executives: [...existing, executive] };
+    }),
+  })),
+  acceptSearchCompany: (id) => set((state) => ({
+    searchCompanies: state.searchCompanies.map(c => c.id === id ? { ...c, accepted: true, rejected: false } : c),
+    selectedSearchCompanyIds: new Set(Array.from(state.selectedSearchCompanyIds).concat(id)),
+  })),
+  rejectSearchCompany: (id) => set((state) => {
+    const next = new Set(Array.from(state.selectedSearchCompanyIds));
+    next.delete(id);
+    return {
+      searchCompanies: state.searchCompanies.map(c => c.id === id ? { ...c, rejected: true, accepted: false } : c),
+      selectedSearchCompanyIds: next,
+    };
+  }),
+  setSearchQueryId: (id) => set({ searchQueryId: id }),
+  setIsSearchStreaming: (v) => set({ isSearchStreaming: v }),
+  setIsSearchRefining: (v) => set({ isSearchRefining: v }),
+  addSearchRefinement: (entry) => set((state) => ({
+    searchRefinementHistory: [...state.searchRefinementHistory, entry],
+  })),
+  setSearchPdContent: (content, confidential = false) => set({ searchPdContent: content, searchPdConfidential: confidential }),
+  resetSearchSession: () => set({
+    searchPhase: 'input',
+    searchSessionId: null,
+    searchIntent: null,
+    searchActivities: [],
+    searchCompanies: [],
+    pendingCompanyNames: [],
+    searchQueryId: null,
+    selectedSearchCompanyIds: new Set<number>(),
+    searchRefinementHistory: [],
+    searchPdContent: null,
+    searchPdConfidential: false,
+    isSearchStreaming: false,
+    isSearchRefining: false,
+  }),
+
+  // ─── Legacy State ───────────────────────────────────────────────────────────
   currentProject: null,
   companies: [],
   executives: [],

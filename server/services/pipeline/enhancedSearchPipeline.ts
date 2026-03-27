@@ -586,36 +586,70 @@ async function persistCompany(
 }
 
 // ─── Phase 1: Claude Seed List Generation ─────────────────────────────────
+function parseJsonArray(content: string): string[] {
+  let cleaned = content.trim();
+  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) cleaned = jsonMatch[1].trim();
+  const arrStart = cleaned.indexOf("[");
+  const arrEnd = cleaned.lastIndexOf("]");
+  if (arrStart !== -1 && arrEnd !== -1) cleaned = cleaned.substring(arrStart, arrEnd + 1);
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) return parsed.filter((n: unknown) => typeof n === "string" && n.length > 1);
+  } catch { /* ignore */ }
+  return [];
+}
+
 async function generateSeedList(
   intent: InferredIntent,
+  sectorOverride: string | null,
   relevanceType: "Direct" | "Adjacent" | "AI Inferred",
   count: number = 25,
+  excludeNames?: string[],
 ): Promise<string[]> {
-  const sectors = relevanceType === "Direct"
-    ? intent.primarySectors
-    : relevanceType === "Adjacent"
-      ? intent.adjacentSectors
-      : (intent.inferredSectors || []);
-
-  const sectorStr = sectors.join(", ");
-  if (!sectorStr) return [];
+  const sector = sectorOverride || intent.primarySectors[0] || "";
+  if (!sector) return [];
 
   const geoStr = intent.targetGeographies.join(", ") || "globally";
-  const role = intent.commercialRole && intent.commercialRole !== "any"
-    ? intent.commercialRole
-    : "companies";
+  const hasRole = intent.commercialRole && intent.commercialRole !== "any";
+  const role = hasRole ? intent.commercialRole! : "";
 
-  const prompt = `List the most well-known and significant ${role} in ${sectorStr} operating in ${geoStr}.
+  let prompt: string;
+
+  if (relevanceType === "Direct") {
+    const roleInstruction = hasRole
+      ? `List the most significant companies whose PRIMARY business is ${role} in the ${sector} sector operating in ${geoStr}. Focus specifically on ${role} companies — not manufacturers, not retailers, not logistics providers unless their primary business is ${role}.`
+      : `List the most significant companies in the ${sector} sector operating in ${geoStr}.`;
+
+    prompt = `${roleInstruction}
 
 Requirements:
-- Return ONLY a JSON array of company names, ordered by significance
+- Return ONLY a JSON array of company names, ordered by market significance
 - Include ${count} names
-- Focus on real, operating companies — not trade associations, government bodies, or generic brands
-- Include a mix of: major multinationals with operations in the region, large local/regional players, and notable mid-sized companies
-- For conglomerates and holding companies, include them if ${sectorStr} is a significant business line
-- Do NOT include parent company and subsidiary separately — pick whichever is more commonly known for ${sectorStr}
+- Focus on real, operating companies — not trade associations, government bodies, brand owners, or generic brands
+${hasRole ? `- Every company must be primarily a ${role} — not a brand owner that also distributes, not a retailer, not a manufacturer unless they are primarily known as a ${role}\n` : ""}- Include a mix of: major players, established regional companies, and notable mid-sized companies
+- For conglomerates/holding companies, include ONLY if ${sector} ${hasRole ? role : "operations"} is a significant business line
+- Do NOT include parent company and subsidiary separately
 
 Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
+  } else {
+    const excludeList = excludeNames && excludeNames.length > 0
+      ? `\n- Do NOT include any of these companies (they are already in the core results): ${excludeNames.slice(0, 30).join(", ")}`
+      : "";
+
+    prompt = `List companies in the ${sector} sector operating in ${geoStr} that are DIFFERENT from typical ${intent.primarySectors.join("/")} companies.
+
+These are for an "AI Suggested" tab showing adjacent/related companies that a search for "${intent.primarySectors.join(", ")}" might also want to consider.
+
+Requirements:
+- Return ONLY a JSON array of company names, ordered by relevance
+- Include ${count} names
+- Focus on companies in ${sector} that are genuinely different from mainstream ${intent.primarySectors.join("/")} companies
+- These should be companies from a related but distinct sector${excludeList}
+${hasRole ? `- Prefer companies that employ ${role}-type executives\n` : ""}- Real, operating companies only
+
+Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
+  }
 
   try {
     const response = await openrouter.chat.completions.create({
@@ -625,18 +659,8 @@ Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
       max_tokens: 1500,
     });
 
-    const content = response.choices[0]?.message?.content || "";
-    let cleaned = content.trim();
-    const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) cleaned = jsonMatch[1].trim();
-    const arrStart = cleaned.indexOf("[");
-    const arrEnd = cleaned.lastIndexOf("]");
-    if (arrStart !== -1 && arrEnd !== -1) cleaned = cleaned.substring(arrStart, arrEnd + 1);
-
-    const parsed = JSON.parse(cleaned);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((n: unknown) => typeof n === "string" && n.length > 1).slice(0, count + 5);
-    }
+    const names = parseJsonArray(response.choices[0]?.message?.content || "");
+    return names.slice(0, count + 5);
   } catch (err) {
     console.warn("[Pipeline] Seed list generation failed:", err);
   }
@@ -802,7 +826,7 @@ export async function* runEnhancedSearchPipeline(
   // ══════════════════════════════════════════════════════════════════════════
   yield emit("status", "Phase 1: Generating company list from AI knowledge...");
 
-  const seedNames = await generateSeedList(intent, "Direct", Math.max(targetCount + 5, 25));
+  const seedNames = await generateSeedList(intent, null, "Direct", Math.max(targetCount + 5, 30));
 
   if (signal?.aborted) return;
 
@@ -852,10 +876,19 @@ export async function* runEnhancedSearchPipeline(
     if (serper) {
       const mainGeo = intent.targetGeographies[0] || "";
       const role = intent.commercialRole && intent.commercialRole !== "any" ? intent.commercialRole : "";
+      const primarySector = intent.primarySectors[0] || "";
       const webSearchNames: string[] = [];
 
-      const webQueries = generateSearchQueries(intent.primarySectors[0] || "", mainGeo, intent.commercialRole);
-      const supplementQueries = webQueries.slice(0, 3);
+      const supplementQueries: string[] = [];
+      if (role) {
+        supplementQueries.push(`${primarySector} ${role} companies ${mainGeo} site:linkedin.com/company`);
+        supplementQueries.push(`"${primarySector}" "${role}" "${mainGeo}" company directory 2024`);
+        supplementQueries.push(`${primarySector} ${role} ${mainGeo} smaller regional companies`);
+      } else {
+        supplementQueries.push(`${primarySector} companies ${mainGeo} site:linkedin.com/company`);
+        supplementQueries.push(`"${primarySector}" "${mainGeo}" company directory 2024`);
+        supplementQueries.push(`${primarySector} emerging companies ${mainGeo}`);
+      }
 
       for (const q of supplementQueries) {
         if (signal?.aborted) break;
@@ -927,15 +960,19 @@ export async function* runEnhancedSearchPipeline(
   if (aiSuggestedSectors.length > 0 && !signal?.aborted) {
     yield emit("status", `Exploring ${aiSuggestedSectors.length} adjacent/inferred sectors...`);
 
+    const coreCompanyNames = companies.map(c => c.name);
+
     for (const sector of adjacentSectors) {
       if (signal?.aborted) break;
       const relType: "Adjacent" | "AI Inferred" = "Adjacent";
       yield emit("adjacent_sector_found", `Adjacent sector: ${sector}`, { sector });
 
       const sectorSeedNames = await generateSeedList(
-        { ...intent, primarySectors: [sector] } as InferredIntent,
+        intent,
+        sector,
         relType,
         10,
+        coreCompanyNames,
       );
 
       if (sectorSeedNames.length > 0 && !signal?.aborted) {
@@ -961,9 +998,11 @@ export async function* runEnhancedSearchPipeline(
       yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
 
       const sectorSeedNames = await generateSeedList(
-        { ...intent, primarySectors: [sector] } as InferredIntent,
+        intent,
+        sector,
         relType,
         8,
+        coreCompanyNames,
       );
 
       if (sectorSeedNames.length > 0 && !signal?.aborted) {

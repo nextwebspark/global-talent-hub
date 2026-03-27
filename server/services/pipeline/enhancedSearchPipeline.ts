@@ -386,11 +386,15 @@ export async function* runEnhancedSearchPipeline(
 
       // ── Geographic validation ──────────────────────────────────────────────
       // If target geographies are specified, only accept companies whose enriched
-      // country falls within the resolved country set. Companies with unknown
-      // country get a reduced confidence score but are not hard-rejected.
+      // country falls within the resolved country set. Unknown/null country is
+      // provisionally allowed but marked with reduced confidence.
       if (!isCountryInScope(enriched.country, geoSet)) {
         yield emit("status", `Filtered (out of region): ${raw.name} — ${enriched.country || "unknown country"}`);
         continue;
+      }
+      if (!enriched.country && geoSet.size > 0) {
+        // Unknown country — penalise confidence so these sort below verified results
+        enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 50, 35);
       }
 
       const companyId = await persistCompany(raw.name, enriched, intent, searchQueryId, sessionId);

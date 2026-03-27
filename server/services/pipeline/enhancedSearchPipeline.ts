@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
 import { storage } from "../../storage";
@@ -6,11 +5,7 @@ import { createSerperAdapter } from "./serperAdapter";
 import type { InferredIntent, SearchSessionCompany, ActivityEvent } from "@shared/schema";
 import { applyCoordinateFallback } from "../coordinateFallback";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-// GPT-4o via OpenRouter for enrichment
+// All LLM calls go through OpenRouter
 const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
@@ -33,8 +28,8 @@ function parseJsonSafe(content: string): any {
 async function extractIntent(query: string, pdContent?: string): Promise<InferredIntent> {
   const pdContext = pdContent ? `\n\nADDITIONAL CONTEXT FROM UPLOADED DOCUMENT:\n${pdContent.substring(0, 3000)}` : "";
 
-  const message = await anthropic.messages.create({
-    model: "claude-opus-4-5",
+  const response = await openrouter.chat.completions.create({
+    model: "anthropic/claude-sonnet-4",
     max_tokens: 1500,
     messages: [{
       role: "user",
@@ -61,10 +56,7 @@ Return ONLY the JSON, no other text.`
     }]
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response type");
-  
-  const parsed = parseJsonSafe(content.text);
+  const parsed = parseJsonSafe(response.choices[0].message.content || "");
   if (!parsed) throw new Error("Failed to parse intent JSON");
 
   return {

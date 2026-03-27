@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "qUObFWDbGyE8KcvSCmdV6"
+uri = "file://PRD.md"
+type = "text"
+title = "Global Talent Map — Product Requirements Document"

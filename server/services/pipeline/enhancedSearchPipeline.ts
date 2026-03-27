@@ -460,7 +460,8 @@ function normalizeCompanyKey(name: string, website?: string): string {
 }
 
 interface ClassificationResult {
-  sectorMatch?: boolean;
+  include: boolean;
+  tier: "Direct" | "Adjacent" | "Exclude";
   sector: string | null;
   country: string | null;
   geography: string | null;
@@ -480,49 +481,27 @@ async function classifyCompany(
   const primarySectorList = intent.primarySectors.join(", ") || sector;
   const commercialRole = intent.commercialRole || "any";
 
-  const prompt = `You are helping a Talent Acquisition professional build a target company list for an executive search mandate.
+  const prompt = `A TA professional is searching for ${commercialRole} companies in ${primarySectorList} operating in ${geoStr}.
 
-SEARCH CONTEXT:
-- Target sector: "${primarySectorList}"
-- Target commercial role: "${commercialRole}"
-- Target geography: ${geoStr}
+Evaluate this company: "${companyName}"
 
-COMPANY TO EVALUATE: "${companyName}"
-
-STEP 1 — Identify what "${companyName}" actually does. What is this company's primary business activity? Is it a manufacturer, distributor, retailer, service provider, brand owner, trading house, logistics company, or something else? Where is it headquartered?
-
-STEP 2 — Apply the three-tier test. The question is: would executives at "${companyName}" have expertise transferable to ${commercialRole} in ${primarySectorList}?
-
-TIER 1 — DIRECT (sectorMatch: true, confidenceScore 70-100):
-The company's PRIMARY business activity is ${commercialRole} in ${primarySectorList}. They are the first companies any industry professional thinks of when asked about ${commercialRole} in this space. This includes conglomerates where ${commercialRole} in ${primarySectorList} is a major business line.
-${commercialRole !== "any" ? `CRITICAL: A company that operates in ${primarySectorList} but whose primary activity is NOT ${commercialRole} does NOT qualify as Direct. A brand owner is not a distributor. A retailer is not a manufacturer. A product company is not a trading house. Classify based on PRIMARY business activity, not sector presence.` : ""}
-
-TIER 2 — ADJACENT (sectorMatch: true, confidenceScore 55-69):
-The company operates meaningful capability in ${commercialRole} but it is not their primary business. Their leadership would have directly transferable expertise in ${commercialRole}.
-
-TRANSFERABILITY TEST — apply before tagging Adjacent:
-Would a senior executive from this company be a credible candidate for a leadership role in ${commercialRole} within ${primarySectorList}? If the answer is no — because their expertise is in a fundamentally different commercial activity (e.g., retail vs distribution, brand management vs trading) — exclude entirely.
-
-TIER 3 — EXCLUDE (sectorMatch: false, confidenceScore ≤ 30):
-No meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise. This includes: wrong sector, wrong function with no overlap, brand owners when searching for distributors, retailers when searching for manufacturers, and entities that are not real operating companies.
-
-Return JSON with this EXACT structure:
+Return JSON:
 {
-  "primaryBusinessActivity": "what this company actually does (e.g. 'FMCG distributor', 'retail chain', 'food manufacturer', 'cosmetics brand owner')",
-  "sectorMatch": true,
-  "sector": "specific sector this company actually operates in",
-  "country": "headquarters country (e.g. 'Saudi Arabia', 'UAE')",
-  "geography": "primary market geography (e.g. 'GCC', 'Middle East')",
-  "relevanceRationale": "one sentence: why this company's primary activity does or does not match ${commercialRole} in ${primarySectorList}",
-  "confidenceScore": 75
+  "include": true,
+  "tier": "Direct",
+  "confidence": 75,
+  "reason": "one sentence explanation",
+  "sector": "the sector this company actually operates in",
+  "country": "country where company is based or primarily operates (e.g. 'UAE', 'Saudi Arabia')",
+  "geography": "primary market region (e.g. 'GCC', 'Middle East')"
 }
 
-CONFIDENCE CALIBRATION:
-- 85-100: Tier 1 — primary business activity is exactly ${commercialRole} in ${primarySectorList}.
-- 70-84: Tier 1 — strong match, primary activity aligns well with ${commercialRole}.
-- 55-69: Tier 2 — passes transferability test, meaningful ${commercialRole} capability but secondary.
-- ≤ 30: Tier 3 — primary activity is fundamentally different from ${commercialRole}, or wrong sector.
-- IMPORTANT: Do not score between 31 and 54. Either passes transferability test (≥55) or belongs in Tier 3 (≤30).
+Rules:
+- Geography means market presence, not headquarters country. A Lebanese company operating primarily in UAE is a UAE company for this purpose.
+- Direct = primary business is ${commercialRole} in ${primarySectorList}. Confidence 70-100.
+- Adjacent = operates in ${primarySectorList} or ${commercialRole} but not both as primary activity. Include if executives would have transferable expertise. Confidence 50-69.
+- Exclude = no meaningful connection to ${commercialRole} in ${primarySectorList}. Manufacturers, pure retailers, logistics providers, and product brands are Exclude for a ${commercialRole} search unless they also operate significant third-party ${commercialRole}. Set include: false.
+- Confidence reflects how certain you are that this company belongs on the list, not how good a company it is.
 
 Return ONLY the JSON.`;
 
@@ -531,33 +510,29 @@ Return ONLY the JSON.`;
       model: "anthropic/claude-sonnet-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
-      max_tokens: 400,
+      max_tokens: 300,
     });
 
     const content = response.choices[0]?.message?.content || "";
     const parsed = parseJsonSafe(content);
 
-    if (!parsed) return { sectorMatch: undefined, sector: sector, country: null, geography: null, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 25 };
+    if (!parsed) return { include: false, tier: "Exclude", sector, country: null, geography: null, relevanceType, relevanceRationale: "Classification failed", confidenceScore: 0 };
+
+    const tier = (parsed.tier === "Direct" || parsed.tier === "Adjacent") ? parsed.tier : "Exclude";
+    const mappedRelevance: "Direct" | "Adjacent" | "AI Inferred" = tier === "Direct" ? "Direct" : tier === "Adjacent" ? "Adjacent" : relevanceType;
 
     return {
-      sectorMatch: typeof parsed.sectorMatch === "boolean" ? parsed.sectorMatch : undefined,
+      include: parsed.include === true,
+      tier,
       sector: parsed.sector || sector,
       country: parsed.country || null,
       geography: parsed.geography || null,
-      relevanceType,
-      relevanceRationale: parsed.relevanceRationale || `Relevant to ${sector}`,
-      confidenceScore: Math.min(100, Math.max(0, parsed.confidenceScore || 60)),
+      relevanceType: mappedRelevance,
+      relevanceRationale: parsed.reason || `Evaluated for ${commercialRole} in ${primarySectorList}`,
+      confidenceScore: Math.min(100, Math.max(0, parsed.confidence ?? 0)),
     };
   } catch {
-    return {
-      sectorMatch: undefined,
-      sector: sector,
-      country: null,
-      geography: null,
-      relevanceType,
-      relevanceRationale: `Relevant to ${sector} in ${geoStr}`,
-      confidenceScore: 25,
-    };
+    return { include: false, tier: "Exclude", sector, country: null, geography: null, relevanceType, relevanceRationale: "Classification error", confidenceScore: 0 };
   }
 }
 
@@ -712,7 +687,7 @@ async function classifyBatch(
   sector: string,
   intent: InferredIntent,
   relevanceType: "Direct" | "Adjacent" | "AI Inferred",
-  geoSet: Set<string>,
+  _geoSet: Set<string>,
   seenKeys: Set<string>,
   searchQueryId: number,
   sessionId: string,
@@ -739,30 +714,12 @@ async function classifyBatch(
 
     const classified = await classifyCompany(name, sector, intent.targetGeographies, intent, relevanceType);
 
-    if (classified.sectorMatch === false) {
-      onFiltered?.(name, `sector mismatch: ${classified.sector || "wrong sector"}`);
-      return;
-    }
-    if (classified.sectorMatch === undefined) {
-      classified.confidenceScore = Math.min(classified.confidenceScore ?? 25, 25);
-    }
-
-    const score = classified.confidenceScore ?? 0;
-    if (score < 45) {
-      onFiltered?.(name, `below confidence floor (${score}%)`);
+    if (!classified.include) {
+      onFiltered?.(name, `excluded: ${classified.relevanceRationale}`);
       return;
     }
 
-    if (!isCountryInScope(classified.country, geoSet)) {
-      onFiltered?.(name, `out of region: ${classified.country || "unknown"}`);
-      return;
-    }
-
-    let finalRelevanceType = relevanceType;
-    if (finalRelevanceType === "Direct" && score < 70) {
-      finalRelevanceType = "Adjacent";
-    }
-    classified.relevanceType = finalRelevanceType;
+    classified.relevanceType = classified.tier === "Direct" ? "Direct" : "Adjacent";
 
     const companyId = await persistCompany(name, classified, intent, searchQueryId, sessionId);
 
@@ -778,9 +735,9 @@ async function classifyBatch(
       summary: null,
       latitude: null,
       longitude: null,
-      relevanceType: finalRelevanceType,
+      relevanceType: classified.relevanceType,
       relevanceRationale: classified.relevanceRationale || `Relevant to ${sector}`,
-      confidenceScore: score,
+      confidenceScore: classified.confidenceScore,
       isUserAccepted: false,
       isUserRejected: false,
     };
@@ -879,21 +836,14 @@ export async function* runEnhancedSearchPipeline(
 
   if (serper) {
 
-    const webQueries: string[] = hasRole
-      ? [
-          `${primarySector} ${role} companies ${mainGeo}`,
-          `${primarySector} ${role} companies ${mainGeo} site:linkedin.com/company`,
-          `top ${role} ${primarySector} ${mainGeo} ${currentYear}`,
-          `${primarySector} ${role} ${mainGeo} established companies`,
-          `${mainGeo} ${primarySector} ${role} market leaders`,
-        ]
-      : [
-          `${primarySector} companies ${mainGeo}`,
-          `${primarySector} companies ${mainGeo} site:linkedin.com/company`,
-          `top ${primarySector} companies ${mainGeo} ${currentYear}`,
-          `${primarySector} ${mainGeo} established companies`,
-          `${mainGeo} ${primarySector} market leaders`,
-        ];
+    const searchRole = hasRole ? role : "companies";
+    const webQueries: string[] = [
+      `${primarySector} ${searchRole} ${mainGeo}`,
+      `${searchRole} companies ${primarySector} ${mainGeo} site:linkedin.com`,
+      `leading ${primarySector} ${searchRole} ${mainGeo} market`,
+      `top ${primarySector} ${searchRole} ${mainGeo} ${currentYear}`,
+      `${mainGeo} ${primarySector} ${searchRole} list`,
+    ];
 
     for (const q of webQueries) {
       if (signal?.aborted) break;
@@ -922,36 +872,24 @@ export async function* runEnhancedSearchPipeline(
 
   if (signal?.aborted) return;
 
-  const uniqueWebSeeds = Array.from(new Set(webSeedNames));
-  yield emit("status", `Web search found ${uniqueWebSeeds.length} company candidates`);
+  const deduplicatedSeeds: string[] = [];
+  const seedSeen = new Set<string>();
+  for (const name of webSeedNames) {
+    const key = fuzzyCompanySlug(name);
+    if (!seedSeen.has(key)) {
+      seedSeen.add(key);
+      deduplicatedSeeds.push(name);
+    }
+  }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 2 — Claude Knowledge Supplement (gap-filling only)
-  // ══════════════════════════════════════════════════════════════════════════
-  yield emit("status", "Phase 2: Checking AI knowledge for additional companies...");
-
-  const claudeSupplementNames = await generateSeedList(
-    intent, null, "Direct",
-    Math.max(15, targetCount - uniqueWebSeeds.length + 10),
-    uniqueWebSeeds,
-  );
-
-  if (signal?.aborted) return;
-
-  const allSeedNames = [...uniqueWebSeeds, ...claudeSupplementNames];
-  const deduplicatedSeeds = Array.from(new Set(allSeedNames.map(n => {
-    const key = fuzzyCompanySlug(n);
-    return { key, name: n };
-  }).filter((item, i, arr) => arr.findIndex(x => x.key === item.key) === i).map(x => x.name)));
-
-  yield emit("status", `${deduplicatedSeeds.length} candidates (${uniqueWebSeeds.length} web + ${claudeSupplementNames.length} AI supplement) — classifying...`);
+  yield emit("status", `Web search found ${deduplicatedSeeds.length} company candidates — classifying...`);
 
   for (const name of deduplicatedSeeds) {
     yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: primarySector, relevanceType: "Direct" });
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 3 — Parallel Classification
+  // PHASE 2 — Classification (single Claude call per company)
   // ══════════════════════════════════════════════════════════════════════════
   const seedCompanies = await classifyBatch(
     deduplicatedSeeds,

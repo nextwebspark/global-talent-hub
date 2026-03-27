@@ -25,6 +25,47 @@ function parseJsonSafe(content: string): any {
   try { return JSON.parse(cleaned); } catch { return null; }
 }
 
+// ─── Geographic validation ─────────────────────────────────────────────────
+
+const REGION_COUNTRIES: Record<string, string[]> = {
+  "middle east": ["uae", "united arab emirates", "saudi arabia", "ksa", "qatar", "kuwait", "bahrain", "oman", "jordan", "lebanon", "iraq", "iran", "syria", "palestine", "yemen", "israel", "turkey"],
+  "gcc": ["uae", "united arab emirates", "saudi arabia", "ksa", "qatar", "kuwait", "bahrain", "oman"],
+  "mena": ["uae", "united arab emirates", "saudi arabia", "ksa", "qatar", "kuwait", "bahrain", "oman", "egypt", "morocco", "tunisia", "algeria", "libya", "jordan", "lebanon", "iraq", "iran", "syria", "palestine", "yemen", "israel", "turkey"],
+  "north africa": ["egypt", "morocco", "tunisia", "algeria", "libya"],
+  "europe": ["united kingdom", "uk", "germany", "france", "italy", "spain", "netherlands", "switzerland", "sweden", "norway", "denmark", "finland", "poland", "austria", "belgium", "ireland", "portugal", "greece", "czech republic", "luxembourg", "hungary", "romania", "bulgaria", "croatia", "slovakia", "slovenia", "latvia", "lithuania", "estonia", "malta", "cyprus", "iceland", "serbia", "ukraine", "russia"],
+  "north america": ["united states", "usa", "canada", "mexico"],
+  "americas": ["united states", "usa", "canada", "mexico", "brazil", "argentina", "chile", "colombia", "peru", "venezuela", "ecuador", "bolivia", "uruguay", "paraguay", "costa rica", "panama", "guatemala", "dominican republic"],
+  "latin america": ["mexico", "brazil", "argentina", "chile", "colombia", "peru", "venezuela", "ecuador", "bolivia"],
+  "asia pacific": ["china", "japan", "south korea", "india", "australia", "new zealand", "singapore", "hong kong", "taiwan", "malaysia", "thailand", "indonesia", "philippines", "vietnam", "bangladesh", "pakistan", "sri lanka"],
+  "southeast asia": ["singapore", "malaysia", "thailand", "indonesia", "philippines", "vietnam", "cambodia", "myanmar", "laos", "brunei"],
+  "south asia": ["india", "pakistan", "bangladesh", "sri lanka", "nepal", "bhutan", "maldives"],
+  "africa": ["south africa", "nigeria", "kenya", "ghana", "ethiopia", "egypt", "morocco", "algeria", "tanzania", "uganda", "rwanda", "angola", "mozambique", "zimbabwe", "zambia"],
+  "sub-saharan africa": ["south africa", "nigeria", "kenya", "ghana", "ethiopia", "tanzania", "uganda", "rwanda", "angola", "mozambique", "zimbabwe", "zambia", "senegal", "cameroon"],
+};
+
+/** Expand target geographies (which may be region names or country names) into a
+ *  flat normalised set of country names. */
+function resolveGeoSet(targetGeographies: string[]): Set<string> {
+  const resolved = new Set<string>();
+  for (const geo of targetGeographies) {
+    const norm = geo.toLowerCase().trim();
+    if (REGION_COUNTRIES[norm]) {
+      for (const c of REGION_COUNTRIES[norm]) resolved.add(c);
+    } else {
+      resolved.add(norm);
+    }
+  }
+  return resolved;
+}
+
+/** Return true if the enriched country is within the target geography set.
+ *  Returns true (don't filter) when targetGeographies is empty or country is unknown. */
+function isCountryInScope(country: string | null | undefined, geoSet: Set<string>): boolean {
+  if (geoSet.size === 0) return true;
+  if (!country) return true; // unknown — allow through (low confidence)
+  return geoSet.has(country.toLowerCase().trim());
+}
+
 async function extractIntent(query: string, pdContent?: string): Promise<InferredIntent> {
   const pdContext = pdContent ? `\n\nADDITIONAL CONTEXT FROM UPLOADED DOCUMENT:\n${pdContent.substring(0, 3000)}` : "";
 
@@ -317,6 +358,9 @@ export async function* runEnhancedSearchPipeline(
   const companies: SearchSessionCompany[] = [];
   let companyCounter = 0;
 
+  // Pre-resolve target geographies to a flat country set for fast O(1) membership checks
+  const geoSet = resolveGeoSet(intent.targetGeographies);
+
   const searchAndEmit = async function* (
     sector: string,
     relevanceType: "Direct" | "Adjacent" | "AI Inferred"
@@ -326,7 +370,6 @@ export async function* runEnhancedSearchPipeline(
     yield emit("status", `Searching ${sector}...`);
 
     const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, query);
-
     for (const raw of rawCompanies) {
       if (signal?.aborted) return;
       
@@ -340,6 +383,16 @@ export async function* runEnhancedSearchPipeline(
       if (companyCounter >= 40) continue;
 
       const enriched = await enrichCompanyWithGPT4o(raw.name, sector, intent.targetGeographies, intent, relevanceType);
+
+      // ── Geographic validation ──────────────────────────────────────────────
+      // If target geographies are specified, only accept companies whose enriched
+      // country falls within the resolved country set. Companies with unknown
+      // country get a reduced confidence score but are not hard-rejected.
+      if (!isCountryInScope(enriched.country, geoSet)) {
+        yield emit("status", `Filtered (out of region): ${raw.name} — ${enriched.country || "unknown country"}`);
+        continue;
+      }
+
       const companyId = await persistCompany(raw.name, enriched, intent, searchQueryId, sessionId);
 
       const company: SearchSessionCompany = {
@@ -394,78 +447,36 @@ export async function* runEnhancedSearchPipeline(
     }
   }
 
-  // Primary sectors always run unless ONLY adjacent/inferred sectors changed
+  // ── Primary sector passes ────────────────────────────────────────────────
+  let primaryValid = 0;
   if (runSectors || runGeographies || runFilters) {
     for (const sector of intent.primarySectors) {
       if (signal?.aborted) return;
+      const before = companies.length;
       for await (const ev of searchAndEmit(sector, "Direct")) yield ev;
+      primaryValid += companies.length - before;
     }
   }
 
-  if (runSectors) {
+  // ── Adjacent sector passes (only if primary returned < 5 valid companies) ─
+  let adjacentValid = 0;
+  const MIN_BEFORE_ADJACENT = 5;
+  if (runSectors && primaryValid < MIN_BEFORE_ADJACENT) {
     for (const sector of intent.adjacentSectors) {
       if (signal?.aborted) return;
-      yield emit("adjacent_sector_found", `Exploring adjacent sector: ${sector}`, { sector });
+      yield emit("adjacent_sector_found", `Expanding to adjacent sector: ${sector}`, { sector });
+      const before = companies.length;
       for await (const ev of searchAndEmit(sector, "Adjacent")) yield ev;
+      adjacentValid += companies.length - before;
     }
+  }
 
+  // ── Inferred sector passes (only if primary+adjacent still < 5 valid) ───
+  if (runSectors && (primaryValid + adjacentValid) < MIN_BEFORE_ADJACENT) {
     for (const sector of (intent.inferredSectors || [])) {
       if (signal?.aborted) return;
       yield emit("adjacent_sector_found", `AI-inferred sector: ${sector}`, { sector });
       for await (const ev of searchAndEmit(sector, "AI Inferred")) yield ev;
-    }
-  }
-
-  if (!signal?.aborted) {
-    const topCompanies = companies
-      .sort((a, b) => b.confidenceScore - a.confidenceScore)
-      .slice(0, 20);
-
-    for (const company of topCompanies) {
-      if (signal?.aborted) break;
-      try {
-        const serper = createSerperAdapter();
-        if (!serper) continue;
-        const execQuery = `"${company.name}" CEO CFO leadership team ${company.country || ""}`;
-        const execResult = await serper.searchWithAnswer(execQuery, 3);
-        
-        if (execResult.results.length > 0) {
-          const snippet = execResult.results[0].snippet || "";
-          const execMatches = snippet.match(/([A-Z][a-z]+ [A-Z][a-z]+(?:\s[A-Z][a-z]+)?),?\s+(?:CEO|CFO|President|Chairman|Managing Director|Chief Executive)/g);
-          
-          if (execMatches) {
-            for (const match of execMatches.slice(0, 2)) {
-              const parts = match.split(/,\s+/);
-              const name = parts[0].trim();
-              const title = (parts[1] || "Executive").trim();
-              
-              if (name && name.split(" ").length >= 2) {
-                yield emit("executive_found", `Found executive: ${name} at ${company.name}`, {
-                  executive: { name, title },
-                  companyId: company.id,
-                  companyName: company.name,
-                });
-
-                try {
-                  if (typeof company.id === "number" && company.id > 0) {
-                    await storage.createExecutiveFromDiscovery({
-                      companyId: company.id,
-                      name,
-                      title,
-                      source: "AI Search",
-                      confidence: 5,
-                    });
-                  }
-                } catch (execErr) {
-                  console.warn("[Pipeline] Could not persist executive:", execErr);
-                }
-              }
-            }
-          }
-        }
-      } catch (execFetchErr) {
-        console.warn("[Pipeline] Executive enrichment failed:", execFetchErr);
-      }
     }
   }
 

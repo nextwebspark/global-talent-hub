@@ -357,29 +357,105 @@ async function searchCompaniesForSector(
 // "Leading Distributors in KSA", "Key Players in FMCG"
 const ARTICLE_TITLE_RE = /^(?:top\s+|best\s+|leading\s+|biggest\s+|major\s+|key\s+|the\s+(?:top|best|biggest|leading|major)\s+|list\s+of\s+|\d+\s+|the\s+\d+)/i;
 
+function extractCompanyNameFromTitle(title: string): string | null {
+  let name = title
+    .split(/\s*[|]\s*/)[0]
+    .split(/\s*[-–—]\s*/)[0]
+    .replace(/\s*\(\d{4}(?:\s+List)?\)\s*$/i, "")
+    .trim();
+
+  if (!name || name.length < 2 || name.length > 60) return null;
+  if (ARTICLE_TITLE_RE.test(name)) return null;
+  if (isGenericPhrase(name)) return null;
+
+  const descSuffixes = /\s+(?:in|for|of|the|a|an|to|from|with|by|at|on|is|are|was|were|and|or|but|has|have|had|will|can|could|should|would|may|might|shall|their|our|your|its|this|that|these|those|about|how|what|why|where|when|which|who)\s+/i;
+  const firstDescWord = name.search(descSuffixes);
+  if (firstDescWord > 2) {
+    name = name.substring(0, firstDescWord).trim();
+  }
+
+  if (name.length < 2 || name.length > 60) return null;
+  if (!/[A-Z]/.test(name)) return null;
+  return name;
+}
+
+function extractCompanyNameFromDomain(url: string): string | null {
+  let domain: string;
+  try {
+    domain = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+
+  const SKIP_DOMAINS = new Set([
+    "linkedin.com", "facebook.com", "instagram.com", "twitter.com", "x.com",
+    "youtube.com", "glassdoor.com", "indeed.com", "reddit.com", "quora.com",
+    "wikipedia.org", "bloomberg.com", "reuters.com", "forbes.com",
+    "arabianbusiness.com", "zawya.com", "gulfnews.com", "khaleejtimes.com",
+    "thenationalnews.com", "google.com", "crunchbase.com", "zoominfo.com",
+    "dnb.com", "kompass.com", "craft.co", "owler.com", "pitchbook.com",
+    "medium.com", "wordpress.com", "blogspot.com", "wixsite.com",
+  ]);
+
+  const baseDomain = domain.split(".").slice(-2).join(".");
+  if (SKIP_DOMAINS.has(baseDomain) || SKIP_DOMAINS.has(domain)) return null;
+
+  const companyPart = domain
+    .replace(/\.(com|org|net|co|io|ae|sa|qa|kw|bh|om|eg|jo|lb|uk|de|fr|jp|sg|hk|in|us|ca|au|nz)(?:\.[a-z]{2})?$/i, "")
+    .replace(/\./g, " ");
+
+  if (companyPart.length < 2 || companyPart.length > 40) return null;
+
+  const name = companyPart
+    .split(/[-_]/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ")
+    .replace(/\b(uae|fmcg|llc|fzco|fze|fzc)\b/gi, m => m.toUpperCase())
+    .trim();
+
+  if (isGenericPhrase(name)) return null;
+  return name;
+}
+
+function extractCompanyNameFromSnippetStart(snippet: string): string | null {
+  if (!snippet) return null;
+
+  const firstSentence = snippet.split(/[.!?]/)[0].trim();
+  if (!firstSentence || firstSentence.length < 3) return null;
+
+  const leadingName = firstSentence.match(/^([A-Z][A-Za-z0-9\s&\-'\.]{1,40}?)(?:\s+(?:is|are|was|has|have|provides|offers|operates|distributes|supplies|delivers|serves|specializes|specialises|—|–|-|:))/);
+  if (leadingName) {
+    const name = leadingName[1].trim().replace(/[,:]$/, "").trim();
+    if (name.length > 1 && name.length < 50 && !isGenericPhrase(name) && isValidCompanyName(name)) {
+      return name;
+    }
+  }
+
+  const colonName = firstSentence.match(/^([A-Z][A-Za-z0-9\s&\-'\.]{1,40}?):\s/);
+  if (colonName) {
+    const name = colonName[1].trim();
+    if (name.length > 1 && name.length < 50 && !isGenericPhrase(name) && isValidCompanyName(name)) {
+      return name;
+    }
+  }
+
+  return null;
+}
+
 function extractCompanyNamesFromResult(title: string, snippet: string, url: string): string[] {
   const names: string[] = [];
 
+  const titleName = extractCompanyNameFromTitle(title);
+  if (titleName) names.push(titleName);
+
+  const domainName = extractCompanyNameFromDomain(url);
+  if (domainName) names.push(domainName);
+
+  const snippetName = extractCompanyNameFromSnippetStart(snippet);
+  if (snippetName) names.push(snippetName);
+
   const listPattern = /(?:\d+[\.\)]\s+)([A-Z][A-Za-z0-9\s&\-'\.,:()]{2,60}?)(?=\s*(?:\d+[\.\)]|$|\n|·|•|–|--))/g;
   const bulletPattern = /(?:^|\n)\s*[-•*]\s*([A-Z][A-Za-z0-9\s&\-'\.]{2,60}?)(?=\s*(?:[-•*]|$|\n))/gm;
-
-  const titleName = title
-    .replace(/\s*[-–—|:]\s*(?:Wikipedia|Forbes|Bloomberg|Reuters|Company Profile|Overview|About|Review|Careers|Jobs|News|Home|Official|Top \d+|List of|Best .+).*$/i, "")
-    .replace(/\s*\|\s*.*$/, "")
-    .replace(/\s*\(\d{4}(?:\s+List)?\)\s*$/i, "")  // strip "(2024)" / "(2025 List)"
-    .trim();
-
-  const COMPANY_SUFFIXES = /\b(?:group|corp|inc|ltd|co|holdings|company|llc|sa|saog|international|trading|distribution|retail|enterprises|plc|ag|gmbh|spa|nv|bv|industries|partners|capital|investments|bank|logistics|solutions|services|ventures|associates|consulting)\b/i;
-  
-  // Only add a title-derived name if it looks like an actual company (not an article headline)
-  if (
-    titleName.length > 2 &&
-    titleName.length < 80 &&
-    COMPANY_SUFFIXES.test(titleName) &&
-    !ARTICLE_TITLE_RE.test(titleName)
-  ) {
-    names.push(titleName);
-  }
 
   const text = `${title} ${snippet}`;
   let match;
@@ -392,7 +468,7 @@ function extractCompanyNamesFromResult(title: string, snippet: string, url: stri
     if (n.length > 2 && n.length < 80 && !isGenericPhrase(n) && !ARTICLE_TITLE_RE.test(n)) names.push(n);
   }
 
-  return Array.from(new Set(names)).slice(0, 5);
+  return Array.from(new Set(names)).slice(0, 8);
 }
 
 function isGenericPhrase(text: string): boolean {

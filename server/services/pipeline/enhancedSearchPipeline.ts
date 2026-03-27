@@ -445,17 +445,25 @@ async function enrichCompany(
   const primarySectorList = intent.primarySectors.join(", ") || sector;
   const commercialRole = intent.commercialRole || "any";
 
-  const prompt = `You are a Talent Advisory (TA) research analyst evaluating a company for an executive search mandate.
+  const prompt = `You are helping a Talent Acquisition professional build a target company list for an executive search mandate.
 
 SEARCH CONTEXT:
-- Target sectors: "${primarySectorList}"
-- Target commercial function: "${commercialRole}"
+- Target sector: "${primarySectorList}"
+- Target commercial role: "${commercialRole}"
 - Target geography: ${geoStr}
-- Original query: "${intent.searchRationale || primarySectorList + " in " + geoStr}"
 
 COMPANY TO EVALUATE: "${companyName}"
 
-Your job: determine if "${companyName}" is a genuine operating company that matches BOTH the target sector AND the target commercial function.
+The question is not just what sector this company operates in — it is whether executives at "${companyName}" would have expertise transferable to ${commercialRole} in ${primarySectorList}. Classify using this three-tier system:
+
+TIER 1 — DIRECT (sectorMatch: true, confidenceScore 70-100):
+The company's PRIMARY business is ${commercialRole} in ${primarySectorList}. They would be the first companies any industry professional thinks of when asked about this space. This includes vertically-integrated companies and conglomerates where ${commercialRole} in ${primarySectorList} is a major business line — even if they also do other things.
+
+TIER 2 — ADJACENT (sectorMatch: true, confidenceScore 45-69):
+The company operates meaningful capability in ${commercialRole} but it is not their primary business. Their leadership would have directly transferable expertise. They belong on a talent map because executives there have done the work, even if the company is better known for something else.
+
+TIER 3 — EXCLUDE (sectorMatch: false, confidenceScore ≤ 30):
+The company has no meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise would exist there. This includes: companies in a completely different sector, companies in the right sector but wrong function with no overlap, and entities that are not real operating companies.
 
 Return JSON with this EXACT structure:
 {
@@ -467,35 +475,16 @@ Return JSON with this EXACT structure:
   "employees": 5000,
   "website": "https://example.com or null",
   "summary": "2-3 sentence factual company overview",
-  "relevanceRationale": "one sentence: why this company matches or does not match",
+  "relevanceRationale": "one sentence explaining the tier classification — why executives here would or would not have transferable expertise",
   "confidenceScore": 75
 }
 
-SCORING RULES (universal — no hardcoded industry logic):
-
-1. SECTOR CHECK: Does this company primarily operate in or directly serve "${primarySectorList}"?
-   - Yes → proceed to function check
-   - No → sectorMatch: false, confidenceScore ≤ 30
-
-2. FUNCTION CHECK: Does this company's primary business function match "${commercialRole}"?
-   - If commercialRole is "any" → skip this check
-   - If the company is in the right sector but the WRONG function (e.g., a restaurant when searching for distributors, a retailer when searching for manufacturers, a law firm when searching for fintech operators) → sectorMatch: false, confidenceScore ≤ 35
-   - If the company's function overlaps with the target (e.g., a wholesaler/logistics company that distributes the target product) → sectorMatch: true with appropriate confidence
-   - IMPORTANT: Large conglomerates that BOTH manufacture AND distribute products in the target sector should return sectorMatch: true. A manufacturer with a distribution arm IS a distributor. Do not penalise vertically-integrated companies.
-
-3. CONGLOMERATE AND MULTI-BUSINESS RULE:
-   Many of the most important companies in any market are diversified — they may operate in manufacturing, distribution, retail, and services simultaneously. Evaluate whether the target sector is a SIGNIFICANT business line, not whether it is the company's ONLY business. If a company derives meaningful revenue from the searched sector and would credibly employ executives with the relevant expertise, return sectorMatch: true and tag it Direct regardless of what other businesses it operates. This applies to conglomerates, holding companies, family groups, and diversified corporations across all markets and sectors. Do NOT penalise a company for also operating in other sectors — only penalise if the target sector is trivial or non-existent in their portfolio.
-
-4. SECTOR BOUNDARY RULES:
-   - "FMCG" primarily means food & beverage, household goods, personal care basics, and tobacco. It does NOT primarily mean beauty, cosmetics, luxury personal care, or healthcare.
-   - If the search is for "FMCG" and the company is primarily a beauty/cosmetics/luxury personal care specialist, set confidenceScore ≤ 55 (partial match, not core FMCG).
-   - Conversely, an FMCG conglomerate that also sells personal care/beauty products IS core FMCG — do not downgrade.
-
-4. CONFIDENCE CALIBRATION:
-   - 80-100: Perfect match on sector + function + geography. A well-known company in the exact target sector, performing the exact target function, in the target geography.
-   - 60-79: Good match with minor gaps (e.g., slightly adjacent sub-sector, different city but same country)
-   - 40-59: Partial match (overlapping sector, plausible function, or sub-segment specialist)
-   - ≤ 39: Poor match — wrong sector, wrong function, or unverifiable company
+CONFIDENCE CALIBRATION:
+- 85-100: Tier 1 — obvious, well-known player. Primary business is exactly what was searched.
+- 70-84: Tier 1 — strong match. Primary business aligns well, minor gaps (e.g., slightly different sub-sector, adjacent city).
+- 55-69: Tier 2 — adjacent. Meaningful capability exists, executives would have transferable skills, but it is not the company's primary identity.
+- 45-54: Tier 2 — weak adjacent. Some relevant capability, limited transferable expertise.
+- ≤ 30: Tier 3 — exclude. No meaningful connection.
 
 Return ONLY the JSON.`;
 

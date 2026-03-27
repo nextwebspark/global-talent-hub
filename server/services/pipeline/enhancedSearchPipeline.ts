@@ -119,7 +119,8 @@ Return ONLY the JSON, no other text.`
 async function searchCompaniesForSector(
   sector: string,
   geographies: string[],
-  query: string
+  query: string,
+  commercialRole?: string
 ): Promise<Array<{ name: string; website?: string; snippet?: string; url?: string }>> {
   const serper = createSerperAdapter();
   if (!serper) return [];
@@ -127,15 +128,23 @@ async function searchCompaniesForSector(
   // Use the primary geography only — more geographies increases listicle noise
   const mainGeo = geographies[0] || "";
 
+  // Include commercial role (e.g. "distributor", "manufacturer") when it is specific.
+  // Omit when it is "any" or empty so the query stays clean.
+  const roleStr = commercialRole && commercialRole !== "any" ? ` ${commercialRole}` : "";
+
   // Avoid "list" / years — they attract listicle articles that mix all sectors.
-  // Use a focused query: sector + geography without ranking bait words.
-  const searchQuery = `${sector} companies in ${mainGeo}`;
+  // Avoid "top" — it attracts ranking pages. Use focused query with role.
+  const searchQuery = `${sector}${roleStr} companies in ${mainGeo}`;
 
   try {
     const result = await serper.searchWithAnswer(searchQuery, 10);
     const companies: Array<{ name: string; website?: string; snippet?: string; url?: string }> = [];
 
     for (const r of result.results.slice(0, 8)) {
+      // Skip results whose title looks like a listicle/ranking article entirely.
+      // These snippets contain mixed-sector company lists that can't be trusted.
+      if (ARTICLE_TITLE_RE.test(r.title || "")) continue;
+
       const names = extractCompanyNamesFromResult(r.title, r.snippet, r.url);
       for (const name of names) {
         companies.push({ name, website: r.url, snippet: r.snippet, url: r.url });
@@ -258,10 +267,10 @@ Return ONLY the JSON.`;
     const content = response.choices[0]?.message?.content || "";
     const parsed = parseJsonSafe(content);
 
-    if (!parsed) return { sectorMatch: true, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 50 };
+    if (!parsed) return { sectorMatch: undefined, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 25 };
 
     return {
-      sectorMatch: parsed.sectorMatch !== false, // default true if not present
+      sectorMatch: typeof parsed.sectorMatch === "boolean" ? parsed.sectorMatch : undefined, // undefined = unknown
       sector: parsed.sector || sector,
       country: parsed.country || null,
       geography: parsed.geography || null,
@@ -275,10 +284,10 @@ Return ONLY the JSON.`;
     };
   } catch {
     return {
-      sectorMatch: true,
+      sectorMatch: undefined, // unknown — will be penalised downstream
       relevanceType,
       relevanceRationale: `Relevant to ${sector} in ${geoStr}`,
-      confidenceScore: 40,
+      confidenceScore: 25,
     };
   }
 }
@@ -397,7 +406,7 @@ export async function* runEnhancedSearchPipeline(
 
     yield emit("status", `Searching ${sector}...`);
 
-    const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, query);
+    const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, query, intent.commercialRole);
     for (const raw of rawCompanies) {
       if (signal?.aborted) return;
       
@@ -417,6 +426,11 @@ export async function* runEnhancedSearchPipeline(
       if (enriched.sectorMatch === false) {
         yield emit("status", `Filtered (sector mismatch): ${raw.name} — ${enriched.sector || "wrong sector"}`);
         continue;
+      }
+      if (enriched.sectorMatch === undefined) {
+        // Enrichment failed or returned ambiguous result — penalise heavily so
+        // these sort at the bottom and don't pollute high-confidence results.
+        enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
       }
 
       // ── Geographic validation ──────────────────────────────────────────────

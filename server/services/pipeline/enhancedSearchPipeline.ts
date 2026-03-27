@@ -269,6 +269,40 @@ function extractCompanyNamesFromListicle(snippet: string): string[] {
   return Array.from(new Set(names)).slice(0, 15);
 }
 
+function extractCompanyNamesFromFullPage(text: string): string[] {
+  const names: string[] = [];
+
+  const numberedRe = /(?:^|\n)\s*\d+[\.\)]\s*\*?\*?([A-Z][A-Za-z0-9\s&\-'\.,:()]+?)(?:\*?\*?)\s*(?:[\-–—:|]|\n|$)/gm;
+  const bulletRe = /(?:^|\n)\s*[-•*]\s*\*?\*?([A-Z][A-Za-z0-9\s&\-'\.]+?)(?:\*?\*?)\s*(?:[\-–—:|]|\n|$)/gm;
+  const suffixRe = /\b([A-Z][A-Za-z0-9\s&\-'\.]+?\s+(?:Group|Corp|Inc|Ltd|Co|Holdings|Company|LLC|Trading|Distribution|Industries|Enterprises|International|PLC|AG|GmbH|SpA|NV|BV|FZCO|FZE|FZC|PJSC|WLL|BSC|SPC|SAOG|QSC)\.?)\b/g;
+  const boldRe = /\*\*([A-Z][A-Za-z0-9\s&\-'\.]{3,50})\*\*/g;
+
+  let m;
+  for (const pattern of [numberedRe, bulletRe, suffixRe, boldRe]) {
+    while ((m = pattern.exec(text)) !== null) {
+      let n = m[1].trim().replace(/\*+/g, "").replace(/\s+/g, " ").replace(/[,:]$/, "").trim();
+      if (n.length > 2 && n.length < 80 && !isGenericPhrase(n) && isValidCompanyName(n)) {
+        names.push(n);
+      }
+    }
+  }
+
+  const commaListRe = /(?:including|such as|like|namely|are|:)\s*((?:[A-Z][A-Za-z0-9\s&\-'\.]+(?:,\s*|\s+and\s+)){2,})/gi;
+  while ((m = commaListRe.exec(text)) !== null) {
+    const parts = m[1].split(/,\s*|\s+and\s+/i).map(p => p.trim()).filter(p => p.length > 2 && p.length < 60);
+    for (const p of parts) {
+      if (/^[A-Z]/.test(p) && !isGenericPhrase(p) && isValidCompanyName(p)) names.push(p);
+    }
+  }
+
+  const uniqueNames = new Map<string, string>();
+  for (const n of names) {
+    const key = n.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!uniqueNames.has(key) && key.length > 2) uniqueNames.set(key, n);
+  }
+  return Array.from(uniqueNames.values());
+}
+
 async function searchCompaniesForSector(
   sector: string,
   geographies: string[],
@@ -836,19 +870,29 @@ export async function* runEnhancedSearchPipeline(
 
   if (serper) {
 
-    const searchRole = hasRole ? role : "companies";
+    const sectorShort = primarySector
+      .replace(/fast-moving consumer goods/i, "FMCG")
+      .replace(/\s*\(FMCG\)/i, "")
+      .trim();
+    const roleShort = hasRole ? role.replace(/distributor/i, "distributors").replace(/retailer/i, "retailers") : "companies";
+    const geoShort = mainGeo.replace(/United Arab Emirates/i, "UAE").replace(/Saudi Arabia/i, "KSA");
+
     const webQueries: string[] = [
-      `${primarySector} ${searchRole} ${mainGeo}`,
-      `${searchRole} companies ${primarySector} ${mainGeo} site:linkedin.com`,
-      `leading ${primarySector} ${searchRole} ${mainGeo} market`,
-      `top ${primarySector} ${searchRole} ${mainGeo} ${currentYear}`,
-      `${mainGeo} ${primarySector} ${searchRole} list`,
+      `${sectorShort} ${roleShort} ${geoShort}`,
+      `${sectorShort.toLowerCase()} ${roleShort.toLowerCase()} ${geoShort}`,
+      `${sectorShort} trading companies ${geoShort}`,
+      `${sectorShort} distribution companies Dubai`,
+      `${sectorShort.toLowerCase()} wholesalers ${geoShort}`,
+      `${sectorShort} ${roleShort} ${geoShort} site:linkedin.com`,
     ];
+
+    const fetchedUrls = new Set<string>();
+    const listicleUrls: Array<{ url: string; title: string }> = [];
 
     for (const q of webQueries) {
       if (signal?.aborted) break;
       try {
-        yield emit("status", `Searching: "${q.slice(0, 60)}..."`);
+        yield emit("status", `Searching: "${q}"`);
         const result = await serper.searchWithAnswer(q, 10);
         for (const r of result.results.slice(0, 10)) {
           const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
@@ -863,9 +907,36 @@ export async function* runEnhancedSearchPipeline(
             if (!isValidCompanyName(name)) continue;
             webSeedNames.push(name);
           }
+
+          if (isListicle && !fetchedUrls.has(r.url) && listicleUrls.length < 5) {
+            listicleUrls.push({ url: r.url, title: r.title });
+            fetchedUrls.add(r.url);
+          }
         }
       } catch (err) {
         console.warn(`[Pipeline] Web search failed for "${q}":`, err);
+      }
+    }
+
+    const pagesToFetch = listicleUrls.slice(0, 3);
+    if (pagesToFetch.length > 0 && !signal?.aborted) {
+      yield emit("status", `Fetching ${pagesToFetch.length} industry pages for company names...`);
+
+      for (const page of pagesToFetch) {
+        if (signal?.aborted) break;
+        try {
+          const pageContent = await serper.fetchPageContent(page.url);
+          const pageNames = extractCompanyNamesFromFullPage(pageContent);
+          console.log(`[Pipeline] Extracted ${pageNames.length} names from ${page.url}`);
+          for (let name of pageNames) {
+            name = cleanCompanyName(name);
+            if (!name || name.length < 2) continue;
+            if (!isValidCompanyName(name)) continue;
+            webSeedNames.push(name);
+          }
+        } catch (err) {
+          console.warn(`[Pipeline] Page fetch failed for ${page.url}:`, err);
+        }
       }
     }
   }

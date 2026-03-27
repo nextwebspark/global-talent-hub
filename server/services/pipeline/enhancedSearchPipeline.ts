@@ -119,7 +119,6 @@ Return ONLY the JSON, no other text.`
 async function searchCompaniesForSector(
   sector: string,
   geographies: string[],
-  query: string,
   commercialRole?: string
 ): Promise<Array<{ name: string; website?: string; snippet?: string; url?: string }>> {
   const serper = createSerperAdapter();
@@ -159,9 +158,11 @@ async function searchCompaniesForSector(
 }
 
 // Patterns that indicate an article/listicle title rather than a company name.
-// E.g. "Top 20 Logistics Companies In Dubai", "Best FMCG Companies 2025",
-// "List of distributors in UAE", "10 Leading companies in GCC"
-const ARTICLE_TITLE_RE = /^(?:top\s+\d+|top\s+ten|top\s+five|best\s+|leading\s+\w+\s+companies|list\s+of|the\s+\d+|biggest\s+|major\s+|key\s+\w+\s+companies|\d+\s+\w+\s+companies)/i;
+// E.g. "Top 20 Logistics Companies In Dubai", "Top FMCG Companies in UAE",
+// "Best FMCG Companies 2025", "List of distributors in UAE",
+// "10 Leading companies in GCC", "The Biggest Pharma Companies",
+// "Leading Distributors in KSA", "Key Players in FMCG"
+const ARTICLE_TITLE_RE = /^(?:top\s+|best\s+|leading\s+|biggest\s+|major\s+|key\s+|the\s+(?:top|best|biggest|leading|major)\s+|list\s+of\s+|\d+\s+|the\s+\d+)/i;
 
 function extractCompanyNamesFromResult(title: string, snippet: string, url: string): string[] {
   const names: string[] = [];
@@ -406,7 +407,7 @@ export async function* runEnhancedSearchPipeline(
 
     yield emit("status", `Searching ${sector}...`);
 
-    const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, query, intent.commercialRole);
+    const rawCompanies = await searchCompaniesForSector(sector, intent.targetGeographies, intent.commercialRole);
     for (const raw of rawCompanies) {
       if (signal?.aborted) return;
       

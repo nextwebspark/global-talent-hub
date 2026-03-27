@@ -434,13 +434,23 @@ function normalizeCompanyKey(name: string, website?: string): string {
   return slug;
 }
 
-async function enrichCompany(
+interface ClassificationResult {
+  sectorMatch?: boolean;
+  sector: string | null;
+  country: string | null;
+  geography: string | null;
+  relevanceType: "Direct" | "Adjacent" | "AI Inferred";
+  relevanceRationale: string;
+  confidenceScore: number;
+}
+
+async function classifyCompany(
   companyName: string,
   sector: string,
   geographies: string[],
   intent: InferredIntent,
   relevanceType: "Direct" | "Adjacent" | "AI Inferred"
-): Promise<Partial<SearchSessionCompany> & { sectorMatch?: boolean }> {
+): Promise<ClassificationResult> {
   const geoStr = geographies.join(", ");
   const primarySectorList = intent.primarySectors.join(", ") || sector;
   const commercialRole = intent.commercialRole || "any";
@@ -468,16 +478,12 @@ Would a senior executive from this company be a credible candidate for a leaders
 TIER 3 — EXCLUDE (sectorMatch: false, confidenceScore ≤ 30):
 The company has no meaningful connection to ${commercialRole} in ${primarySectorList}. No transferable expertise would exist there. This includes: companies in a completely different sector, companies in the right sector but wrong function with no overlap, companies whose expertise is in a fundamentally different commercial activity, and entities that are not real operating companies.
 
-Return JSON with this EXACT structure:
+Return JSON with this EXACT structure (lightweight classification only — no enrichment data):
 {
   "sectorMatch": true,
   "sector": "specific sector this company actually operates in",
   "country": "headquarters country (e.g. 'Saudi Arabia', 'UAE')",
   "geography": "primary market geography (e.g. 'GCC', 'Middle East')",
-  "revenue": "$500M or null",
-  "employees": 5000,
-  "website": "https://example.com or null",
-  "summary": "2-3 sentence factual company overview",
   "relevanceRationale": "one sentence explaining the tier classification — why executives here would or would not have transferable expertise",
   "confidenceScore": 75
 }
@@ -496,30 +502,29 @@ Return ONLY the JSON.`;
       model: "anthropic/claude-sonnet-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
-      max_tokens: 600,
+      max_tokens: 300,
     });
 
     const content = response.choices[0]?.message?.content || "";
     const parsed = parseJsonSafe(content);
 
-    if (!parsed) return { sectorMatch: undefined, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 25 };
+    if (!parsed) return { sectorMatch: undefined, sector: sector, country: null, geography: null, relevanceType, relevanceRationale: `Relevant to ${sector} in ${geoStr}`, confidenceScore: 25 };
 
     return {
-      sectorMatch: typeof parsed.sectorMatch === "boolean" ? parsed.sectorMatch : undefined, // undefined = unknown
+      sectorMatch: typeof parsed.sectorMatch === "boolean" ? parsed.sectorMatch : undefined,
       sector: parsed.sector || sector,
       country: parsed.country || null,
       geography: parsed.geography || null,
-      revenue: parsed.revenue || null,
-      employees: parsed.employees || null,
-      website: parsed.website || null,
-      summary: parsed.summary || null,
       relevanceType,
       relevanceRationale: parsed.relevanceRationale || `Relevant to ${sector}`,
       confidenceScore: Math.min(100, Math.max(0, parsed.confidenceScore || 60)),
     };
   } catch {
     return {
-      sectorMatch: undefined, // unknown — will be penalised downstream
+      sectorMatch: undefined,
+      sector: sector,
+      country: null,
+      geography: null,
       relevanceType,
       relevanceRationale: `Relevant to ${sector} in ${geoStr}`,
       confidenceScore: 25,
@@ -529,13 +534,13 @@ Return ONLY the JSON.`;
 
 async function persistCompany(
   name: string,
-  enriched: Partial<SearchSessionCompany>,
+  classified: ClassificationResult,
   intent: InferredIntent,
   searchQueryId: number,
   sessionId: string
 ): Promise<number | null> {
   try {
-    const countryStr = enriched.country || intent.targetGeographies[0] || null;
+    const countryStr = classified.country || intent.targetGeographies[0] || null;
     let lat: string | null = null;
     let lng: string | null = null;
 
@@ -545,26 +550,22 @@ async function persistCompany(
       if (fallback.longitude) lng = String(fallback.longitude);
     }
 
-    const revenueNumeric = enriched.revenue
-      ? parseFloat(enriched.revenue.replace(/[^0-9.]/g, "") || "0") * (enriched.revenue.includes("B") ? 1e9 : enriched.revenue.includes("M") ? 1e6 : 1)
-      : null;
-
     const companyData = {
       name,
-      sector: enriched.sector || intent.primarySectors[0] || null,
+      sector: classified.sector || intent.primarySectors[0] || null,
       country: countryStr,
       latitude: lat,
       longitude: lng,
-      revenue: revenueNumeric ? String(revenueNumeric) : null,
-      employees: enriched.employees || null,
-      website: enriched.website || null,
-      summary: enriched.summary || null,
-      confidence: Math.round((enriched.confidenceScore || 60) / 10),
-      relevanceReason: enriched.relevanceRationale || null,
+      revenue: null,
+      employees: null,
+      website: null,
+      summary: null,
+      confidence: Math.round((classified.confidenceScore || 60) / 10),
+      relevanceReason: classified.relevanceRationale || null,
       searchQueryId,
-      relevanceType: enriched.relevanceType || null,
-      relevanceRationale: enriched.relevanceRationale || null,
-      confidenceScore: enriched.confidenceScore || null,
+      relevanceType: classified.relevanceType || null,
+      relevanceRationale: classified.relevanceRationale || null,
+      confidenceScore: classified.confidenceScore || null,
       searchSessionId: sessionId,
     };
 
@@ -659,10 +660,10 @@ Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
   return [];
 }
 
-// ─── Phase 2: Parallel Enrichment ──────────────────────────────────────────
+// ─── Phase 2: Parallel Classification (lightweight — no enrichment) ─────────
 const PARALLEL_CONCURRENCY = 5;
 
-async function enrichBatch(
+async function classifyBatch(
   names: string[],
   sector: string,
   intent: InferredIntent,
@@ -673,7 +674,7 @@ async function enrichBatch(
   sessionId: string,
   signal?: AbortSignal,
   onFound?: (name: string, sector: string, relevanceType: string) => void,
-  onEnriched?: (company: SearchSessionCompany) => void,
+  onClassified?: (company: SearchSessionCompany) => void,
   onFiltered?: (name: string, reason: string) => void,
 ): Promise<SearchSessionCompany[]> {
   const results: SearchSessionCompany[] = [];
@@ -692,24 +693,24 @@ async function enrichBatch(
 
     onFound?.(name, sector, relevanceType);
 
-    const enriched = await enrichCompany(name, sector, intent.targetGeographies, intent, relevanceType);
+    const classified = await classifyCompany(name, sector, intent.targetGeographies, intent, relevanceType);
 
-    if (enriched.sectorMatch === false) {
-      onFiltered?.(name, `sector mismatch: ${enriched.sector || "wrong sector"}`);
+    if (classified.sectorMatch === false) {
+      onFiltered?.(name, `sector mismatch: ${classified.sector || "wrong sector"}`);
       return;
     }
-    if (enriched.sectorMatch === undefined) {
-      enriched.confidenceScore = Math.min(enriched.confidenceScore ?? 25, 25);
+    if (classified.sectorMatch === undefined) {
+      classified.confidenceScore = Math.min(classified.confidenceScore ?? 25, 25);
     }
 
-    const score = enriched.confidenceScore ?? 0;
+    const score = classified.confidenceScore ?? 0;
     if (score < 55) {
       onFiltered?.(name, `below confidence floor (${score}%)`);
       return;
     }
 
-    if (!isCountryInScope(enriched.country, geoSet)) {
-      onFiltered?.(name, `out of region: ${enriched.country || "unknown"}`);
+    if (!isCountryInScope(classified.country, geoSet)) {
+      onFiltered?.(name, `out of region: ${classified.country || "unknown"}`);
       return;
     }
 
@@ -717,39 +718,38 @@ async function enrichBatch(
     if (finalRelevanceType === "Direct" && score < 70) {
       finalRelevanceType = "Adjacent";
     }
-    enriched.relevanceType = finalRelevanceType;
+    classified.relevanceType = finalRelevanceType;
 
-    const companyId = await persistCompany(name, enriched, intent, searchQueryId, sessionId);
+    const companyId = await persistCompany(name, classified, intent, searchQueryId, sessionId);
 
     const company: SearchSessionCompany = {
       id: companyId ?? counter++,
       name,
-      sector: enriched.sector || sector,
-      country: enriched.country || null,
-      geography: enriched.geography || null,
-      revenue: enriched.revenue || null,
-      employees: enriched.employees || null,
-      website: enriched.website || null,
-      summary: enriched.summary || null,
+      sector: classified.sector || sector,
+      country: classified.country || null,
+      geography: classified.geography || null,
+      revenue: null,
+      employees: null,
+      website: null,
+      summary: null,
       latitude: null,
       longitude: null,
       relevanceType: finalRelevanceType,
-      relevanceRationale: enriched.relevanceRationale || `Relevant to ${sector}`,
+      relevanceRationale: classified.relevanceRationale || `Relevant to ${sector}`,
       confidenceScore: score,
       isUserAccepted: false,
       isUserRejected: false,
     };
 
     results.push(company);
-    onEnriched?.(company);
+    onClassified?.(company);
   };
 
-  // Process in batches of PARALLEL_CONCURRENCY for controlled parallelism
   for (let i = 0; i < names.length; i += PARALLEL_CONCURRENCY) {
     if (signal?.aborted) break;
     const batch = names.slice(i, i + PARALLEL_CONCURRENCY);
     await Promise.all(batch.map(n => processOne(n).catch(err => {
-      console.warn(`[Pipeline] Enrichment failed for "${n}":`, err);
+      console.warn(`[Pipeline] Classification failed for "${n}":`, err);
     })));
   }
 
@@ -824,17 +824,17 @@ export async function* runEnhancedSearchPipeline(
 
   if (signal?.aborted) return;
 
-  yield emit("status", `AI identified ${seedNames.length} companies — enriching in parallel...`);
+  yield emit("status", `AI identified ${seedNames.length} companies — classifying in parallel...`);
 
-  // Emit all seed names as "found" immediately so the UI shows skeletons
+  // Emit all seed names as "found" immediately so the UI shows placeholders
   for (const name of seedNames) {
     yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 2 — Parallel Enrichment of seed list
+  // PHASE 2 — Parallel Classification of seed list (lightweight — no enrichment)
   // ══════════════════════════════════════════════════════════════════════════
-  const seedCompanies = await enrichBatch(
+  const seedCompanies = await classifyBatch(
     seedNames,
     intent.primarySectors[0] || "",
     intent,
@@ -846,7 +846,7 @@ export async function* runEnhancedSearchPipeline(
     signal,
     undefined,
     (company) => {
-      pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company }));
+      pendingEvents.push(emit("company_enriched", `Classified: ${company.name}`, { company }));
     },
     (name, reason) => {
       pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`));
@@ -911,13 +911,13 @@ export async function* runEnhancedSearchPipeline(
 
       if (webSearchNames.length > 0 && !signal?.aborted) {
         const uniqueWebNames = Array.from(new Set(webSearchNames));
-        yield emit("status", `Found ${uniqueWebNames.length} additional candidates from web — enriching...`);
+        yield emit("status", `Found ${uniqueWebNames.length} additional candidates from web — classifying...`);
 
         for (const name of uniqueWebNames) {
           yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector: intent.primarySectors[0] || "", relevanceType: "Direct" });
         }
 
-        const webCompanies = await enrichBatch(
+        const webCompanies = await classifyBatch(
           uniqueWebNames,
           intent.primarySectors[0] || "",
           intent,
@@ -929,7 +929,7 @@ export async function* runEnhancedSearchPipeline(
           signal,
           undefined,
           (company) => {
-            pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company }));
+            pendingEvents.push(emit("company_enriched", `Classified: ${company.name}`, { company }));
           },
           (name, reason) => {
             pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`));
@@ -974,11 +974,11 @@ export async function* runEnhancedSearchPipeline(
           yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector, relevanceType: relType });
         }
 
-        const sectorCompanies = await enrichBatch(
+        const sectorCompanies = await classifyBatch(
           sectorSeedNames, sector, intent, relType,
           geoSet, seenKeys, searchQueryId, sessionId, signal,
           undefined,
-          (company) => { pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company })); },
+          (company) => { pendingEvents.push(emit("company_enriched", `Classified: ${company.name}`, { company })); },
           (name, reason) => { pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`)); },
         );
         companies.push(...sectorCompanies);
@@ -1004,11 +1004,11 @@ export async function* runEnhancedSearchPipeline(
           yield emit("company_found", `Found: ${name}`, { companyName: name, name, sector, relevanceType: relType });
         }
 
-        const sectorCompanies = await enrichBatch(
+        const sectorCompanies = await classifyBatch(
           sectorSeedNames, sector, intent, relType,
           geoSet, seenKeys, searchQueryId, sessionId, signal,
           undefined,
-          (company) => { pendingEvents.push(emit("company_enriched", `Enriched: ${company.name}`, { company })); },
+          (company) => { pendingEvents.push(emit("company_enriched", `Classified: ${company.name}`, { company })); },
           (name, reason) => { pendingEvents.push(emit("status", `Filtered: ${name} — ${reason}`)); },
         );
         companies.push(...sectorCompanies);

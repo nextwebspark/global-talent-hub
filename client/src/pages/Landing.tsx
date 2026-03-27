@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import {
   Search, Loader2, Upload, Table2, Plus, Trash2, FileSpreadsheet, X, Sun, Moon,
-  FolderOpen, FileText, CheckCircle2, Building2, Globe, Users, TrendingUp,
+  FolderOpen, FileText, CheckCircle2, Building2, Globe, Users,
   Sparkles, SendHorizonal, ArrowRight, CheckCheck, RotateCcw, ListFilter, Activity, Square
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -171,41 +171,30 @@ function ActivityIcon({ type }: { type: string }) {
 }
 
 // ─── Skeleton Company Card ────────────────────────────────────────────────────
-function SkeletonCompanyCard({ name }: { name: string }) {
+function SkeletonCompanyRow({ name }: { name: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 animate-pulse" data-testid={`card-skeleton-${name}`}>
-      <div className="flex items-start gap-2 mb-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{name}</p>
-          <div className="h-3 bg-muted rounded mt-1.5 w-24" />
-        </div>
-        <div className="h-4 w-14 bg-muted rounded-full" />
+    <div className="flex items-center gap-3 px-4 h-14 animate-pulse border-b border-border/30" data-testid={`card-skeleton-${name}`}>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground truncate">{name}</p>
+        <div className="h-2.5 bg-muted rounded mt-1 w-20" />
       </div>
-      <div className="space-y-1.5 mb-3">
-        <div className="h-2.5 bg-muted rounded w-full" />
-        <div className="h-2.5 bg-muted rounded w-4/5" />
-      </div>
-      <div className="flex gap-2 text-[10px] text-muted-foreground mb-3">
-        <div className="h-2.5 bg-muted rounded w-16" />
-        <div className="h-2.5 bg-muted rounded w-16" />
-        <div className="h-2.5 bg-muted rounded w-12 ml-auto" />
-      </div>
-      <div className="flex gap-2">
-        <div className="h-7 bg-muted rounded-lg flex-1 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/60">
-          <Loader2 className="w-3 h-3 animate-spin" />Enriching...
-        </div>
+      <div className="h-3 bg-muted rounded w-16" />
+      <div className="h-4 w-14 bg-muted rounded-full" />
+      <div className="h-3 bg-muted rounded w-8" />
+      <div className="h-3 bg-muted rounded w-32 hidden md:block" />
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
       </div>
     </div>
   );
 }
 
-// ─── Company Card ─────────────────────────────────────────────────────────────
-function CompanyCard({ company, onAccept, onReject }: {
+// ─── Company Row (compact list item) ──────────────────────────────────────────
+function CompanyRow({ company, onAccept, onReject }: {
   company: StreamCompany;
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const [execsExpanded, setExecsExpanded] = useState(false);
   const badgeColor = company.relevanceType === 'Direct'
     ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
     : company.relevanceType === 'Adjacent'
@@ -214,114 +203,72 @@ function CompanyCard({ company, onAccept, onReject }: {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.25 }}
-      className={`relative rounded-xl border transition-all ${
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 8 }}
+      transition={{ duration: 0.15 }}
+      className={`flex items-center gap-3 px-4 h-14 transition-colors ${
         company.accepted
-          ? 'border-emerald-500/50 bg-emerald-50/40 dark:bg-emerald-900/10'
+          ? 'bg-emerald-50/60 dark:bg-emerald-900/10'
           : company.rejected
-          ? 'border-border/30 bg-muted/20 opacity-40'
-          : 'border-border bg-card hover:border-primary/30 hover:shadow-sm'
+          ? 'bg-muted/20 opacity-40'
+          : 'hover:bg-muted/30'
       }`}
       data-testid={`card-company-${company.id}`}
     >
-      <div className="p-4">
-        <div className="flex items-start gap-2 mb-2">
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-foreground truncate" data-testid={`text-company-name-${company.id}`}>{company.name}</p>
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              {company.country && (
-                <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
-                  <Globe className="w-2.5 h-2.5" />{company.country}
-                </span>
-              )}
-              {company.sector && (
-                <span className="text-[11px] text-muted-foreground">{company.sector}</span>
-              )}
-            </div>
-          </div>
-          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${badgeColor}`}>
-            {company.relevanceType}
-          </span>
-        </div>
-
-        {company.summary && (
-          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 mb-2">
-            {company.summary}
-          </p>
-        )}
-
-        {company.relevanceRationale && (
-          <p className="text-[10px] text-primary/70 italic leading-relaxed line-clamp-1 mb-2" data-testid={`text-relevance-rationale-${company.id}`}>
-            {company.relevanceRationale}
-          </p>
-        )}
-
-        <div className="flex items-center gap-3 text-[10px] text-muted-foreground mb-3">
-          {company.revenue && (
-            <span className="flex items-center gap-0.5"><TrendingUp className="w-2.5 h-2.5" />{company.revenue}</span>
-          )}
-          {company.employees && (
-            <span className="flex items-center gap-0.5"><Users className="w-2.5 h-2.5" />{company.employees.toLocaleString()}</span>
-          )}
-          <span className="ml-auto flex items-center gap-0.5 font-medium">
-            {company.confidenceScore}% match
-          </span>
-        </div>
-
-        {/* Executives subsection */}
-        {company.executives && company.executives.length > 0 && (
-          <div className="mb-3">
-            <button
-              onClick={() => setExecsExpanded(v => !v)}
-              className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors w-full"
-              data-testid={`button-toggle-execs-${company.id}`}
-            >
-              <Users className="w-3 h-3" />
-              <span>{company.executives.length} executive{company.executives.length > 1 ? 's' : ''}</span>
-              <span className="ml-auto">{execsExpanded ? '▲' : '▼'}</span>
-            </button>
-            {execsExpanded && (
-              <div className="mt-1.5 space-y-1 pl-4 border-l border-border/40" data-testid={`execs-list-${company.id}`}>
-                {company.executives.map((exec, i) => (
-                  <div key={i} className="text-[10px]">
-                    <span className="font-medium text-foreground">{exec.name}</span>
-                    <span className="text-muted-foreground ml-1">— {exec.title}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {!company.rejected && (
-          <div className="flex gap-2">
-            <button
-              onClick={onAccept}
-              className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                company.accepted
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-muted/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-700 text-muted-foreground'
-              }`}
-              data-testid={`button-accept-company-${company.id}`}
-            >
-              <CheckCircle2 className="w-3 h-3" />
-              {company.accepted ? 'Selected' : 'Add to Project'}
-            </button>
-            {!company.accepted && (
-              <button
-                onClick={onReject}
-                className="px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                data-testid={`button-reject-company-${company.id}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+      <div className="flex-1 min-w-0 flex flex-col justify-center" style={{ minWidth: '140px', maxWidth: '220px' }}>
+        <p className="font-semibold text-[13px] text-foreground truncate leading-tight" data-testid={`text-company-name-${company.id}`}>{company.name}</p>
+        {company.sector && (
+          <span className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">{company.sector}</span>
         )}
       </div>
+
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0 w-[100px]">
+        {company.country && (
+          <>
+            <Globe className="w-3 h-3 shrink-0" />
+            <span className="truncate">{company.country}</span>
+          </>
+        )}
+      </div>
+
+      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap ${badgeColor}`}>
+        {company.relevanceType}
+      </span>
+
+      <span className="text-[11px] font-semibold text-foreground shrink-0 w-[40px] text-right tabular-nums">
+        {company.confidenceScore}%
+      </span>
+
+      <p className="text-[10px] text-muted-foreground italic truncate hidden md:block flex-1 min-w-0 leading-tight" data-testid={`text-relevance-rationale-${company.id}`}>
+        {company.relevanceRationale || ''}
+      </p>
+
+      {!company.rejected && (
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onAccept}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
+              company.accepted
+                ? 'bg-emerald-500 text-white'
+                : 'bg-muted/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 hover:text-emerald-700 text-muted-foreground'
+            }`}
+            data-testid={`button-accept-company-${company.id}`}
+          >
+            <Plus className="w-3 h-3" />
+            <span className="hidden sm:inline">{company.accepted ? 'Added' : 'Add'}</span>
+          </button>
+          {!company.accepted && (
+            <button
+              onClick={onReject}
+              className="p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+              data-testid={`button-reject-company-${company.id}`}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -1330,8 +1277,8 @@ export default function Landing() {
                   </div>
                 )}
 
-                {/* Cards Grid */}
-                <div className="flex-1 overflow-y-auto p-4" data-testid="company-cards-grid">
+                {/* Company List (compact rows grouped by tier) */}
+                <div className="flex-1 overflow-y-auto" data-testid="company-cards-grid">
                   {filteredCompanies.length === 0 && !isStreaming && (
                     <div className="flex flex-col items-center justify-center h-48 text-center">
                       <Building2 className="w-10 h-10 text-muted-foreground/30 mb-3" />
@@ -1345,25 +1292,60 @@ export default function Landing() {
                         <Sparkles className="w-5 h-5 text-primary animate-pulse" />
                       </div>
                       <p className="text-sm text-muted-foreground">AI is discovering companies...</p>
-                      <p className="text-xs text-muted-foreground/70 mt-1">Companies will appear here as they're found</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">Companies will appear here as they're classified</p>
                     </div>
                   )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    <AnimatePresence>
-                      {filteredCompanies.map(company => (
-                        <CompanyCard
-                          key={company.id}
-                          company={company}
-                          onAccept={() => acceptCompany(company.id)}
-                          onReject={() => rejectCompany(company.id)}
-                        />
-                      ))}
-                    </AnimatePresence>
-                    {/* Skeleton cards for companies being enriched */}
-                    {isStreaming && pendingCompanyNames.map(name => (
-                      <SkeletonCompanyCard key={`skeleton-${name}`} name={name} />
-                    ))}
-                  </div>
+                  {(() => {
+                    const directCompanies = filteredCompanies.filter(c => c.relevanceType === 'Direct');
+                    const adjacentCompanies = filteredCompanies.filter(c => c.relevanceType === 'Adjacent');
+                    const inferredCompanies = filteredCompanies.filter(c => c.relevanceType === 'AI Inferred');
+                    const groups = [
+                      { label: 'Direct', companies: directCompanies, color: 'text-emerald-600 dark:text-emerald-400' },
+                      { label: 'Adjacent', companies: adjacentCompanies, color: 'text-amber-600 dark:text-amber-400' },
+                      { label: 'AI Inferred', companies: inferredCompanies, color: 'text-violet-600 dark:text-violet-400' },
+                    ].filter(g => g.companies.length > 0 || (activeTab !== 'all'));
+                    const showGroups = activeTab === 'all' && groups.filter(g => g.companies.length > 0).length > 1;
+
+                    return (
+                      <div className="divide-y divide-border/20">
+                        <AnimatePresence>
+                          {showGroups ? (
+                            groups.filter(g => g.companies.length > 0).map(group => (
+                              <div key={group.label}>
+                                <div className="px-4 py-1.5 bg-muted/30 border-b border-border/30 sticky top-0 z-10">
+                                  <span className={`text-[11px] font-semibold uppercase tracking-wider ${group.color}`}>
+                                    {group.label} ({group.companies.length})
+                                  </span>
+                                </div>
+                                {group.companies.map((company, i) => (
+                                  <div key={company.id} className={i % 2 === 1 ? 'bg-muted/10' : ''}>
+                                    <CompanyRow
+                                      company={company}
+                                      onAccept={() => acceptCompany(company.id)}
+                                      onReject={() => rejectCompany(company.id)}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            ))
+                          ) : (
+                            filteredCompanies.map((company, i) => (
+                              <div key={company.id} className={i % 2 === 1 ? 'bg-muted/10' : ''}>
+                                <CompanyRow
+                                  company={company}
+                                  onAccept={() => acceptCompany(company.id)}
+                                  onReject={() => rejectCompany(company.id)}
+                                />
+                              </div>
+                            ))
+                          )}
+                        </AnimatePresence>
+                        {isStreaming && pendingCompanyNames.map(name => (
+                          <SkeletonCompanyRow key={`skeleton-${name}`} name={name} />
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

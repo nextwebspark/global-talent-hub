@@ -4,3 +4,20 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Environment variables — never commit
+.env
+.env.local
+.env.production
+
+# Local dev state & task files
+.local/
+
+# User uploads (runtime-generated, should live on object storage in prod)
+uploads/
+
+# Stray debug / scratch files
+TAVILY_API_KEY
+QueryIntent
+discoverCompanies
+heuristic

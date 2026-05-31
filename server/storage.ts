@@ -1,83 +1,143 @@
-import { db } from "./db";
-import { 
-  companies, 
-  executives, 
-  searchQueries, 
-  searchResults,
-  users,
-  careerHistory,
-  education,
-  remuneration,
-  executiveNotes,
-  companyNotes,
-  pipelineLog,
-  searchSessions,
-  type InsertUser,
-  type User,
-  type Company,
-  type InsertCompany,
-  type Executive,
-  type InsertExecutive,
-  type SearchQuery,
-  type InsertSearchQuery,
-  type SearchResult,
-  type InsertSearchResult,
-  type CareerHistory,
-  type InsertCareerHistory,
-  type Education,
-  type InsertEducation,
-  type Remuneration,
-  type InsertRemuneration,
-  type ExecutiveNotes,
-  type InsertExecutiveNotes,
-  type CompanyNotes,
-  type InsertCompanyNotes,
-  type InsertPipelineLog,
+import { supabase } from "./supabase";
+import type {
+  User,
+  InsertUser,
+  Company,
+  InsertCompany,
+  Executive,
+  InsertExecutive,
+  SearchQuery,
+  InsertSearchQuery,
+  SearchResult,
+  InsertSearchResult,
+  CareerHistory,
+  InsertCareerHistory,
+  Education,
+  InsertEducation,
+  Remuneration,
+  InsertRemuneration,
+  ExecutiveNotes,
+  InsertExecutiveNotes,
+  CompanyNotes,
+  InsertCompanyNotes,
+  InsertPipelineLog,
 } from "@shared/schema";
-import { eq, desc, and, gte, lte, ilike, or, sql, asc, inArray } from "drizzle-orm";
 
-/**
- * Data origin types for tracking write permissions per layer
- */
-export type DataOrigin = 'discovery' | 'enrichment' | 'manual';
+// ─── camelCase ↔ snake_case helpers ──────────────────────────────────────────
+
+function toCamelKey(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+function toSnakeKey(s: string): string {
+  return s.replace(/([A-Z])/g, "_$1").toLowerCase();
+}
+
+function keysToCamel<T>(obj: any): T {
+  if (Array.isArray(obj)) return obj.map(keysToCamel) as any;
+  if (obj && typeof obj === "object" && !(obj instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [toCamelKey(k), keysToCamel(v)])
+    ) as T;
+  }
+  return obj;
+}
+
+function keysToSnake(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(keysToSnake);
+  if (obj && typeof obj === "object" && !(obj instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => {
+        // Don't snake_case keys inside JSONB fields stored as plain objects
+        const snakeK = toSnakeKey(k);
+        // Recurse only for non-JSONB-looking values (primitives, arrays of primitives)
+        return [snakeK, keysToSnake(v)];
+      })
+    );
+  }
+  return obj;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+// Throws if error, returns camelCase-converted data
+function sb<T>(result: { data: T | null; error: any }, ctx: string): T {
+  if (result.error) throw new Error(`[Storage:${ctx}] ${result.error.message}`);
+  if (result.data === null) throw new Error(`[Storage:${ctx}] No data returned`);
+  return keysToCamel<T>(result.data);
+}
+
+// Like sb but returns undefined instead of throwing when data is null
+function sbOpt<T>(result: { data: T | null; error: any }, ctx: string): T | undefined {
+  if (result.error) throw new Error(`[Storage:${ctx}] ${result.error.message}`);
+  return result.data ? keysToCamel<T>(result.data) : undefined;
+}
+
+// ─── Interface ────────────────────────────────────────────────────────────────
+
+export type DataOrigin = "discovery" | "enrichment" | "manual";
+
+export interface CompanySeedRow {
+  id: number;
+  name: string;
+  slug: string;
+  country: string;
+  sector: string;
+  website: string | null;
+  description: string | null;
+  sourceUrl: string;
+  sourceTitle: string | null;
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   getAllCompanies(): Promise<Company[]>;
   getCompany(id: number): Promise<Company | undefined>;
   getCompaniesBySearchQuery(searchQueryId: number): Promise<Company[]>;
   createCompany(company: InsertCompany): Promise<Company>;
   updateCompany(id: number, data: Partial<InsertCompany>): Promise<Company>;
   deleteCompany(id: number): Promise<void>;
-  
+
   getExecutivesByCompany(companyId: number): Promise<Executive[]>;
   getExecutive(id: number): Promise<Executive | undefined>;
   createExecutive(executive: InsertExecutive): Promise<Executive>;
   updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
   deleteExecutive(id: number): Promise<void>;
-  
-  // Layer-aware methods with ownership enforcement
+
   createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive>;
   createExecutiveManual(executive: InsertExecutive): Promise<Executive>;
   findExecutiveByNameAndCompany(name: string, companyId: number): Promise<Executive | undefined>;
-  enrichExecutiveEmptyFields(id: number, data: Partial<InsertExecutive>, metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }>;
-  createExecutiveFromClockwork(executive: InsertExecutive, metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }): Promise<{ executive: Executive; alreadyExists: boolean }>;
+  enrichExecutiveEmptyFields(
+    id: number,
+    data: Partial<InsertExecutive>,
+    metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }
+  ): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }>;
+  createExecutiveFromClockwork(
+    executive: InsertExecutive,
+    metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }
+  ): Promise<{ executive: Executive; alreadyExists: boolean }>;
   checkExecutiveClockworkEnrichment(executiveId: number, clockworkId: string): Promise<boolean>;
   updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive>;
-  
-  // Company layer-aware methods
+
   createCompanyFromDiscovery(company: InsertCompany): Promise<Company>;
   createCompanyManual(company: InsertCompany): Promise<Company>;
   enrichCompanyEmptyFields(id: number, data: Partial<InsertCompany>): Promise<{ updated: Company; enrichedFields: string[] }>;
   updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company>;
-  
+
   logPipelineDecision(log: InsertPipelineLog): Promise<void>;
-  upsertCompanyNonDestructive(company: InsertCompany, searchQueryId: number, fieldConfidences?: Record<string, number>): Promise<{ company: Company; isNew: boolean }>;
+  upsertCompanyNonDestructive(
+    company: InsertCompany,
+    searchQueryId: number,
+    fieldConfidences?: Record<string, number>
+  ): Promise<{ company: Company; isNew: boolean }>;
   findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined>;
-  
+
+  getCompanySeedSample(limit: number): Promise<CompanySeedRow[]>;
+
   getAllSearchQueries(): Promise<SearchQuery[]>;
   getUniqueSearchQueries(): Promise<SearchQuery[]>;
   getSearchQuery(id: number): Promise<SearchQuery | undefined>;
@@ -96,36 +156,35 @@ export interface IStorage {
   saveSatelliteOrders(searchQueryId: number, orders: Record<string, string[]>): Promise<void>;
   saveTableConfig(searchQueryId: number, config: Record<string, any>): Promise<void>;
   saveMapPositions(searchQueryId: number, positions: Record<string, any>): Promise<void>;
-  
-  // Executive Details
+
   getCareerHistory(executiveId: number): Promise<CareerHistory[]>;
   createCareerHistory(entry: InsertCareerHistory): Promise<CareerHistory>;
   updateCareerHistory(id: number, data: Partial<InsertCareerHistory>): Promise<CareerHistory>;
   deleteCareerHistory(id: number): Promise<void>;
-  
+
   getEducation(executiveId: number): Promise<Education[]>;
   createEducation(entry: InsertEducation): Promise<Education>;
   updateEducation(id: number, data: Partial<InsertEducation>): Promise<Education>;
   deleteEducation(id: number): Promise<void>;
-  
+
   getRemuneration(executiveId: number): Promise<Remuneration[]>;
   createRemuneration(entry: InsertRemuneration): Promise<Remuneration>;
   updateRemuneration(id: number, data: Partial<InsertRemuneration>): Promise<Remuneration>;
   deleteRemuneration(id: number): Promise<void>;
   deleteRemunerationByExecutive(executiveId: number): Promise<void>;
-  
+
   getExecutiveNotes(executiveId: number): Promise<ExecutiveNotes | undefined>;
   upsertExecutiveNotes(executiveId: number, content: string): Promise<ExecutiveNotes>;
-  
+
   getCompanyNotes(companyId: number): Promise<CompanyNotes | undefined>;
   upsertCompanyNotes(companyId: number, content: string): Promise<CompanyNotes>;
-  
+
   getSearchResultsByQuery(searchQueryId: number): Promise<SearchResult[]>;
   getSearchResultsByCompany(companyId: number): Promise<SearchResult[]>;
   createSearchResult(result: InsertSearchResult): Promise<SearchResult>;
   createSearchResults(results: InsertSearchResult[]): Promise<SearchResult[]>;
   updateSearchResultCompanyLink(id: number, companyId: number): Promise<SearchResult>;
-  
+
   getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
     company: Company | undefined;
@@ -135,524 +194,515 @@ export interface IStorage {
     notes: ExecutiveNotes | undefined;
   } | null>;
 
-  // Search Sessions
-  createSearchSession(session: { id: string; rawQuery: string; pdContent?: string; pdConfidential?: boolean; userId?: string }): Promise<void>;
-  updateSearchSession(id: string, data: { status?: string; inferredIntent?: any; searchQueryId?: number; refinementHistory?: any[]; pdContent?: string; pdConfidential?: boolean }): Promise<void>;
-  getSearchSession(id: string): Promise<{ id: string; rawQuery: string; pdContent: string | null; pdConfidential: boolean; inferredIntent: any; status: string; searchQueryId: number | null; refinementHistory: any[] } | undefined>;
+  createSearchSession(session: {
+    id: string;
+    rawQuery: string;
+    pdContent?: string;
+    pdConfidential?: boolean;
+    userId?: string;
+  }): Promise<void>;
+  updateSearchSession(
+    id: string,
+    data: {
+      status?: string;
+      inferredIntent?: any;
+      searchQueryId?: number;
+      refinementHistory?: any[];
+      pdContent?: string;
+      pdConfidential?: boolean;
+    }
+  ): Promise<void>;
+  getSearchSession(id: string): Promise<{
+    id: string;
+    rawQuery: string;
+    pdContent: string | null;
+    pdConfidential: boolean;
+    inferredIntent: any;
+    status: string;
+    searchQueryId: number | null;
+    refinementHistory: any[];
+  } | undefined>;
 }
 
+// ─── Implementation ───────────────────────────────────────────────────────────
+
 export class DatabaseStorage implements IStorage {
+  // ── Users ──────────────────────────────────────────────────────────────────
+
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    return sbOpt<User>(
+      await supabase.from("hak_users").select("*").eq("id", id).maybeSingle(),
+      "getUser"
+    );
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+    return sbOpt<User>(
+      await supabase.from("hak_users").select("*").eq("username", username).maybeSingle(),
+      "getUserByUsername"
+    );
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+    return sb<User>(
+      await supabase.from("hak_users").insert(keysToSnake(insertUser)).select().single(),
+      "createUser"
+    );
   }
 
+  // ── Companies ──────────────────────────────────────────────────────────────
+
   async getAllCompanies(): Promise<Company[]> {
-    return db.select().from(companies).orderBy(desc(companies.createdAt));
+    const { data, error } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`[Storage:getAllCompanies] ${error.message}`);
+    return keysToCamel<Company[]>(data ?? []);
   }
 
   async getCompany(id: number): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(eq(companies.id, id));
-    return company;
+    return sbOpt<Company>(
+      await supabase.from("hak_companies").select("*").eq("id", id).maybeSingle(),
+      "getCompany"
+    );
   }
 
   async getCompaniesBySearchQuery(searchQueryId: number): Promise<Company[]> {
-    return db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
+    const { data, error } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .eq("search_query_id", searchQueryId);
+    if (error) throw new Error(`[Storage:getCompaniesBySearchQuery] ${error.message}`);
+    return keysToCamel<Company[]>(data ?? []);
   }
 
   async searchCompaniesByName(name: string): Promise<Company[]> {
-    return db.select().from(companies).where(ilike(companies.name, `%${name}%`)).limit(20);
+    const { data, error } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .ilike("name", `%${name}%`)
+      .limit(20);
+    if (error) throw new Error(`[Storage:searchCompaniesByName] ${error.message}`);
+    return keysToCamel<Company[]>(data ?? []);
   }
 
-  /**
-   * @deprecated Use layer-aware methods instead:
-   * - Discovery: createCompanyFromDiscovery()
-   */
   async createCompany(company: InsertCompany): Promise<Company> {
-    console.warn('[Storage] DEPRECATED: createCompany() called - use createCompanyFromDiscovery() for discovery layer');
-    const [newCompany] = await db.insert(companies).values(company).returning();
-    return newCompany;
+    console.warn("[Storage] DEPRECATED: createCompany() — use createCompanyFromDiscovery()");
+    return sb<Company>(
+      await supabase.from("hak_companies").insert(keysToSnake(company)).select().single(),
+      "createCompany"
+    );
   }
 
-  /**
-   * @deprecated Use layer-aware methods instead:
-   * - Enrichment: enrichCompanyEmptyFields()
-   * - Manual/UI: updateCompanyManual()
-   */
   async updateCompany(id: number, data: Partial<InsertCompany>): Promise<Company> {
-    console.warn('[Storage] DEPRECATED: updateCompany() called - use updateCompanyManual() for UI edits or enrichCompanyEmptyFields() for enrichment');
-    const [updated] = await db
-      .update(companies)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(companies.id, id))
-      .returning();
-    return updated;
+    console.warn("[Storage] DEPRECATED: updateCompany() — use updateCompanyManual()");
+    return sb<Company>(
+      await supabase
+        .from("hak_companies")
+        .update({ ...keysToSnake(data), updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateCompany"
+    );
   }
 
   async deleteCompany(id: number): Promise<void> {
-    await db.delete(companies).where(eq(companies.id, id));
+    const { error } = await supabase.from("hak_companies").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteCompany] ${error.message}`);
   }
 
+  // ── Executives ─────────────────────────────────────────────────────────────
+
   async getExecutivesByCompany(companyId: number): Promise<Executive[]> {
-    return db.select().from(executives).where(eq(executives.companyId, companyId));
+    const { data, error } = await supabase
+      .from("hak_executives")
+      .select("*")
+      .eq("company_id", companyId);
+    if (error) throw new Error(`[Storage:getExecutivesByCompany] ${error.message}`);
+    return keysToCamel<Executive[]>(data ?? []);
   }
 
   async getCompanyWithExecutives(id: number): Promise<(Company & { executives: Executive[] }) | undefined> {
     const company = await this.getCompany(id);
     if (!company) return undefined;
-    const companyExecutives = await this.getExecutivesByCompany(id);
-    return { ...company, executives: companyExecutives };
+    const execs = await this.getExecutivesByCompany(id);
+    return { ...company, executives: execs };
   }
 
   async getExecutive(id: number): Promise<Executive | undefined> {
-    const [executive] = await db.select().from(executives).where(eq(executives.id, id));
-    return executive;
+    return sbOpt<Executive>(
+      await supabase.from("hak_executives").select("*").eq("id", id).maybeSingle(),
+      "getExecutive"
+    );
   }
 
-  /**
-   * @deprecated Use layer-aware methods instead:
-   * - Discovery: createExecutiveFromDiscovery()
-   * - Enrichment: enrichExecutiveEmptyFields()
-   * - Manual/UI: updateExecutiveManual()
-   */
   async createExecutive(executive: InsertExecutive): Promise<Executive> {
-    console.warn('[Storage] DEPRECATED: createExecutive() called - use createExecutiveFromDiscovery() for discovery layer');
-    const [newExecutive] = await db.insert(executives).values(executive).returning();
-    return newExecutive;
+    console.warn("[Storage] DEPRECATED: createExecutive() — use createExecutiveFromDiscovery()");
+    return sb<Executive>(
+      await supabase.from("hak_executives").insert(keysToSnake(executive)).select().single(),
+      "createExecutive"
+    );
   }
 
-  /**
-   * @deprecated Use layer-aware methods instead:
-   * - Enrichment: enrichExecutiveEmptyFields()
-   * - Manual/UI: updateExecutiveManual()
-   */
   async updateExecutive(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
-    console.warn('[Storage] DEPRECATED: updateExecutive() called - use updateExecutiveManual() for UI edits or enrichExecutiveEmptyFields() for enrichment');
-    const [updated] = await db
-      .update(executives)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(executives.id, id))
-      .returning();
-    return updated;
+    console.warn("[Storage] DEPRECATED: updateExecutive() — use updateExecutiveManual()");
+    return sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .update({ ...keysToSnake(data), updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateExecutive"
+    );
   }
 
   async deleteExecutive(id: number): Promise<void> {
-    await db.delete(executives).where(eq(executives.id, id));
+    const { error } = await supabase.from("hak_executives").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteExecutive] ${error.message}`);
   }
 
-  /**
-   * DISCOVERY LAYER: Create executive record only.
-   * - May only CREATE new executives
-   * - Must never update existing executives
-   * - Must never write to profile sections after creation
-   */
   async createExecutiveFromDiscovery(executive: InsertExecutive): Promise<Executive> {
-    const [existingExec] = await db
-      .select()
-      .from(executives)
-      .where(
-        and(
-          ilike(executives.name, executive.name),
-          eq(executives.companyId, executive.companyId)
-        )
-      );
-    
+    const { data: existingRows, error: findErr } = await supabase
+      .from("hak_executives")
+      .select("*")
+      .eq("company_id", executive.companyId)
+      .ilike("name", executive.name)
+      .limit(1);
+    if (findErr) throw new Error(`[Storage:createExecutiveFromDiscovery] ${findErr.message}`);
+
+    const existingExec = existingRows?.[0] ? keysToCamel<Executive>(existingRows[0]) : null;
+
     if (existingExec) {
-      console.log(`[Storage:Discovery] Executive "${executive.name}" already exists for company ${executive.companyId} — checking for non-destructive updates`);
-      
+      console.log(`[Storage:Discovery] Executive "${executive.name}" already exists — checking for non-destructive updates`);
       const manualFields = (existingExec.manuallyEditedFields as string[]) || [];
-      const updateData: Partial<InsertExecutive> = {};
+      const updateData: Record<string, any> = {};
       let updated = false;
 
-      // Fields to potentially update from discovery if they are null and not manually edited
-      const updatableFields: (keyof InsertExecutive)[] = [
-        'title', 'linkedin', 'gender', 'ethnicity'
-      ];
-
+      const updatableFields: (keyof InsertExecutive)[] = ["title", "linkedin", "gender", "ethnicity"];
       for (const field of updatableFields) {
         if (manualFields.includes(field as string)) continue;
-
-        const existingValue = existingExec[field as keyof typeof existingExec];
+        const existingValue = (existingExec as any)[field];
         const newValue = executive[field];
-
-        if ((existingValue === null || existingValue === undefined || existingValue === '') && 
-            newValue !== null && newValue !== undefined && newValue !== '') {
-          
-          (updateData as any)[field] = newValue;
-          
-          // Also update confidence scores if applicable
-          if (field === 'gender' && executive.genderConfidence) {
-            updateData.genderConfidence = executive.genderConfidence;
-          }
-          if (field === 'ethnicity' && executive.ethnicityConfidence) {
-            updateData.ethnicityConfidence = executive.ethnicityConfidence;
-          }
-          
+        if ((existingValue === null || existingValue === undefined || existingValue === "") &&
+            newValue !== null && newValue !== undefined && newValue !== "") {
+          updateData[toSnakeKey(field)] = newValue;
+          if (field === "gender" && executive.genderConfidence) updateData.gender_confidence = executive.genderConfidence;
+          if (field === "ethnicity" && executive.ethnicityConfidence) updateData.ethnicity_confidence = executive.ethnicityConfidence;
           updated = true;
         }
       }
 
       if (updated) {
-        const [updatedExec] = await db
-          .update(executives)
-          .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
-          .where(eq(executives.id, existingExec.id))
-          .returning();
-        return updatedExec;
+        return sb<Executive>(
+          await supabase
+            .from("hak_executives")
+            .update({ ...updateData, updated_at: nowIso() })
+            .eq("id", existingExec.id)
+            .select()
+            .single(),
+          "createExecutiveFromDiscovery:update"
+        );
       }
-
       return existingExec;
     }
 
     console.log(`[Storage:Discovery] Creating executive: ${executive.name}`);
-    const [newExecutive] = await db.insert(executives).values({
-      ...executive,
-      source: executive.source || 'discovery'
-    }).returning();
-    return newExecutive;
+    return sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .insert(keysToSnake({ ...executive, source: executive.source || "discovery" }))
+        .select()
+        .single(),
+      "createExecutiveFromDiscovery:insert"
+    );
   }
 
-  /**
-   * ENRICHMENT LAYER: Enrich only empty/null fields.
-   * - May only update NULL or empty string fields
-   * - Must never overwrite existing data
-   * - Must never delete executives
-   * - Returns list of actually enriched fields
-   * - Stores enrichment metadata (source, confidence, timestamp, clockworkId, clockworkProjectId)
-   * - IDEMPOTENT: If executive already enriched with same clockworkId, returns existing state
-   */
   async enrichExecutiveEmptyFields(
-    id: number, 
+    id: number,
     data: Partial<InsertExecutive>,
     metadata?: { source: string; confidence: number; clockworkId?: string; clockworkProjectId?: string }
   ): Promise<{ updated: Executive; enrichedFields: string[]; alreadyEnriched: boolean }> {
     const existing = await this.getExecutive(id);
-    if (!existing) {
-      throw new Error(`Executive ${id} not found for enrichment`);
-    }
+    if (!existing) throw new Error(`Executive ${id} not found for enrichment`);
 
-    // IDEMPOTENCY CHECK: If already enriched with same clockworkId, return early
     if (metadata?.clockworkId && existing.clockworkId === metadata.clockworkId) {
-      console.log(`[Storage:Enrichment] Executive ${id} already enriched with clockworkId ${metadata.clockworkId} - skipping (idempotent)`);
+      console.log(`[Storage:Enrichment] Executive ${id} already enriched with clockworkId ${metadata.clockworkId} — skipping`);
       return { updated: existing, enrichedFields: [], alreadyEnriched: true };
     }
-
-    // SAFEGUARD: If already enriched with a different clockworkId, prevent overwrite
     if (metadata?.clockworkId && existing.clockworkId && existing.clockworkId !== metadata.clockworkId) {
-      console.log(`[Storage:Enrichment] Executive ${id} already enriched with different clockworkId ${existing.clockworkId} - preventing overwrite`);
+      console.log(`[Storage:Enrichment] Executive ${id} already enriched with different clockworkId — preventing overwrite`);
       return { updated: existing, enrichedFields: [], alreadyEnriched: true };
     }
 
     const enrichedFields: string[] = [];
-    const updateData: Partial<InsertExecutive> = {};
+    const updateData: Record<string, any> = {};
 
-    // Only update fields that are currently null or empty
     const fieldsToCheck: (keyof InsertExecutive)[] = [
-      'title', 'email', 'phone', 'linkedin', 'profileUrl', 'imageUrl',
-      'gender', 'ethnicity', 'notes', 'remunerationNotes', 'availability', 'level'
+      "title", "email", "phone", "linkedin", "profileUrl", "imageUrl",
+      "gender", "ethnicity", "notes", "remunerationNotes", "availability", "level",
     ];
 
     for (const field of fieldsToCheck) {
-      const existingValue = existing[field as keyof typeof existing];
-      const newValue = data[field];
-      const existingConfidence = (field === 'gender' ? existing.genderConfidence : (field === 'ethnicity' ? existing.ethnicityConfidence : 0)) || 0;
-      const newConfidence = (field === 'gender' ? metadata?.confidence : (field === 'ethnicity' ? metadata?.confidence : 0)) || 0;
-      
-      // Special handling for gender and ethnicity with confidence scores
-      if (field === 'gender' || field === 'ethnicity') {
-        if ((existingValue === null || existingValue === undefined || existingValue === '') && 
-            newValue !== null && newValue !== undefined && newValue !== '') {
-          (updateData as any)[field] = newValue;
-          (updateData as any)[`${field}Confidence`] = newConfidence;
+      const existingValue = (existing as any)[field];
+      const newValue = (data as any)[field];
+      const existingConfidence = (field === "gender" ? existing.genderConfidence : field === "ethnicity" ? existing.ethnicityConfidence : 0) || 0;
+      const newConfidence = metadata?.confidence || 0;
+
+      if (field === "gender" || field === "ethnicity") {
+        if ((existingValue === null || existingValue === undefined || existingValue === "") &&
+            newValue !== null && newValue !== undefined && newValue !== "") {
+          updateData[toSnakeKey(field)] = newValue;
+          updateData[toSnakeKey(`${field}Confidence`)] = newConfidence;
           enrichedFields.push(field);
-          console.log(`[Storage:Enrichment] Enriching field ${field} for executive ${id} with confidence ${newConfidence}`);
-        } else if (newValue !== null && newValue !== undefined && newValue !== '' && newConfidence > existingConfidence) {
-          // Update if new confidence is strictly higher
-          (updateData as any)[field] = newValue;
-          (updateData as any)[`${field}Confidence`] = newConfidence;
+        } else if (newValue !== null && newValue !== undefined && newValue !== "" && newConfidence > existingConfidence) {
+          updateData[toSnakeKey(field)] = newValue;
+          updateData[toSnakeKey(`${field}Confidence`)] = newConfidence;
           enrichedFields.push(field);
-          console.log(`[Storage:Enrichment] Updating field ${field} for executive ${id} (higher confidence: ${newConfidence} > ${existingConfidence})`);
         }
         continue;
       }
-      
-      // Only enrich if current value is null/undefined/empty AND new value exists
-      if ((existingValue === null || existingValue === undefined || existingValue === '') && 
-          newValue !== null && newValue !== undefined && newValue !== '') {
-        (updateData as any)[field] = newValue;
+
+      if ((existingValue === null || existingValue === undefined || existingValue === "") &&
+          newValue !== null && newValue !== undefined && newValue !== "") {
+        updateData[toSnakeKey(field)] = newValue;
         enrichedFields.push(field);
-        console.log(`[Storage:Enrichment] Enriching field ${field} for executive ${id}`);
       }
     }
 
     if (enrichedFields.length === 0 && !metadata) {
-      console.log(`[Storage:Enrichment] No empty fields to enrich for executive ${id}`);
       return { updated: existing, enrichedFields: [], alreadyEnriched: false };
     }
 
-    // Store enrichment metadata if provided
     if (metadata) {
-      (updateData as any).enrichmentSource = metadata.source;
-      (updateData as any).enrichmentConfidence = metadata.confidence;
-      (updateData as any).enrichmentTimestamp = sql`CURRENT_TIMESTAMP`;
-      if (metadata.clockworkId) {
-        (updateData as any).clockworkId = metadata.clockworkId;
-      }
-      if (metadata.clockworkProjectId) {
-        (updateData as any).clockworkProjectId = metadata.clockworkProjectId;
-      }
+      updateData.enrichment_source = metadata.source;
+      updateData.enrichment_confidence = metadata.confidence;
+      updateData.enrichment_timestamp = nowIso();
+      if (metadata.clockworkId) updateData.clockwork_id = metadata.clockworkId;
+      if (metadata.clockworkProjectId) updateData.clockwork_project_id = metadata.clockworkProjectId;
     }
 
-    const [updated] = await db
-      .update(executives)
-      .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(executives.id, id))
-      .returning();
+    const updated = sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .update({ ...updateData, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "enrichExecutiveEmptyFields"
+    );
 
-    console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for executive ${id}: ${enrichedFields.join(', ')}`);
+    console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for executive ${id}: ${enrichedFields.join(", ")}`);
     return { updated, enrichedFields, alreadyEnriched: false };
   }
 
-  /**
-   * ENRICHMENT LAYER: Create new executive from Clockwork data.
-   * - Used when user explicitly confirms creating a new executive from Clockwork match
-   * - Source is marked as 'clockwork'
-   * - Stores enrichment metadata
-   * - IDEMPOTENT: If executive with same clockworkId already exists in company, returns existing
-   */
   async createExecutiveFromClockwork(
     executive: InsertExecutive,
     metadata: { confidence: number; clockworkId: string; clockworkProjectId?: string }
   ): Promise<{ executive: Executive; alreadyExists: boolean }> {
-    // IDEMPOTENCY CHECK: Check if executive with same clockworkId already exists in the company
-    const existing = await db.select()
-      .from(executives)
-      .where(eq(executives.clockworkId, metadata.clockworkId))
+    const { data: existing } = await supabase
+      .from("hak_executives")
+      .select("*")
+      .eq("clockwork_id", metadata.clockworkId)
       .limit(1);
-    
-    if (existing.length > 0) {
-      console.log(`[Storage:Enrichment] Executive with clockworkId ${metadata.clockworkId} already exists - returning existing (idempotent)`);
-      return { executive: existing[0], alreadyExists: true };
+
+    if (existing && existing.length > 0) {
+      console.log(`[Storage:Enrichment] Executive with clockworkId ${metadata.clockworkId} already exists — returning existing`);
+      return { executive: keysToCamel<Executive>(existing[0]), alreadyExists: true };
     }
 
     console.log(`[Storage:Enrichment] Creating executive from Clockwork: ${executive.name}`);
-    const [newExecutive] = await db.insert(executives).values({
-      ...executive,
-      source: 'clockwork',
-      enrichmentSource: 'clockwork',
-      enrichmentConfidence: metadata.confidence,
-      enrichmentTimestamp: sql`CURRENT_TIMESTAMP`,
-      clockworkId: metadata.clockworkId,
-      clockworkProjectId: metadata.clockworkProjectId || null
-    }).returning();
-    return { executive: newExecutive, alreadyExists: false };
+    const inserted = sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .insert(
+          keysToSnake({
+            ...executive,
+            source: "clockwork",
+            enrichmentSource: "clockwork",
+            enrichmentConfidence: metadata.confidence,
+            enrichmentTimestamp: nowIso(),
+            clockworkId: metadata.clockworkId,
+            clockworkProjectId: metadata.clockworkProjectId || null,
+          })
+        )
+        .select()
+        .single(),
+      "createExecutiveFromClockwork"
+    );
+    return { executive: inserted, alreadyExists: false };
   }
 
-  /**
-   * Check if an executive has already been enriched with a specific Clockwork profile
-   */
   async checkExecutiveClockworkEnrichment(executiveId: number, clockworkId: string): Promise<boolean> {
     const exec = await this.getExecutive(executiveId);
     return exec?.clockworkId === clockworkId;
   }
 
-  /**
-   * UI/MANUAL LAYER: Create executive via user action.
-   * - Full capability for user-initiated creation
-   * - Source is marked as 'manual'
-   */
   async createExecutiveManual(executive: InsertExecutive): Promise<Executive> {
     console.log(`[Storage:Manual] User creating executive: ${executive.name}`);
-    const [newExecutive] = await db.insert(executives).values({
-      ...executive,
-      source: 'manual'
-    }).returning();
-    return newExecutive;
+    return sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .insert(keysToSnake({ ...executive, source: "manual" }))
+        .select()
+        .single(),
+      "createExecutiveManual"
+    );
   }
 
   async findExecutiveByNameAndCompany(name: string, companyId: number): Promise<Executive | undefined> {
-    const trimmedName = name.trim();
-    if (!trimmedName) return undefined;
-    const [existing] = await db
-      .select()
-      .from(executives)
-      .where(and(
-        eq(executives.companyId, companyId),
-        sql`lower(trim(${executives.name})) = lower(${trimmedName})`
-      ))
+    const trimmed = name.trim();
+    if (!trimmed) return undefined;
+    const { data } = await supabase
+      .from("hak_executives")
+      .select("*")
+      .eq("company_id", companyId)
+      .ilike("name", trimmed)
       .limit(1);
-    return existing || undefined;
+    return data?.[0] ? keysToCamel<Executive>(data[0]) : undefined;
   }
 
   async updateExecutiveManual(id: number, data: Partial<InsertExecutive>): Promise<Executive> {
     console.log(`[Storage:Manual] User editing executive ${id}`);
     const existing = await this.getExecutive(id);
     const currentManualFields = (existing?.manuallyEditedFields as string[]) || [];
-    const editedFieldNames = Object.keys(data).filter(k => 
-      k !== 'manuallyEditedFields' && k !== 'updatedAt' && k !== 'genderConfidence' && k !== 'ethnicityConfidence'
+    const editedFieldNames = Object.keys(data).filter(
+      (k) => k !== "manuallyEditedFields" && k !== "updatedAt" && k !== "genderConfidence" && k !== "ethnicityConfidence"
     );
     const newManualFields = [...new Set([...currentManualFields, ...editedFieldNames])];
-    
-    const [updated] = await db
-      .update(executives)
-      .set({ ...data, manuallyEditedFields: newManualFields, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(executives.id, id))
-      .returning();
-    return updated;
+    return sb<Executive>(
+      await supabase
+        .from("hak_executives")
+        .update({ ...keysToSnake(data), manually_edited_fields: newManualFields, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateExecutiveManual"
+    );
   }
 
-  /**
-   * DISCOVERY LAYER: Create company record only.
-   * - May only CREATE new companies
-   * - Must never update existing companies after creation
-   */
+  // ── Company layer-aware ────────────────────────────────────────────────────
+
   async createCompanyFromDiscovery(company: InsertCompany): Promise<Company> {
     console.log(`[Storage:Discovery] Creating company: ${company.name}`);
-    const [newCompany] = await db.insert(companies).values(company).returning();
-    return newCompany;
+    return sb<Company>(
+      await supabase.from("hak_companies").insert(keysToSnake(company)).select().single(),
+      "createCompanyFromDiscovery"
+    );
   }
 
-  /**
-   * ENRICHMENT LAYER: Enrich only empty/null company fields.
-   * - May only update NULL or empty string fields
-   * - Must never overwrite existing data
-   * - Returns list of actually enriched fields
-   */
   async enrichCompanyEmptyFields(
-    id: number, 
+    id: number,
     data: Partial<InsertCompany>
   ): Promise<{ updated: Company; enrichedFields: string[] }> {
     const existing = await this.getCompany(id);
-    if (!existing) {
-      throw new Error(`Company ${id} not found for enrichment`);
-    }
+    if (!existing) throw new Error(`Company ${id} not found for enrichment`);
 
     const enrichedFields: string[] = [];
-    const updateData: Partial<InsertCompany> = {};
-
-    const fieldsToCheck: (keyof InsertCompany)[] = [
-      'streetAddress', 'revenueSource', 'employeesSource'
-    ];
+    const updateData: Record<string, any> = {};
+    const fieldsToCheck: (keyof InsertCompany)[] = ["streetAddress", "revenueSource", "employeesSource"];
 
     for (const field of fieldsToCheck) {
-      const existingValue = existing[field as keyof typeof existing];
-      const newValue = data[field];
-      
-      if ((existingValue === null || existingValue === undefined || existingValue === '') && 
-          newValue !== null && newValue !== undefined && newValue !== '') {
-        (updateData as any)[field] = newValue;
+      const existingValue = (existing as any)[field];
+      const newValue = (data as any)[field];
+      if ((existingValue === null || existingValue === undefined || existingValue === "") &&
+          newValue !== null && newValue !== undefined && newValue !== "") {
+        updateData[toSnakeKey(field)] = newValue;
         enrichedFields.push(field);
-        console.log(`[Storage:Enrichment] Enriching field ${field} for company ${id}`);
       }
     }
 
-    if (enrichedFields.length === 0) {
-      console.log(`[Storage:Enrichment] No empty fields to enrich for company ${id}`);
-      return { updated: existing, enrichedFields: [] };
-    }
+    if (enrichedFields.length === 0) return { updated: existing, enrichedFields: [] };
 
-    const [updated] = await db
-      .update(companies)
-      .set({ ...updateData, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(companies.id, id))
-      .returning();
-
-    console.log(`[Storage:Enrichment] Enriched ${enrichedFields.length} fields for company ${id}: ${enrichedFields.join(', ')}`);
+    const updated = sb<Company>(
+      await supabase
+        .from("hak_companies")
+        .update({ ...updateData, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "enrichCompanyEmptyFields"
+    );
     return { updated, enrichedFields };
   }
 
-  /**
-   * UI/MANUAL LAYER: Create company via user action.
-   * - Full capability for user-initiated creation
-   */
   async createCompanyManual(company: InsertCompany): Promise<Company> {
     console.log(`[Storage:Manual] User creating company: ${company.name}`);
-    const [newCompany] = await db.insert(companies).values(company).returning();
-    return newCompany;
+    return sb<Company>(
+      await supabase.from("hak_companies").insert(keysToSnake(company)).select().single(),
+      "createCompanyManual"
+    );
   }
 
   async updateCompanyManual(id: number, data: Partial<InsertCompany>): Promise<Company> {
     console.log(`[Storage:Manual] User editing company ${id}`);
     const existing = await this.getCompany(id);
     const currentManualFields = (existing?.manuallyEditedFields as string[]) || [];
-    const editedFieldNames = Object.keys(data).filter(k => 
-      k !== 'manuallyEditedFields' && k !== 'dataProvenance' && k !== 'updatedAt'
+    const editedFieldNames = Object.keys(data).filter(
+      (k) => k !== "manuallyEditedFields" && k !== "dataProvenance" && k !== "updatedAt"
     );
     const newManualFields = [...new Set([...currentManualFields, ...editedFieldNames])];
-    
-    const [updated] = await db
-      .update(companies)
-      .set({ ...data, manuallyEditedFields: newManualFields, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(companies.id, id))
-      .returning();
-    return updated;
+    return sb<Company>(
+      await supabase
+        .from("hak_companies")
+        .update({ ...keysToSnake(data), manually_edited_fields: newManualFields, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateCompanyManual"
+    );
   }
 
-  /**
-   * Find a company by name within a specific search query.
-   * Uses case-insensitive matching.
-   */
   async findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined> {
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(
-        and(
-          ilike(companies.name, name),
-          eq(companies.searchQueryId, searchQueryId)
-        )
-      );
-    return company;
+    const { data } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .eq("search_query_id", searchQueryId)
+      .ilike("name", name)
+      .limit(1);
+    return data?.[0] ? keysToCamel<Company>(data[0]) : undefined;
   }
 
   async logPipelineDecision(log: InsertPipelineLog): Promise<void> {
     try {
-      await db.insert(pipelineLog).values(log);
+      const { error } = await supabase.from("hak_pipeline_log").insert(keysToSnake(log));
+      if (error) console.warn("[Storage] Failed to log pipeline decision:", error.message);
     } catch (e) {
-      console.warn('[Storage] Failed to log pipeline decision:', e);
+      console.warn("[Storage] Failed to log pipeline decision:", e);
     }
   }
 
   async upsertCompanyNonDestructive(
-    company: InsertCompany, 
+    company: InsertCompany,
     searchQueryId: number,
     fieldConfidences?: Record<string, number>
   ): Promise<{ company: Company; isNew: boolean }> {
     const existing = await this.findCompanyByNameAndQuery(company.name, searchQueryId);
-    
+
     if (existing) {
       const manualFields = (existing.manuallyEditedFields as string[]) || [];
       const existingProvenance = (existing.dataProvenance as Record<string, any>) || {};
-      const patchData: Partial<InsertCompany> = {};
+      const patchData: Record<string, any> = {};
       const newProvenance = { ...existingProvenance };
 
       const dbConfidenceFields: Record<string, string> = {
-        'revenue': 'revenueConfidence',
-        'employees': 'employeesConfidence',
+        revenue: "revenueConfidence",
+        employees: "employeesConfidence",
       };
-      
-      for (const [key, value] of Object.entries(company)) {
-        if (key === 'manuallyEditedFields' || key === 'dataProvenance') continue;
-        if (value === null || value === undefined || value === '') continue;
 
+      for (const [key, value] of Object.entries(company)) {
+        if (key === "manuallyEditedFields" || key === "dataProvenance") continue;
+        if (value === null || value === undefined || value === "") continue;
         if (manualFields.includes(key)) {
           await this.logPipelineDecision({
             companyName: company.name,
             fieldName: key,
-            oldValue: String((existing as any)[key] ?? ''),
+            oldValue: String((existing as any)[key] ?? ""),
             newValue: String(value),
-            decision: 'skipped',
-            reason: 'field is manually edited — sacred',
+            decision: "skipped",
+            reason: "field is manually edited — sacred",
             searchQueryId,
           });
           continue;
@@ -660,229 +710,239 @@ export class DatabaseStorage implements IStorage {
 
         const existingValue = (existing as any)[key];
         const newConfidence = fieldConfidences?.[key] ?? 5;
-        
         let existingConfidence = 0;
         if (dbConfidenceFields[key]) {
           existingConfidence = (existing as any)[dbConfidenceFields[key]] ?? 0;
         } else {
           const provenanceEntry = existingProvenance[key];
-          if (provenanceEntry && typeof provenanceEntry.confidence === 'number') {
+          if (provenanceEntry && typeof provenanceEntry.confidence === "number") {
             existingConfidence = provenanceEntry.confidence;
           }
         }
 
-        if (existingValue === null || existingValue === undefined || existingValue === '') {
-          (patchData as any)[key] = value;
-          newProvenance[key] = {
-            value: String(value),
-            confidence: newConfidence,
-            updatedAt: new Date().toISOString(),
-            source: 'pipeline',
-          };
-          await this.logPipelineDecision({
-            companyName: company.name,
-            fieldName: key,
-            oldValue: null,
-            newValue: String(value),
-            decision: 'updated',
-            reason: 'existing field was null — filled',
-            searchQueryId,
-          });
+        if (existingValue === null || existingValue === undefined || existingValue === "") {
+          patchData[toSnakeKey(key)] = value;
+          newProvenance[key] = { value: String(value), confidence: newConfidence, updatedAt: nowIso(), source: "pipeline" };
+          await this.logPipelineDecision({ companyName: company.name, fieldName: key, oldValue: null, newValue: String(value), decision: "updated", reason: "existing field was null — filled", searchQueryId });
         } else if (newConfidence > existingConfidence) {
-          (patchData as any)[key] = value;
+          patchData[toSnakeKey(key)] = value;
           const history = existingProvenance[key]?.history || [];
-          history.push({
-            value: String(existingValue),
-            confidence: existingConfidence,
-            replacedAt: new Date().toISOString(),
-          });
-          newProvenance[key] = {
-            value: String(value),
-            confidence: newConfidence,
-            updatedAt: new Date().toISOString(),
-            source: 'pipeline',
-            history,
-          };
-          await this.logPipelineDecision({
-            companyName: company.name,
-            fieldName: key,
-            oldValue: String(existingValue),
-            newValue: String(value),
-            decision: 'updated',
-            reason: `new confidence ${newConfidence} > existing confidence ${existingConfidence}`,
-            searchQueryId,
-          });
-        } else if (existingValue !== null && existingValue !== undefined && existingValue !== '') {
-          await this.logPipelineDecision({
-            companyName: company.name,
-            fieldName: key,
-            oldValue: String(existingValue),
-            newValue: String(value),
-            decision: 'kept',
-            reason: `existing confidence ${existingConfidence} >= new confidence ${newConfidence}`,
-            searchQueryId,
-          });
+          history.push({ value: String(existingValue), confidence: existingConfidence, replacedAt: nowIso() });
+          newProvenance[key] = { value: String(value), confidence: newConfidence, updatedAt: nowIso(), source: "pipeline", history };
+          await this.logPipelineDecision({ companyName: company.name, fieldName: key, oldValue: String(existingValue), newValue: String(value), decision: "updated", reason: `new confidence ${newConfidence} > existing confidence ${existingConfidence}`, searchQueryId });
+        } else if (existingValue !== null && existingValue !== undefined && existingValue !== "") {
+          await this.logPipelineDecision({ companyName: company.name, fieldName: key, oldValue: String(existingValue), newValue: String(value), decision: "kept", reason: `existing confidence ${existingConfidence} >= new confidence ${newConfidence}`, searchQueryId });
         }
       }
-      
+
       if (Object.keys(patchData).length > 0) {
-        patchData.dataProvenance = newProvenance as any;
-        console.log(`[Storage:NonDestructive] Patching ${Object.keys(patchData).length} fields for company "${company.name}"`);
-        const [updated] = await db
-          .update(companies)
-          .set({ ...patchData, updatedAt: sql`CURRENT_TIMESTAMP` })
-          .where(eq(companies.id, existing.id))
-          .returning();
+        patchData.data_provenance = newProvenance;
+        const updated = sb<Company>(
+          await supabase
+            .from("hak_companies")
+            .update({ ...patchData, updated_at: nowIso() })
+            .eq("id", existing.id)
+            .select()
+            .single(),
+          "upsertCompanyNonDestructive:update"
+        );
         return { company: updated, isNew: false };
       }
-      
-      console.log(`[Storage:NonDestructive] Company "${company.name}" exists, no new data to patch`);
       return { company: existing, isNew: false };
     }
-    
+
     console.log(`[Storage:NonDestructive] Creating new company: "${company.name}"`);
     const provenance: Record<string, any> = {};
     for (const [key, value] of Object.entries(company)) {
-      if (value !== null && value !== undefined && value !== '' && key !== 'manuallyEditedFields' && key !== 'dataProvenance') {
-        provenance[key] = {
-          value: String(value),
-          confidence: fieldConfidences?.[key] ?? 5,
-          updatedAt: new Date().toISOString(),
-          source: 'pipeline',
-        };
+      if (value !== null && value !== undefined && value !== "" && key !== "manuallyEditedFields" && key !== "dataProvenance") {
+        provenance[key] = { value: String(value), confidence: fieldConfidences?.[key] ?? 5, updatedAt: nowIso(), source: "pipeline" };
       }
     }
-    const [newCompany] = await db
-      .insert(companies)
-      .values({ ...company, searchQueryId, dataProvenance: provenance })
-      .returning();
+    const newCompany = sb<Company>(
+      await supabase
+        .from("hak_companies")
+        .insert(keysToSnake({ ...company, searchQueryId, dataProvenance: provenance }))
+        .select()
+        .single(),
+      "upsertCompanyNonDestructive:insert"
+    );
     return { company: newCompany, isNew: true };
   }
 
+  // ── Search Queries ─────────────────────────────────────────────────────────
+
   async getAllSearchQueries(): Promise<SearchQuery[]> {
-    return db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+    const { data, error } = await supabase
+      .from("hak_search_queries")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`[Storage:getAllSearchQueries] ${error.message}`);
+    return keysToCamel<SearchQuery[]>(data ?? []);
   }
 
   async getUniqueSearchQueries(): Promise<SearchQuery[]> {
-    const allQueries = await db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+    const all = await this.getAllSearchQueries();
     const seen = new Set<string>();
     const unique: SearchQuery[] = [];
-    for (const q of allQueries) {
+    for (const q of all) {
       const key = q.query.toLowerCase().trim();
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(q);
-      }
+      if (!seen.has(key)) { seen.add(key); unique.push(q); }
     }
     return unique;
   }
 
   async getSearchQuery(id: number): Promise<SearchQuery | undefined> {
-    const [query] = await db.select().from(searchQueries).where(eq(searchQueries.id, id));
-    return query;
+    return sbOpt<SearchQuery>(
+      await supabase.from("hak_search_queries").select("*").eq("id", id).maybeSingle(),
+      "getSearchQuery"
+    );
   }
 
   async getSearchQueryByUniqueKey(uniqueKey: string): Promise<SearchQuery | undefined> {
-    const [query] = await db.select().from(searchQueries).where(eq(searchQueries.uniqueKey, uniqueKey));
-    return query;
+    const { data, error } = await supabase
+      .from("hak_search_queries")
+      .select("*")
+      .eq("unique_key", uniqueKey)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`[Storage:getSearchQueryByUniqueKey] ${error.message}`);
+    if (!data || data.length === 0) return undefined;
+    return keysToCamel<SearchQuery>(data[0]);
   }
 
   async createSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
-    const [newQuery] = await db.insert(searchQueries).values(query).returning();
-    return newQuery;
+    return sb<SearchQuery>(
+      await supabase.from("hak_search_queries").insert(keysToSnake(query)).select().single(),
+      "createSearchQuery"
+    );
   }
 
   async upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery> {
     const existing = await this.getSearchQueryByUniqueKey(query.uniqueKey);
     if (existing) {
-      const [updated] = await db
-        .update(searchQueries)
-        .set({ 
-          query: query.query,
-          parsedCriteria: query.parsedCriteria,
-          resultCount: query.resultCount || 0,
-          updatedAt: sql`CURRENT_TIMESTAMP`
-        })
-        .where(eq(searchQueries.id, existing.id))
-        .returning();
-      return updated;
+      return sb<SearchQuery>(
+        await supabase
+          .from("hak_search_queries")
+          .update({
+            query: query.query,
+            parsed_criteria: keysToSnake(query.parsedCriteria),
+            result_count: query.resultCount || 0,
+            updated_at: nowIso(),
+          })
+          .eq("id", existing.id)
+          .select()
+          .single(),
+        "upsertSearchQuery:update"
+      );
     }
     return this.createSearchQuery(query);
   }
 
   async updateSearchQueryResultCount(id: number, count: number): Promise<void> {
-    await db.update(searchQueries).set({ resultCount: count, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(searchQueries.id, id));
+    const { error } = await supabase
+      .from("hak_search_queries")
+      .update({ result_count: count, updated_at: nowIso() })
+      .eq("id", id);
+    if (error) throw new Error(`[Storage:updateSearchQueryResultCount] ${error.message}`);
   }
 
   async updateSearchQueryName(id: number, name: string): Promise<SearchQuery> {
-    const [updated] = await db
-      .update(searchQueries)
-      .set({ query: name, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, id))
-      .returning();
-    return updated;
+    return sb<SearchQuery>(
+      await supabase
+        .from("hak_search_queries")
+        .update({ query: name, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateSearchQueryName"
+    );
   }
 
   async updateSearchQueryClockworkProject(id: number, clockworkProjectId: string): Promise<SearchQuery> {
-    const [updated] = await db
-      .update(searchQueries)
-      .set({ clockworkProjectId, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, id))
-      .returning();
-    return updated;
+    return sb<SearchQuery>(
+      await supabase
+        .from("hak_search_queries")
+        .update({ clockwork_project_id: clockworkProjectId, updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateSearchQueryClockworkProject"
+    );
   }
 
   async deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void> {
-    await db.delete(companies).where(eq(companies.searchQueryId, searchQueryId));
+    const { error } = await supabase.from("hak_companies").delete().eq("search_query_id", searchQueryId);
+    if (error) throw new Error(`[Storage:deleteCompaniesBySearchQuery] ${error.message}`);
   }
 
   async deleteNonEnrichedCompaniesBySearchQuery(searchQueryId: number): Promise<number> {
-    const allCompanies = await db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
-    const companyIds = allCompanies.map(c => c.id);
-    
+    const { data: allCompanies, error } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .eq("search_query_id", searchQueryId);
+    if (error) throw new Error(`[Storage:deleteNonEnrichedCompaniesBySearchQuery] ${error.message}`);
+
+    const companyIds = (allCompanies ?? []).map((c: any) => c.id);
     let companiesWithExecs = new Set<number>();
+
     if (companyIds.length > 0) {
-      const execRows = await db.select({ companyId: executives.companyId })
-        .from(executives)
-        .where(inArray(executives.companyId, companyIds));
-      companiesWithExecs = new Set(execRows.map(r => r.companyId));
+      const { data: execRows } = await supabase
+        .from("hak_executives")
+        .select("company_id")
+        .in("company_id", companyIds);
+      companiesWithExecs = new Set((execRows ?? []).map((r: any) => r.company_id));
     }
 
     const toDelete: number[] = [];
-    for (const c of allCompanies) {
-      const hasEnrichmentMarkers = c.revenueSourceUrl || c.employeesSourceUrl || c.revenueLastUpdated || c.employeesLastUpdated;
+    for (const c of (allCompanies ?? [])) {
+      const hasEnrichmentMarkers = c.revenue_source_url || c.employees_source_url || c.revenue_last_updated || c.employees_last_updated;
       const hasExecutives = companiesWithExecs.has(c.id);
-      if (!hasEnrichmentMarkers && !hasExecutives) {
-        toDelete.push(c.id);
-      }
+      if (!hasEnrichmentMarkers && !hasExecutives) toDelete.push(c.id);
     }
+
     if (toDelete.length > 0) {
-      await db.delete(companies).where(
-        and(
-          eq(companies.searchQueryId, searchQueryId),
-          inArray(companies.id, toDelete)
-        )
-      );
+      const { error: delErr } = await supabase
+        .from("hak_companies")
+        .delete()
+        .eq("search_query_id", searchQueryId)
+        .in("id", toDelete);
+      if (delErr) throw new Error(`[Storage:deleteNonEnrichedCompaniesBySearchQuery:delete] ${delErr.message}`);
     }
-    const preserved = allCompanies.length - toDelete.length;
-    return preserved;
+
+    return (allCompanies?.length ?? 0) - toDelete.length;
   }
 
   async deleteSearchQuery(id: number): Promise<void> {
-    await db.delete(searchQueries).where(eq(searchQueries.id, id));
+    const { error } = await supabase.from("hak_search_queries").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteSearchQuery] ${error.message}`);
+  }
+
+  async getCompanySeedSample(limit: number): Promise<CompanySeedRow[]> {
+    const { data, error } = await supabase
+      .from("company_seed_list")
+      .select("id,name,slug,country,sector,website,description,source_url,source_title")
+      .order("id", { ascending: true })
+      .limit(limit);
+    if (error) throw new Error(`[Storage:getCompanySeedSample] ${error.message}`);
+    return keysToCamel<CompanySeedRow[]>(data ?? []);
+    // TODO(phase-2): accept QueryIntent, build WHERE clause:
+    //   .in('country', intent.countries).ilike('sector', `%${intent.sector}%`)
   }
 
   async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {
-    const allQueries = await db.select().from(searchQueries).orderBy(desc(searchQueries.createdAt));
+    const all = await this.getAllSearchQueries();
     const seen = new Set<string>();
     const result: Array<SearchQuery & { companyCount: number }> = [];
-    
-    for (const q of allQueries) {
+
+    for (const q of all) {
       const key = q.query.toLowerCase().trim();
       if (!seen.has(key)) {
         seen.add(key);
-        const companiesForQuery = await db.select().from(companies).where(eq(companies.searchQueryId, q.id));
-        result.push({ ...q, companyCount: companiesForQuery.length });
+        const { count } = await supabase
+          .from("hak_companies")
+          .select("*", { count: "exact", head: true })
+          .eq("search_query_id", q.id);
+        result.push({ ...q, companyCount: count ?? 0 });
       }
     }
     return result;
@@ -892,163 +952,222 @@ export class DatabaseStorage implements IStorage {
     const searchQuery = await this.getSearchQuery(searchQueryId);
     if (!searchQuery) return null;
 
-    const companiesForQuery = await db.select().from(companies).where(eq(companies.searchQueryId, searchQueryId));
+    const { data: companiesData } = await supabase
+      .from("hak_companies")
+      .select("*")
+      .eq("search_query_id", searchQueryId);
+
     const companiesWithExecs: Array<Company & { executives: Executive[] }> = [];
-
-    for (const company of companiesForQuery) {
-      const execsForCompany = await db.select().from(executives).where(eq(executives.companyId, company.id));
-      companiesWithExecs.push({ ...company, executives: execsForCompany });
+    for (const c of (companiesData ?? [])) {
+      const company = keysToCamel<Company>(c);
+      const execs = await this.getExecutivesByCompany(company.id);
+      companiesWithExecs.push({ ...company, executives: execs });
     }
-
     return { searchQuery, companies: companiesWithExecs };
   }
 
   async saveSatelliteHierarchies(searchQueryId: number, hierarchies: Record<string, Record<string, string>>): Promise<void> {
-    await db.update(searchQueries)
-      .set({ satelliteHierarchies: hierarchies, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, searchQueryId));
+    const { error } = await supabase
+      .from("hak_search_queries")
+      .update({ satellite_hierarchies: hierarchies, updated_at: nowIso() })
+      .eq("id", searchQueryId);
+    if (error) throw new Error(`[Storage:saveSatelliteHierarchies] ${error.message}`);
   }
 
   async saveSatelliteOrders(searchQueryId: number, orders: Record<string, string[]>): Promise<void> {
-    await db.update(searchQueries)
-      .set({ satelliteOrders: orders, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, searchQueryId));
+    const { error } = await supabase
+      .from("hak_search_queries")
+      .update({ satellite_orders: orders, updated_at: nowIso() })
+      .eq("id", searchQueryId);
+    if (error) throw new Error(`[Storage:saveSatelliteOrders] ${error.message}`);
   }
 
   async saveTableConfig(searchQueryId: number, config: Record<string, any>): Promise<void> {
-    await db.update(searchQueries)
-      .set({ tableConfig: config, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, searchQueryId));
+    const { error } = await supabase
+      .from("hak_search_queries")
+      .update({ table_config: config, updated_at: nowIso() })
+      .eq("id", searchQueryId);
+    if (error) throw new Error(`[Storage:saveTableConfig] ${error.message}`);
   }
 
   async saveMapPositions(searchQueryId: number, positions: Record<string, any>): Promise<void> {
-    await db.update(searchQueries)
-      .set({ mapPositions: positions, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(searchQueries.id, searchQueryId));
+    const { error } = await supabase
+      .from("hak_search_queries")
+      .update({ map_positions: positions, updated_at: nowIso() })
+      .eq("id", searchQueryId);
+    if (error) throw new Error(`[Storage:saveMapPositions] ${error.message}`);
   }
 
-  // Career History
+  // ── Career History ─────────────────────────────────────────────────────────
+
   async getCareerHistory(executiveId: number): Promise<CareerHistory[]> {
-    return db.select().from(careerHistory)
-      .where(eq(careerHistory.executiveId, executiveId))
-      .orderBy(asc(careerHistory.sortOrder), desc(careerHistory.createdAt));
+    const { data, error } = await supabase
+      .from("hak_career_history")
+      .select("*")
+      .eq("executive_id", executiveId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`[Storage:getCareerHistory] ${error.message}`);
+    return keysToCamel<CareerHistory[]>(data ?? []);
   }
 
   async createCareerHistory(entry: InsertCareerHistory): Promise<CareerHistory> {
-    const [created] = await db.insert(careerHistory).values(entry).returning();
-    return created;
+    return sb<CareerHistory>(
+      await supabase.from("hak_career_history").insert(keysToSnake(entry)).select().single(),
+      "createCareerHistory"
+    );
   }
 
   async updateCareerHistory(id: number, data: Partial<InsertCareerHistory>): Promise<CareerHistory> {
-    const [updated] = await db
-      .update(careerHistory)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(careerHistory.id, id))
-      .returning();
-    return updated;
+    return sb<CareerHistory>(
+      await supabase
+        .from("hak_career_history")
+        .update({ ...keysToSnake(data), updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateCareerHistory"
+    );
   }
 
   async deleteCareerHistory(id: number): Promise<void> {
-    await db.delete(careerHistory).where(eq(careerHistory.id, id));
+    const { error } = await supabase.from("hak_career_history").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteCareerHistory] ${error.message}`);
   }
 
-  // Education
+  // ── Education ──────────────────────────────────────────────────────────────
+
   async getEducation(executiveId: number): Promise<Education[]> {
-    return db.select().from(education)
-      .where(eq(education.executiveId, executiveId))
-      .orderBy(desc(education.graduationYear));
+    const { data, error } = await supabase
+      .from("hak_education")
+      .select("*")
+      .eq("executive_id", executiveId)
+      .order("graduation_year", { ascending: false });
+    if (error) throw new Error(`[Storage:getEducation] ${error.message}`);
+    return keysToCamel<Education[]>(data ?? []);
   }
 
   async createEducation(entry: InsertEducation): Promise<Education> {
-    const [created] = await db.insert(education).values(entry).returning();
-    return created;
+    return sb<Education>(
+      await supabase.from("hak_education").insert(keysToSnake(entry)).select().single(),
+      "createEducation"
+    );
   }
 
   async updateEducation(id: number, data: Partial<InsertEducation>): Promise<Education> {
-    const [updated] = await db
-      .update(education)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(education.id, id))
-      .returning();
-    return updated;
+    return sb<Education>(
+      await supabase
+        .from("hak_education")
+        .update({ ...keysToSnake(data), updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateEducation"
+    );
   }
 
   async deleteEducation(id: number): Promise<void> {
-    await db.delete(education).where(eq(education.id, id));
+    const { error } = await supabase.from("hak_education").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteEducation] ${error.message}`);
   }
 
-  // Remuneration
+  // ── Remuneration ───────────────────────────────────────────────────────────
+
   async getRemuneration(executiveId: number): Promise<Remuneration[]> {
-    return db.select().from(remuneration)
-      .where(eq(remuneration.executiveId, executiveId))
-      .orderBy(desc(remuneration.year));
+    const { data, error } = await supabase
+      .from("hak_remuneration")
+      .select("*")
+      .eq("executive_id", executiveId)
+      .order("year", { ascending: false });
+    if (error) throw new Error(`[Storage:getRemuneration] ${error.message}`);
+    return keysToCamel<Remuneration[]>(data ?? []);
   }
 
   async createRemuneration(entry: InsertRemuneration): Promise<Remuneration> {
-    const [created] = await db.insert(remuneration).values(entry).returning();
-    return created;
+    return sb<Remuneration>(
+      await supabase.from("hak_remuneration").insert(keysToSnake(entry)).select().single(),
+      "createRemuneration"
+    );
   }
 
   async updateRemuneration(id: number, data: Partial<InsertRemuneration>): Promise<Remuneration> {
-    const [updated] = await db
-      .update(remuneration)
-      .set({ ...data, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(remuneration.id, id))
-      .returning();
-    return updated;
+    return sb<Remuneration>(
+      await supabase
+        .from("hak_remuneration")
+        .update({ ...keysToSnake(data), updated_at: nowIso() })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateRemuneration"
+    );
   }
 
   async deleteRemuneration(id: number): Promise<void> {
-    await db.delete(remuneration).where(eq(remuneration.id, id));
+    const { error } = await supabase.from("hak_remuneration").delete().eq("id", id);
+    if (error) throw new Error(`[Storage:deleteRemuneration] ${error.message}`);
   }
 
   async deleteRemunerationByExecutive(executiveId: number): Promise<void> {
-    await db.delete(remuneration).where(eq(remuneration.executiveId, executiveId));
+    const { error } = await supabase.from("hak_remuneration").delete().eq("executive_id", executiveId);
+    if (error) throw new Error(`[Storage:deleteRemunerationByExecutive] ${error.message}`);
   }
 
-  // Executive Notes
+  // ── Notes ──────────────────────────────────────────────────────────────────
+
   async getExecutiveNotes(executiveId: number): Promise<ExecutiveNotes | undefined> {
-    const [notes] = await db.select().from(executiveNotes)
-      .where(eq(executiveNotes.executiveId, executiveId));
-    return notes;
+    return sbOpt<ExecutiveNotes>(
+      await supabase.from("hak_executive_notes").select("*").eq("executive_id", executiveId).maybeSingle(),
+      "getExecutiveNotes"
+    );
   }
 
   async upsertExecutiveNotes(executiveId: number, content: string): Promise<ExecutiveNotes> {
     const existing = await this.getExecutiveNotes(executiveId);
     if (existing) {
-      const [updated] = await db
-        .update(executiveNotes)
-        .set({ content, updatedAt: sql`CURRENT_TIMESTAMP` })
-        .where(eq(executiveNotes.id, existing.id))
-        .returning();
-      return updated;
+      return sb<ExecutiveNotes>(
+        await supabase
+          .from("hak_executive_notes")
+          .update({ content, updated_at: nowIso() })
+          .eq("id", existing.id)
+          .select()
+          .single(),
+        "upsertExecutiveNotes:update"
+      );
     }
-    const [created] = await db.insert(executiveNotes).values({ executiveId, content }).returning();
-    return created;
+    return sb<ExecutiveNotes>(
+      await supabase.from("hak_executive_notes").insert({ executive_id: executiveId, content }).select().single(),
+      "upsertExecutiveNotes:insert"
+    );
   }
 
-  // Company Notes
   async getCompanyNotes(companyId: number): Promise<CompanyNotes | undefined> {
-    const [notes] = await db.select().from(companyNotes)
-      .where(eq(companyNotes.companyId, companyId));
-    return notes;
+    return sbOpt<CompanyNotes>(
+      await supabase.from("hak_company_notes").select("*").eq("company_id", companyId).maybeSingle(),
+      "getCompanyNotes"
+    );
   }
 
   async upsertCompanyNotes(companyId: number, content: string): Promise<CompanyNotes> {
     const existing = await this.getCompanyNotes(companyId);
     if (existing) {
-      const [updated] = await db
-        .update(companyNotes)
-        .set({ content, updatedAt: sql`CURRENT_TIMESTAMP` })
-        .where(eq(companyNotes.id, existing.id))
-        .returning();
-      return updated;
+      return sb<CompanyNotes>(
+        await supabase
+          .from("hak_company_notes")
+          .update({ content, updated_at: nowIso() })
+          .eq("id", existing.id)
+          .select()
+          .single(),
+        "upsertCompanyNotes:update"
+      );
     }
-    const [created] = await db.insert(companyNotes).values({ companyId, content }).returning();
-    return created;
+    return sb<CompanyNotes>(
+      await supabase.from("hak_company_notes").insert({ company_id: companyId, content }).select().single(),
+      "upsertCompanyNotes:insert"
+    );
   }
 
-  // Get full executive details
+  // ── Executive Details ──────────────────────────────────────────────────────
+
   async getExecutiveDetails(executiveId: number): Promise<{
     executive: Executive;
     company: Company | undefined;
@@ -1060,100 +1179,149 @@ export class DatabaseStorage implements IStorage {
     const executive = await this.getExecutive(executiveId);
     if (!executive) return null;
 
-    const [companyData, careerHistoryData, educationData, remunerationData, notesData] = await Promise.all([
+    const [company, careerHistoryData, educationData, remunerationData, notesData] = await Promise.all([
       this.getCompany(executive.companyId),
       this.getCareerHistory(executiveId),
       this.getEducation(executiveId),
       this.getRemuneration(executiveId),
-      this.getExecutiveNotes(executiveId)
+      this.getExecutiveNotes(executiveId),
     ]);
 
-    return {
-      executive,
-      company: companyData,
-      careerHistory: careerHistoryData,
-      education: educationData,
-      remuneration: remunerationData,
-      notes: notesData
-    };
+    return { executive, company, careerHistory: careerHistoryData, education: educationData, remuneration: remunerationData, notes: notesData };
   }
 
+  // ── Search Results ─────────────────────────────────────────────────────────
+
   async getSearchResultsByQuery(searchQueryId: number): Promise<SearchResult[]> {
-    return await db.select().from(searchResults).where(eq(searchResults.searchQueryId, searchQueryId));
+    const { data, error } = await supabase
+      .from("hak_search_results")
+      .select("*")
+      .eq("search_query_id", searchQueryId);
+    if (error) throw new Error(`[Storage:getSearchResultsByQuery] ${error.message}`);
+    return keysToCamel<SearchResult[]>(data ?? []);
   }
 
   async getSearchResultsByCompany(companyId: number): Promise<SearchResult[]> {
-    return await db.select().from(searchResults).where(eq(searchResults.companyId, companyId));
+    const { data, error } = await supabase
+      .from("hak_search_results")
+      .select("*")
+      .eq("company_id", companyId);
+    if (error) throw new Error(`[Storage:getSearchResultsByCompany] ${error.message}`);
+    return keysToCamel<SearchResult[]>(data ?? []);
   }
 
   async createSearchResult(result: InsertSearchResult): Promise<SearchResult> {
-    const [created] = await db.insert(searchResults).values(result).returning();
-    return created;
+    return sb<SearchResult>(
+      await supabase.from("hak_search_results").insert(keysToSnake(result)).select().single(),
+      "createSearchResult"
+    );
   }
 
   async createSearchResults(results: InsertSearchResult[]): Promise<SearchResult[]> {
     if (results.length === 0) return [];
-    const created = await db.insert(searchResults).values(results).returning();
-    return created;
+    const { data, error } = await supabase
+      .from("hak_search_results")
+      .insert(results.map(keysToSnake))
+      .select();
+    if (error) throw new Error(`[Storage:createSearchResults] ${error.message}`);
+    return keysToCamel<SearchResult[]>(data ?? []);
   }
 
   async updateSearchResultCompanyLink(id: number, companyId: number): Promise<SearchResult> {
-    const [updated] = await db
-      .update(searchResults)
-      .set({ companyId })
-      .where(eq(searchResults.id, id))
-      .returning();
-    return updated;
+    return sb<SearchResult>(
+      await supabase
+        .from("hak_search_results")
+        .update({ company_id: companyId })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateSearchResultCompanyLink"
+    );
   }
 
-  async createSearchSession(session: { id: string; rawQuery: string; pdContent?: string; pdConfidential?: boolean; userId?: string }): Promise<void> {
-    await db.insert(searchSessions).values({
-      id: session.id,
-      rawQuery: session.rawQuery,
-      pdContent: session.pdContent || null,
-      pdConfidential: session.pdConfidential ?? false,
-      status: 'pending',
-      refinementHistory: sql`'[]'::jsonb`,
-      userId: session.userId || null,
-    }).onConflictDoUpdate({
-      target: searchSessions.id,
-      set: {
-        // Refresh rawQuery if incoming value is non-empty (session may be pre-created by PD upload)
-        rawQuery: sql`CASE WHEN EXCLUDED.raw_query IS NOT NULL AND EXCLUDED.raw_query != '' THEN EXCLUDED.raw_query ELSE search_sessions.raw_query END`,
-        // Only update pdContent if the incoming value is non-null (don't overwrite existing)
-        pdContent: sql`COALESCE(EXCLUDED.pd_content, search_sessions.pd_content)`,
-        // Never downgrade pdConfidential: if existing row has true, keep it
-        pdConfidential: sql`CASE WHEN search_sessions.pd_confidential = true THEN true ELSE COALESCE(EXCLUDED.pd_confidential, search_sessions.pd_confidential) END`,
-        updatedAt: new Date(),
-      },
-    });
+  // ── Search Sessions ────────────────────────────────────────────────────────
+
+  async createSearchSession(session: {
+    id: string;
+    rawQuery: string;
+    pdContent?: string;
+    pdConfidential?: boolean;
+    userId?: string;
+  }): Promise<void> {
+    const existing = await this.getSearchSession(session.id);
+
+    if (existing) {
+      // Non-destructive update: preserve existing pdContent and pdConfidential
+      const updates: Record<string, any> = { updated_at: nowIso() };
+      if (session.rawQuery) updates.raw_query = session.rawQuery;
+      if (session.pdContent != null) updates.pd_content = session.pdContent;
+      if (session.pdConfidential != null && !existing.pdConfidential) {
+        updates.pd_confidential = session.pdConfidential;
+      }
+      const { error } = await supabase.from("hak_search_sessions").update(updates).eq("id", session.id);
+      if (error) throw new Error(`[Storage:createSearchSession:update] ${error.message}`);
+    } else {
+      const { error } = await supabase.from("hak_search_sessions").insert({
+        id: session.id,
+        raw_query: session.rawQuery,
+        pd_content: session.pdContent || null,
+        pd_confidential: session.pdConfidential ?? false,
+        status: "pending",
+        refinement_history: [],
+        user_id: session.userId || null,
+      });
+      if (error) throw new Error(`[Storage:createSearchSession:insert] ${error.message}`);
+    }
   }
 
-  async updateSearchSession(id: string, data: { status?: string; inferredIntent?: any; searchQueryId?: number; refinementHistory?: any[]; pdContent?: string; pdConfidential?: boolean }): Promise<void> {
-    const updates: Record<string, any> = {
-      updatedAt: new Date(),
-    };
+  async updateSearchSession(
+    id: string,
+    data: {
+      status?: string;
+      inferredIntent?: any;
+      searchQueryId?: number;
+      refinementHistory?: any[];
+      pdContent?: string;
+      pdConfidential?: boolean;
+    }
+  ): Promise<void> {
+    const updates: Record<string, any> = { updated_at: nowIso() };
     if (data.status !== undefined) updates.status = data.status;
-    if (data.inferredIntent !== undefined) updates.inferredIntent = data.inferredIntent;
-    if (data.searchQueryId !== undefined) updates.searchQueryId = data.searchQueryId;
-    if (data.refinementHistory !== undefined) updates.refinementHistory = data.refinementHistory;
-    if (data.pdContent !== undefined) updates.pdContent = data.pdContent;
-    if (data.pdConfidential !== undefined) updates.pdConfidential = data.pdConfidential;
-    await db.update(searchSessions).set(updates).where(eq(searchSessions.id, id));
+    if (data.inferredIntent !== undefined) updates.inferred_intent = data.inferredIntent;
+    if (data.searchQueryId !== undefined) updates.search_query_id = data.searchQueryId;
+    if (data.refinementHistory !== undefined) updates.refinement_history = data.refinementHistory;
+    if (data.pdContent !== undefined) updates.pd_content = data.pdContent;
+    if (data.pdConfidential !== undefined) updates.pd_confidential = data.pdConfidential;
+    const { error } = await supabase.from("hak_search_sessions").update(updates).eq("id", id);
+    if (error) throw new Error(`[Storage:updateSearchSession] ${error.message}`);
   }
 
-  async getSearchSession(id: string): Promise<{ id: string; rawQuery: string; pdContent: string | null; pdConfidential: boolean; inferredIntent: any; status: string; searchQueryId: number | null; refinementHistory: any[] } | undefined> {
-    const [row] = await db.select().from(searchSessions).where(eq(searchSessions.id, id));
-    if (!row) return undefined;
+  async getSearchSession(id: string): Promise<{
+    id: string;
+    rawQuery: string;
+    pdContent: string | null;
+    pdConfidential: boolean;
+    inferredIntent: any;
+    status: string;
+    searchQueryId: number | null;
+    refinementHistory: any[];
+  } | undefined> {
+    const { data, error } = await supabase
+      .from("hak_search_sessions")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error && error.code !== "PGRST116") throw new Error(`[Storage:getSearchSession] ${error.message}`);
+    if (!data) return undefined;
     return {
-      id: row.id,
-      rawQuery: row.rawQuery,
-      pdContent: row.pdContent ?? null,
-      pdConfidential: row.pdConfidential ?? false,
-      inferredIntent: row.inferredIntent,
-      status: row.status,
-      searchQueryId: row.searchQueryId || null,
-      refinementHistory: (row.refinementHistory as any[]) || [],
+      id: data.id,
+      rawQuery: data.raw_query,
+      pdContent: data.pd_content ?? null,
+      pdConfidential: data.pd_confidential ?? false,
+      inferredIntent: data.inferred_intent,
+      status: data.status,
+      searchQueryId: data.search_query_id || null,
+      refinementHistory: (data.refinement_history as any[]) || [],
     };
   }
 }

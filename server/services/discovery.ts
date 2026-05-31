@@ -1,13 +1,8 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL as LLM_DEFAULT_MODEL, FAST_MODEL } from "./llmClient";
 import { storage } from "../storage";
 import { validateLlmResponse } from "./postLlmValidation";
 import { validateQuery, validateResults, type QueryValidationResult } from "./queryValidation";
 import { normalizeOrInferSector } from "./sectorInference";
-
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
 
 // ========== APPROVED DISCOVERY MODELS ==========
 // CRITICAL: Only models that pass structured-output reliability tests are approved.
@@ -16,56 +11,27 @@ const openrouter = new OpenAI({
 
 // Approved models for discovery (structured output extraction)
 export const APPROVED_DISCOVERY_MODELS = {
-  primary: "google/gemini-2.5-flash-preview",  // Gemini 3 Flash - best structured output
-  fallbacks: [
-    "anthropic/claude-sonnet-4",               // Claude Sonnet - reliable fallback
-    "anthropic/claude-3.5-haiku",              // Claude Haiku - fast fallback
-  ]
+  primary: LLM_DEFAULT_MODEL,
+  fallbacks: [FAST_MODEL],
 };
 
-// Default model - Gemini 3 Flash for best structured output reliability
 export const DEFAULT_MODEL = APPROVED_DISCOVERY_MODELS.primary;
-
-// Fallback models for discovery - ONLY approved models
 export const FALLBACK_MODELS = APPROVED_DISCOVERY_MODELS.fallbacks;
 
-// Check if a model is approved for discovery (structured output extraction)
-export function isApprovedForDiscovery(modelId: string): boolean {
-  const allApproved = [
-    APPROVED_DISCOVERY_MODELS.primary,
-    ...APPROVED_DISCOVERY_MODELS.fallbacks
-  ];
-  return allApproved.includes(modelId);
+export function isApprovedForDiscovery(_modelId: string): boolean {
+  return true; // all calls go through Vertex AI
 }
 
-// Get the approved model to use (enforces approved list)
 export function getApprovedModel(requestedModel: string): { model: string; wasOverridden: boolean; reason?: string } {
-  if (isApprovedForDiscovery(requestedModel)) {
-    return { model: requestedModel, wasOverridden: false };
-  }
-  
-  console.warn(`[ModelValidation] Model "${requestedModel}" is NOT approved for discovery. Overriding to ${DEFAULT_MODEL}`);
-  return { 
-    model: DEFAULT_MODEL, 
-    wasOverridden: true,
-    reason: `Model "${requestedModel}" failed structured-output reliability test. Using approved model: ${DEFAULT_MODEL}`
-  };
+  return { model: DEFAULT_MODEL, wasOverridden: requestedModel !== DEFAULT_MODEL };
 }
 
-// Models known to work reliably with web search (:online suffix)
-export const RELIABLE_ONLINE_MODELS = [
-  "google/gemini-2.5-flash-preview",
-  "anthropic/claude-sonnet-4",
-  "anthropic/claude-3.5-sonnet",
-  "anthropic/claude-3.5-haiku",
-];
+// :online suffix not supported on Vertex AI — all web search done via Serper
+export const RELIABLE_ONLINE_MODELS: string[] = [];
 
-// Available models for discovery - ONLY approved schema-reliable models shown in UI
-// Non-approved models are NOT displayed to users for discovery selection
 export const AVAILABLE_MODELS = [
-  { id: "google/gemini-2.5-flash-preview", name: "Gemini 3 Flash", provider: "Google", reliableOnline: true, approvedForDiscovery: true },
-  { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
-  { id: "anthropic/claude-3.5-haiku", name: "Claude 3.5 Haiku", provider: "Anthropic", reliableOnline: true, approvedForDiscovery: true },
+  { id: LLM_DEFAULT_MODEL, name: "Gemini 2.5 Pro (Vertex AI)", provider: "Google", reliableOnline: false, approvedForDiscovery: true },
+  { id: FAST_MODEL, name: "Gemini 2.5 Flash (Vertex AI)", provider: "Google", reliableOnline: false, approvedForDiscovery: true },
 ];
 
 // Parse OpenRouter error responses for user-friendly messages
@@ -78,7 +44,7 @@ export function parseOpenRouterError(error: any): { code: string; message: strin
     return {
       code: "PRIVACY_POLICY",
       message: "This model requires OpenRouter privacy settings to be configured.",
-      suggestion: "Visit https://openrouter.ai/settings/privacy and enable 'Paid model training' for this provider."
+      suggestion: "Check your Vertex AI project permissions and ensure the model is enabled in your region."
     };
   }
   
@@ -114,7 +80,7 @@ export function parseOpenRouterError(error: any): { code: string; message: strin
     return {
       code: "INSUFFICIENT_CREDITS",
       message: "Insufficient OpenRouter credits.",
-      suggestion: "Add credits to your OpenRouter account at https://openrouter.ai/credits"
+      suggestion: "Check your Google Cloud billing is active for project GOOGLE_CLOUD_PROJECT."
     };
   }
   
@@ -136,13 +102,13 @@ export async function testModel(modelId: string, withOnline: boolean = false): P
   error?: { code: string; message: string; suggestion: string };
 }> {
   const startTime = Date.now();
-  const modelName = withOnline ? `${modelId}:online` : modelId;
-  
-  console.log(`[Model Test] Testing model: ${modelName}`);
-  
+
+  console.log(`[Model Test] Testing model: ${modelId}`);
+
   try {
-    const response = await openrouter.chat.completions.create({
-      model: modelName,
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: modelId,
       messages: [
         { role: "user", content: "Reply with exactly one word: OK" }
       ],
@@ -153,7 +119,7 @@ export async function testModel(modelId: string, withOnline: boolean = false): P
     const latencyMs = Date.now() - startTime;
     const content = response.choices[0]?.message?.content?.trim() || "";
     
-    console.log(`[Model Test] ${modelName} responded in ${latencyMs}ms: "${content}"`);
+    console.log(`[Model Test] ${modelId} responded in ${latencyMs}ms: "${content}"`);
     
     // Validate that we got a reasonable response (not empty)
     if (!content || content.length === 0) {
@@ -181,7 +147,7 @@ export async function testModel(modelId: string, withOnline: boolean = false): P
     const latencyMs = Date.now() - startTime;
     const parsedError = parseOpenRouterError(error);
     
-    console.log(`[Model Test] ${modelName} failed in ${latencyMs}ms: ${parsedError.code} - ${parsedError.message}`);
+    console.log(`[Model Test] ${modelId} failed in ${latencyMs}ms: ${parsedError.code} - ${parsedError.message}`);
     
     return {
       success: false,
@@ -962,37 +928,7 @@ export async function parseSearchQuery(query: string, selectedModel: string = DE
 }
 
 export async function fetchAvailableModels(): Promise<any[]> {
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/models", {
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      },
-    });
-    
-    if (!response.ok) {
-      console.error("[Discovery] Failed to fetch models from OpenRouter");
-      return AVAILABLE_MODELS;
-    }
-    
-    const data = await response.json();
-    const models = data.data?.map((model: any) => ({
-      id: model.id,
-      name: model.name || model.id,
-      provider: model.id.split('/')[0] || 'Unknown',
-      contextLength: model.context_length,
-      pricing: model.pricing
-    })) || [];
-    
-    const hasDeepseek = models.some((m: any) => m.id === DEFAULT_MODEL);
-    const sortedModels = hasDeepseek ? models : [
-      { id: DEFAULT_MODEL, name: "DeepSeek V3 (Default)", provider: "DeepSeek" },
-      ...models
-    ];
-    return sortedModels;
-  } catch (error) {
-    console.error("[Discovery] Error fetching models:", error);
-    return AVAILABLE_MODELS;
-  }
+  return AVAILABLE_MODELS;
 }
 
 export function generateSearchUniqueKey(query: string): string {
@@ -1187,7 +1123,7 @@ export async function* discoverCompaniesStreaming(
   }
   // ========== END QUERY VALIDATION ==========
   
-  const client = openrouter;
+  const client = await getLLMClient();
   
   // ========== ENFORCE APPROVED MODELS ==========
   // CRITICAL: Only approved models can be used for discovery
@@ -1207,16 +1143,10 @@ export async function* discoverCompaniesStreaming(
   }
   // ========== END MODEL ENFORCEMENT ==========
   
-  // Determine if this model supports :online suffix reliably
-  const isReliableOnlineModel = RELIABLE_ONLINE_MODELS.some(m => baseModel.includes(m) || m.includes(baseModel));
-  
-  // Try with :online first if the model is known to support it, otherwise try base model first
-  let useOnline = isReliableOnlineModel;
-  let modelName = useOnline ? `${baseModel}:online` : baseModel;
-  
+  const modelName = baseModel;
+
   console.log(`[Discovery Streaming] Starting for ${limit} companies with model: ${modelName}`);
   console.log(`[Discovery Streaming] Original query: "${query}"`);
-  console.log(`[Discovery Streaming] Reliable online model: ${isReliableOnlineModel}, using :online = ${useOnline}`);
   
   yield { type: 'status', data: { message: 'Searching the web for companies...', progress: 5 } };
   
@@ -1315,176 +1245,63 @@ IMPORTANT:
         schema: companySchema
       }
     },
-    // Response healing plugin to fix any malformed JSON
-    plugins: [
-      { id: "response-healing" },
-      { id: "web", max_results: 10 }
-    ]
   };
 
-  yield { type: 'status', data: { message: useOnline ? 'Searching the web for companies...' : 'Researching companies...', progress: 15 } };
+  yield { type: 'status', data: { message: 'Researching companies...', progress: 15 } };
 
   let response;
-  let usedOnline = useOnline;
-  
+  const usedOnline = false;
+
   // Helper function to make the API call
-  const makeRequest = async (withOnline: boolean) => {
-    const attemptModel = withOnline ? `${baseModel}:online` : baseModel;
-    const attemptOptions = {
-      ...requestOptions,
-      model: attemptModel,
-      plugins: withOnline ? [
-        { id: "response-healing" },
-        { id: "web", max_results: 10 }
-      ] : [
-        { id: "response-healing" }
-      ]
-    };
-    return client.chat.completions.create(attemptOptions);
+  const makeRequest = async () => {
+    return client.chat.completions.create(requestOptions);
   };
-  
-  // Helper to try a model with both online modes
-  let lastFallbackError: { code: string; message: string; suggestion: string } | null = null;
-  
+
+  // Helper to try a fallback model
+  // Note: typed via wrapper object so TypeScript CFA tracks mutations through closures
+  const lastFallbackErrorRef: { value: { code: string; message: string; suggestion: string } | null } = { value: null };
+
   const tryModelWithFallback = async (model: string): Promise<{ response: any; usedOnline: boolean } | null> => {
-    const isReliableOnline = RELIABLE_ONLINE_MODELS.includes(model);
-    const tryOnlineFirst = isReliableOnline;
-    
     try {
-      const resp = await client.chat.completions.create({
-        ...requestOptions,
-        model: tryOnlineFirst ? `${model}:online` : model,
-        plugins: tryOnlineFirst ? [{ id: "response-healing" }, { id: "web", max_results: 10 }] : [{ id: "response-healing" }]
-      });
-      return { response: resp, usedOnline: tryOnlineFirst };
+      const resp = await client.chat.completions.create({ ...requestOptions, model });
+      return { response: resp, usedOnline: false };
     } catch (e1: any) {
-      const err1 = parseOpenRouterError(e1);
-      console.log(`[Discovery Streaming] ${model} (online=${tryOnlineFirst}) failed: ${err1.code}`);
-      
-      // Try opposite online mode
-      try {
-        const resp = await client.chat.completions.create({
-          ...requestOptions,
-          model: !tryOnlineFirst ? `${model}:online` : model,
-          plugins: !tryOnlineFirst ? [{ id: "response-healing" }, { id: "web", max_results: 10 }] : [{ id: "response-healing" }]
-        });
-        return { response: resp, usedOnline: !tryOnlineFirst };
-      } catch (e2: any) {
-        lastFallbackError = parseOpenRouterError(e2);
-        console.log(`[Discovery Streaming] ${model} (online=${!tryOnlineFirst}) also failed: ${lastFallbackError.code}`);
-        return null;
-      }
+      lastFallbackErrorRef.value = parseOpenRouterError(e1);
+      console.log(`[Discovery Streaming] ${model} failed: ${lastFallbackErrorRef.value.code}`);
+      return null;
     }
   };
 
   try {
-    response = await makeRequest(useOnline);
-    usedOnline = useOnline;
+    response = await makeRequest();
   } catch (apiError: any) {
     const parsedError = parseOpenRouterError(apiError);
-    console.log(`[Discovery Streaming] First attempt failed (online=${useOnline}): ${parsedError.code} - ${parsedError.message}`);
-    
-    // If online mode failed, try without it (or vice versa)
-    const shouldRetry = parsedError.code === 'PROVIDER_ERROR' || parsedError.code === 'PRIVACY_POLICY' || parsedError.code === 'MODEL_NOT_FOUND';
-    
-    if (shouldRetry) {
-      const retryOnline = !useOnline;
-      console.log(`[Discovery Streaming] Retrying with online=${retryOnline}...`);
-      yield { type: 'status', data: { message: `Web search unavailable for this model. ${retryOnline ? 'Enabling' : 'Using'} model's training data...`, progress: 18 } };
-      // Track web search unavailability as degradation
-      if (!retryOnline) {
-        degradationReasons.push('Web search unavailable - using model training data only');
+    console.log(`[Discovery Streaming] First attempt failed: ${parsedError.code} - ${parsedError.message}`);
+
+    let fallbackSuccess = false;
+    for (const fallbackModel of FALLBACK_MODELS) {
+      if (fallbackModel === baseModel) continue;
+      console.log(`[Discovery Streaming] Trying fallback model: ${fallbackModel}`);
+      yield { type: 'status', data: { message: `Trying alternative AI model...`, progress: 20 } };
+      const fallbackResult = await tryModelWithFallback(fallbackModel);
+      if (fallbackResult) {
+        response = fallbackResult.response;
+        fallbackSuccess = true;
+        degradationReasons.push(`Fallback model used: ${fallbackModel}`);
         if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
+        break;
       }
-      
-      try {
-        response = await makeRequest(retryOnline);
-        usedOnline = retryOnline;
-        console.log(`[Discovery Streaming] Retry successful with online=${retryOnline}`);
-      } catch (retryError: any) {
-        const retryParsedError = parseOpenRouterError(retryError);
-        console.log(`[Discovery Streaming] Both attempts failed for ${baseModel}: ${retryParsedError.message}`);
-        
-        // Try fallback models
-        let fallbackSuccess = false;
-        for (const fallbackModel of FALLBACK_MODELS) {
-          if (fallbackModel === baseModel) continue; // Skip the model we already tried
-          
-          console.log(`[Discovery Streaming] Trying fallback model: ${fallbackModel}`);
-          yield { type: 'status', data: { message: `Trying alternative AI model...`, progress: 20 } };
-          
-          const fallbackResult = await tryModelWithFallback(fallbackModel);
-          if (fallbackResult) {
-            response = fallbackResult.response;
-            usedOnline = fallbackResult.usedOnline;
-            console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel} (online=${usedOnline})`);
-            fallbackSuccess = true;
-            // Track fallback usage as degradation
-            degradationReasons.push(`Fallback model used: ${fallbackModel}`);
-            if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
-            break;
-          }
-          console.log(`[Discovery Streaming] Fallback model ${fallbackModel} also failed`);
-        }
-        
-        if (!fallbackSuccess) {
-          console.error("[Discovery Streaming] All models failed including fallbacks");
-          const lastErr = lastFallbackError as { code: string; message: string; suggestion: string } | null;
-          const errorMsg = lastErr 
-            ? `All AI models unavailable. Last error: ${lastErr.message}`
-            : `All AI models unavailable. Please check your OpenRouter API key and try again.`;
-          const suggestion = lastErr?.suggestion || 
-            'Ensure your OpenRouter account has credits and privacy settings are configured.';
-          yield { type: 'error', data: { 
-            message: errorMsg, 
-            suggestion,
-            code: 'ALL_MODELS_FAILED'
-          } };
-          return;
-        }
-      }
-    } else {
-      // Non-retryable error (rate limit, insufficient credits) - still try fallbacks
-      console.error("[Discovery Streaming] LLM API error:", parsedError.message);
-      
-      if (parsedError.code === 'RATE_LIMITED' || parsedError.code === 'INSUFFICIENT_CREDITS') {
-        yield { type: 'error', data: { 
-          message: parsedError.message, 
-          suggestion: parsedError.suggestion,
-          code: parsedError.code
-        } };
-        return;
-      }
-      
-      // Try fallback models for other errors
-      let fallbackSuccess = false;
-      for (const fallbackModel of FALLBACK_MODELS) {
-        if (fallbackModel === baseModel) continue;
-        
-        console.log(`[Discovery Streaming] Trying fallback model: ${fallbackModel}`);
-        yield { type: 'status', data: { message: `Trying alternative AI model...`, progress: 20 } };
-        
-        const fallbackResult = await tryModelWithFallback(fallbackModel);
-        if (fallbackResult) {
-          response = fallbackResult.response;
-          usedOnline = fallbackResult.usedOnline;
-          console.log(`[Discovery Streaming] Fallback successful with ${fallbackModel}`);
-          fallbackSuccess = true;
-          // Track fallback usage as degradation
-          degradationReasons.push(`Fallback model used: ${fallbackModel}`);
-          if (discoveryStatus === 'complete') discoveryStatus = 'degraded';
-          break;
-        }
-      }
-      
-      if (!fallbackSuccess) {
-        yield { type: 'error', data: { 
-          message: parsedError.message, 
-          suggestion: parsedError.suggestion,
-          code: parsedError.code
-        } };
-        return;
-      }
+    }
+
+    if (!fallbackSuccess) {
+      const lastErrMsg = lastFallbackErrorRef.value?.message;
+      const lastErrSuggestion = lastFallbackErrorRef.value?.suggestion;
+      yield { type: 'error', data: {
+        message: lastErrMsg ? `All AI models unavailable. Last error: ${lastErrMsg}` : parsedError.message,
+        suggestion: lastErrSuggestion || parsedError.suggestion,
+        code: 'ALL_MODELS_FAILED'
+      } };
+      return;
     }
   }
   
@@ -1723,7 +1540,7 @@ export async function discoverCompaniesAndExecutives(
 export async function researchCompanyDetails(companyName: string, selectedModel: string = DEFAULT_MODEL): Promise<any> {
   console.log(`[Discovery] Researching company details for: ${companyName}`);
   
-  const client = openrouter;
+  const client = await getLLMClient();
   const modelName = selectedModel || DEFAULT_MODEL;
   
   const messages = [

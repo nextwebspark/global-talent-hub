@@ -1,9 +1,4 @@
-import OpenAI from "openai";
-
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
+import { getLLMClient, DEFAULT_MODEL } from "./llmClient";
 
 export interface ParsedRemuneration {
   baseSalary: number | null;
@@ -369,8 +364,9 @@ export async function parseRemunerationText(text: string): Promise<ParsedRemuner
     const liveRates = await fetchLiveRates();
     const systemPrompt = buildSystemPrompt(liveRates);
 
-    const response = await openrouter.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: DEFAULT_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: text },

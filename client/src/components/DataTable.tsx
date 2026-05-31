@@ -1304,7 +1304,7 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
     setColumnOrder(prev => {
       const allCols = prev.length > 0
         ? prev
-        : (tableRef.current?.getAllLeafColumns().map(c => c.id) ?? []);
+        : (tableRef.current?.getAllLeafColumns().map((c: { id: string }) => c.id) ?? []);
       const fromIndex = allCols.indexOf(draggedColumnId);
       const toIndex = allCols.indexOf(targetColumnId);
       if (fromIndex === -1 || toIndex === -1) return prev;
@@ -2186,19 +2186,17 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
               <div className="border-t border-border/40 pt-4">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Compensation</div>
                 <div className="space-y-3">
-                  {columnVisibility.remunerationNotes !== false && (
-                    <div>
-                      <Label htmlFor="exec-remuneration" className="text-xs font-medium">Remuneration Notes</Label>
-                      <Input
-                        id="exec-remuneration"
-                        value={newRemunerationNotes}
-                        onChange={(e) => setNewRemunerationNotes(e.target.value)}
-                        placeholder="e.g. Base 200k, Bonus 50k"
-                        className="mt-1"
-                        data-testid="input-exec-remuneration"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <Label htmlFor="exec-remuneration" className="text-xs font-medium">Remuneration Notes</Label>
+                    <Input
+                      id="exec-remuneration"
+                      value={newRemunerationNotes}
+                      onChange={(e) => setNewRemunerationNotes(e.target.value)}
+                      placeholder="e.g. Base 200k, Bonus 50k"
+                      className="mt-1"
+                      data-testid="input-exec-remuneration"
+                    />
+                  </div>
                 </div>
               </div>
             )}

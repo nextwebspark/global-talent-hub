@@ -1,9 +1,4 @@
-import OpenAI from "openai";
-
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
+import { getLLMClient, DEFAULT_MODEL } from "./llmClient";
 
 export const SECTOR_TAXONOMY: Record<string, string[]> = {
   "Energy": ["Oil, Gas & Pipelines", "Renewable Energy"],
@@ -133,8 +128,9 @@ export async function inferSector(companyName: string): Promise<SectorResult> {
     return empty;
   }
   try {
-    const response = await openrouter.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: DEFAULT_MODEL,
       max_tokens: 80,
       temperature: 0,
       messages: [
@@ -184,8 +180,9 @@ Respond with ONLY a JSON array:
 [{"id": <id>, "sector": "<specific sub-sector>", "category": "<category>", "confidence": "high"|"low"}, ...]`;
 
   try {
-    const response = await openrouter.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: DEFAULT_MODEL,
       max_tokens: 2000,
       temperature: 0,
       messages: [{ role: "user", content: batchPrompt }],

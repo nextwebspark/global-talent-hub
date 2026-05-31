@@ -1,15 +1,7 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import { storage } from "../../storage";
 import type { Company } from "@shared/schema";
-import { SerperAdapter, createSerperAdapter } from './serperAdapter';
-
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const DEFAULT_MODEL = "anthropic/claude-3.5-haiku";
-const FALLBACK_MODEL = "anthropic/claude-sonnet-4";
+import { createGeminiSearchAdapter } from './geminiSearchAdapter';
 
 interface EnrichmentResult<T> {
   value: T | null;
@@ -40,7 +32,8 @@ async function callLlm(
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
   try {
-    const response = await openrouter.chat.completions.create({
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
       model: DEFAULT_MODEL,
       messages: messages as any,
       temperature: 0.1,
@@ -49,8 +42,9 @@ async function callLlm(
     return response.choices[0]?.message?.content || '';
   } catch (error) {
     console.log(`[Enrichment] Primary model failed, trying fallback...`);
-    const response = await openrouter.chat.completions.create({
-      model: FALLBACK_MODEL,
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: FAST_MODEL,
       messages: messages as any,
       temperature: 0.1,
       max_tokens: 1000,
@@ -81,10 +75,7 @@ export async function enrichRevenue(
   companyName: string,
   country: string | null
 ): Promise<RevenueEnrichment> {
-  const searchProvider = createSerperAdapter();
-  if (!searchProvider) {
-    return { value: null, sourceUrl: null, sourceDescription: null, confidence: 0, found: false, currency: null, fiscalYear: null };
-  }
+  const searchProvider = createGeminiSearchAdapter();
 
   const query = `"${companyName}" revenue annual report ${country || ''} 2024 OR 2023`;
   
@@ -133,10 +124,7 @@ export async function enrichEmployees(
   companyName: string,
   country: string | null
 ): Promise<EnrichmentResult<number>> {
-  const searchProvider = createSerperAdapter();
-  if (!searchProvider) {
-    return { value: null, sourceUrl: null, sourceDescription: null, confidence: 0, found: false };
-  }
+  const searchProvider = createGeminiSearchAdapter();
 
   const query = `"${companyName}" employees headcount ${country || ''} 2024`;
   
@@ -259,8 +247,7 @@ async function enrichSingleExecutive(
   country: string | null,
   role: string
 ): Promise<ExecutiveEnrichment | null> {
-  const searchProvider = createSerperAdapter();
-  if (!searchProvider) return null;
+  const searchProvider = createGeminiSearchAdapter();
 
   const query = `"${companyName}" ${role} ${country || ''} 2024`;
   

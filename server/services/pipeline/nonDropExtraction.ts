@@ -1,22 +1,9 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import type { EnrichedCompany, ExtractedExecutive, FieldValue, SearchWithAnswerResult } from './types';
 import type { QueryIntent } from './queryIntent';
 import { buildInclusionPromptBlock } from './queryIntent';
 
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const FREE_MODELS = [
-  "anthropic/claude-opus-4.5",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-];
+const FREE_MODELS = [DEFAULT_MODEL, FAST_MODEL];
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -28,7 +15,8 @@ async function tryAllModels(
 ): Promise<string | null> {
   for (const model of FREE_MODELS) {
     try {
-      const response = await openrouter.chat.completions.create({
+      const llm = await getLLMClient();
+      const response = await llm.chat.completions.create({
         model,
         messages: messages as any,
         temperature: options.temperature ?? 0.1,
@@ -215,7 +203,7 @@ function transformToEnrichedCompany(raw: any): EnrichedCompany | null {
     website: makeField(raw.website, (v) => String(v)),
     summary: makeField(descField, (v) => String(v)),
     sourceUrls: [...new Set(sourceUrls)],
-    searchProvider: 'serper',
+    searchProvider: 'gemini-search',
     overallConfidence,
   };
 }
@@ -231,7 +219,7 @@ function transformPartialCompany(raw: any): EnrichedCompany | null {
     city: emptyField(), streetAddress: emptyField(), latitude: emptyField(), longitude: emptyField(),
     revenue: { ...emptyField(), currency: null, fiscalYear: null },
     employees: emptyField(), website: emptyField(), summary: emptyField(),
-    sourceUrls: [], searchProvider: 'serper', overallConfidence: 3,
+    sourceUrls: [], searchProvider: 'gemini-search', overallConfidence: 3,
   };
 }
 
@@ -763,7 +751,7 @@ export function extractCompaniesFromSearchResults(
       employees: makeField(employees), website: makeField(sourceUrl || null),
       summary: makeField(snippetText.substring(0, 200)),
       sourceUrls: sourceUrl ? [sourceUrl] : [],
-      searchProvider: 'serper', overallConfidence: 4,
+      searchProvider: 'gemini-search', overallConfidence: 4,
     });
   };
 

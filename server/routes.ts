@@ -1289,14 +1289,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         console.log(`[Routes] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
       }
 
-      // Step 5: Run discovery pipeline (quick = LLM-direct, deep = Serper web search)
-      if (mode === 'quick' && !process.env.OPENROUTER_API_KEY) {
-        return res.status(503).json({ error: "Quick Build requires an AI model key. Please add OPENROUTER_API_KEY to your secrets." });
-      }
-      if (mode === 'deep' && !process.env.SERPER_API_KEY) {
-        return res.status(503).json({ error: "In-Depth Search requires SERPER_API_KEY. Try Quick Build mode instead." });
-      }
-
+      // Step 5: Run discovery pipeline (mock mode: seed_list-backed, Gemini-only for intent)
       const { runDiscoveryPipeline } = await import("./services/pipeline/discoveryPipeline");
 
       console.log(`[Routes] Running ${mode} discovery for:`, query);
@@ -1321,7 +1314,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         return res.status(statusCode).json({ error: discoveryError });
       }
 
-      console.log(`[Routes] Serper discovery complete: ${companyCount} companies found`);
+      console.log(`[Routes] Discovery complete: ${companyCount} companies found`);
 
       // Step 6: Load full company data with executives from DB (pipeline already persisted)
       const fullResults = await storage.getFullSearchResults(searchQuery.id);
@@ -1409,21 +1402,9 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
       }
 
       // ---------------------------------------------------------------
-      // Step 5: Run Serper discovery pipeline (streaming progress via SSE)
+      // Step 5: Run discovery pipeline (streaming progress via SSE)
       // ---------------------------------------------------------------
       let companyCount = 0;
-
-      if (mode === 'quick' && !process.env.OPENROUTER_API_KEY) {
-        sendEvent('error', { message: 'Quick Build requires an AI model key. Please add OPENROUTER_API_KEY to your secrets.' });
-        res.end();
-        return;
-      }
-
-      if (mode === 'deep' && !process.env.SERPER_API_KEY) {
-        sendEvent('error', { message: 'In-Depth Search requires SERPER_API_KEY. Try Quick Build mode instead.' });
-        res.end();
-        return;
-      }
 
       console.log(`[Routes SSE] Using ${mode} discovery pipeline for: "${query}"`);
 
@@ -1627,15 +1608,18 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
 
       sendSSE("search_created", { searchQueryId: searchQuery.id, query, sessionId });
 
-      const { runEnhancedSearchPipeline } = await import("./services/pipeline/enhancedSearchPipeline");
+      // TODO(mock-mode): both first-run + refine currently hit company_seed_list to
+      // skip grounded search. Restore runEnhancedSearchPipeline when intent->SQL ships.
+      void pdContent;
+      const { runSeedListEnhancedStream } = await import("./services/pipeline/seedListSearch");
 
       let enrichedCompanyCount = 0;
-      for await (const event of runEnhancedSearchPipeline(
+      for await (const event of runSeedListEnhancedStream(
         query,
-        sessionId,
         searchQuery.id,
-        pdContent,
-        controller.signal
+        criteria.limit || 10,
+        controller.signal,
+        sessionId,
       )) {
         if (controller.signal.aborted) break;
         sendSSE(event.type, { ...event.data, message: event.message, timestamp: event.timestamp });
@@ -1803,7 +1787,11 @@ Return ONLY JSON.`
         message: `Refined: ${updatedIntent.refinementSummary || refinementMessage} (targeting: ${changedCriteria.join(", ")})`,
       });
 
-      const { runEnhancedSearchPipeline } = await import("./services/pipeline/enhancedSearchPipeline");
+      // TODO(mock-mode): refinement hits company_seed_list — re-enable runEnhancedSearchPipeline
+      // when grounded-search path is restored.
+      void refinementPdContent;
+      void updatedIntent;
+      const { runSeedListEnhancedStream } = await import("./services/pipeline/seedListSearch");
       const { parseSearchQuery, generateSearchUniqueKey } = await import("./services/discovery");
       const { criteria } = await parseSearchQuery(refinementMessage);
       const uniqueKey = generateSearchUniqueKey(`refined:${sessionId}:${Date.now()}`);
@@ -1814,19 +1802,16 @@ Return ONLY JSON.`
         resultCount: 0,
       });
 
-      // Build a targeted query that emphasises only the changed criteria dimensions
       const targetedQuery = changedCriteria.length < 4
         ? `[Targeted refinement — changed: ${changedCriteria.join(", ")}] ${refinementMessage}`
         : refinementMessage;
 
-      for await (const event of runEnhancedSearchPipeline(
+      for await (const event of runSeedListEnhancedStream(
         targetedQuery,
-        sessionId,
         searchQuery.id,
-        refinementPdContent,  // Confidentiality-enforced PD content
+        criteria.limit || 10,
         controller.signal,
-        updatedIntent,  // Pass pre-computed intent — pipeline skips re-extraction
-        changedCriteria // Constrain pipeline to only run passes for changed dimensions
+        sessionId,
       )) {
         if (controller.signal.aborted) break;
         sendSSE(event.type, { ...event.data, message: event.message, timestamp: event.timestamp });
@@ -1853,19 +1838,16 @@ Return ONLY JSON.`
       }
 
       const { parseSearchQuery, generateSearchUniqueKey } = await import("./services/discovery");
-      const { db: dbConn } = await import("./db");
-      const { companies: companiesTable } = await import("../shared/schema");
-      const { inArray, and, eq: eqOp } = await import("drizzle-orm");
+      const { supabase } = await import("./supabase");
 
       // Ownership validation: only allow company IDs that belong to the supplied session (unconditional)
-      const sessionCompanies = await dbConn
-        .select({ id: companiesTable.id })
-        .from(companiesTable)
-        .where(and(
-          inArray(companiesTable.id, companyIds),
-          eqOp(companiesTable.searchSessionId, sessionId)
-        ));
-      const authorisedIds = sessionCompanies.map((r: { id: number }) => r.id);
+      const { data: sessionCompanies, error: scErr } = await supabase
+        .from("hak_companies")
+        .select("id")
+        .eq("search_session_id", sessionId)
+        .in("id", companyIds);
+      if (scErr) throw new Error(`Ownership validation failed: ${scErr.message}`);
+      const authorisedIds = (sessionCompanies ?? []).map((r: { id: number }) => r.id);
       if (authorisedIds.length !== companyIds.length) {
         console.warn(`[Routes] add-to-project: ${companyIds.length - authorisedIds.length} company IDs rejected (not owned by session ${sessionId})`);
       }
@@ -1885,10 +1867,11 @@ Return ONLY JSON.`
 
       // Re-associate selected companies to this search query
       if (authorisedIds.length > 0) {
-        await dbConn
-          .update(companiesTable)
-          .set({ searchQueryId: searchQuery.id })
-          .where(inArray(companiesTable.id, authorisedIds));
+        const { error: updateErr } = await supabase
+          .from("hak_companies")
+          .update({ search_query_id: searchQuery.id })
+          .in("id", authorisedIds);
+        if (updateErr) throw new Error(`Company reassociation failed: ${updateErr.message}`);
       }
 
       const savedCompanies = await Promise.all(
@@ -3015,23 +2998,25 @@ Return ONLY JSON.`
       const compRevenueEntries: CompRevenueEntry[] = [];
 
       if (execIds.length > 0) {
-        const { remuneration } = await import("@shared/schema");
-        const { inArray } = await import("drizzle-orm");
-        const { db } = await import("./db");
+        const { supabase: sb } = await import("./supabase");
         const { convertToUSD, normalizeCurrencyCode } = await import("./services/currencyConversion");
-        const allRem = await db.select().from(remuneration).where(inArray(remuneration.executiveId, execIds));
+        const { data: allRem, error: remErr } = await sb
+          .from("hak_remuneration")
+          .select("*")
+          .in("executive_id", execIds);
+        if (remErr) throw new Error(`Remuneration query failed: ${remErr.message}`);
 
         const execMap = new Map(allExecutives.map(e => [e.id, e]));
-        for (const r of allRem) {
+        for (const r of (allRem ?? [])) {
           const currency = normalizeCurrencyCode(r.currency);
-          const base = r.baseSalary ? convertToUSD(Number(r.baseSalary), currency) : 0;
-          const allow = r.totalAllowances ? convertToUSD(Number(r.totalAllowances), currency) : 0;
+          const base = r.base_salary ? convertToUSD(Number(r.base_salary), currency) : 0;
+          const allow = r.total_allowances ? convertToUSD(Number(r.total_allowances), currency) : 0;
           const bon = r.bonus ? convertToUSD(Number(r.bonus), currency) : 0;
-          const ltip = r.longTermIncentives ? convertToUSD(Number(r.longTermIncentives), currency) : 0;
+          const ltip = r.long_term_incentives ? convertToUSD(Number(r.long_term_incentives), currency) : 0;
           const total = base + allow + bon + ltip;
           if (total <= 0) continue;
 
-          const exec = execMap.get(r.executiveId);
+          const exec = execMap.get(r.executive_id);
           if (!exec) continue;
           const remLevel = (exec.level || '').trim() || 'Unassigned';
           const country = exec.companyCountry;

@@ -1,19 +1,12 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import { storage } from "../../storage";
-
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const DEFAULT_MODEL = "anthropic/claude-3.5-haiku";
-const FALLBACK_MODEL = "anthropic/claude-sonnet-4";
 
 async function callLlm(
   messages: Array<{ role: string; content: string }>
 ): Promise<string> {
   try {
-    const response = await openrouter.chat.completions.create({
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
       model: DEFAULT_MODEL,
       messages: messages as any,
       temperature: 0.1,
@@ -22,8 +15,9 @@ async function callLlm(
     return response.choices[0]?.message?.content || '';
   } catch (error) {
     console.log(`[DiversityInference] Primary model failed, trying fallback...`);
-    const response = await openrouter.chat.completions.create({
-      model: FALLBACK_MODEL,
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: FAST_MODEL,
       messages: messages as any,
       temperature: 0.1,
       max_tokens: 2000,

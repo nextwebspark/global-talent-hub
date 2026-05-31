@@ -1,22 +1,10 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import { storage } from "../../storage";
 import type { EnrichedCompany, FieldValue, CompanyPersistResult } from './types';
 import type { InsertCompany, InsertExecutive } from '@shared/schema';
 import { applyCoordinateFallback } from '../coordinateFallback';
 
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const MODELS = [
-  "anthropic/claude-opus-4.5",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-];
+const MODELS = [DEFAULT_MODEL, FAST_MODEL];
 
 function parseJsonSafe(content: string): any {
   let cleaned = content.trim();
@@ -35,7 +23,8 @@ function parseJsonSafe(content: string): any {
 async function callLLM(prompt: string): Promise<string | null> {
   for (const model of MODELS) {
     try {
-      const response = await openrouter.chat.completions.create({
+      const llm = await getLLMClient();
+      const response = await llm.chat.completions.create({
         model,
         messages: [{ role: "user" as const, content: prompt }],
         temperature: 0.2,

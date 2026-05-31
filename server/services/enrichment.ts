@@ -10,14 +10,9 @@
 
 import { storage } from "../storage";
 import { randomUUID } from "crypto";
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL } from "./llmClient";
 
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const DEFAULT_ENRICHMENT_MODEL = "anthropic/claude-3.5-haiku";
+const DEFAULT_ENRICHMENT_MODEL = DEFAULT_MODEL;
 
 /**
  * Enrichment run context for observability
@@ -1981,7 +1976,8 @@ export async function researchCompanyDetails(companyName: string, model: string 
   console.log(`[Enrichment:Research] Researching company details for: ${companyName} (model: ${model})`);
   
   try {
-    const response = await openrouter.chat.completions.create({
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
       model: model,
       messages: [
         {

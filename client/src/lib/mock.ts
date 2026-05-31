@@ -126,7 +126,7 @@ export const generateMockData = (query: string): { companies: Company[], executi
       lng: city.lng + lngJitter,
       revenue_usd: revenue,
       employees: Math.floor(revenue / 500000),
-      confidence: Math.random() > 0.3 ? 'High' : 'Medium',
+      confidence: Math.random() > 0.3 ? 8 : 5,
       description: `Leading ${sector} player in ${city.country}.`,
       color: undefined
     });
@@ -145,7 +145,8 @@ export const generateMockData = (query: string): { companies: Company[], executi
           name: `Executive ${i}-${idx+1}`,
           title: role,
           source: Math.random() > 0.8 ? 'Clockwork' : 'Public',
-          confidence: Math.random() > 0.2 ? 'High' : 'Low',
+          confidence: Math.random() > 0.2 ? 8 : 3,
+          isEnriched: false,
         });
       }
     });

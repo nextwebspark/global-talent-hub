@@ -1,19 +1,6 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
-
-const FREE_MODELS = [
-  "anthropic/claude-opus-4.5",
-  "google/gemini-2.5-flash",
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "google/gemma-3-27b-it:free",
-  "mistralai/mistral-small-3.1-24b-instruct:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-];
+const FREE_MODELS = [DEFAULT_MODEL, FAST_MODEL];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QueryIntent — derived entirely from what the user typed.
@@ -82,16 +69,17 @@ function parseJsonSafe(content: string): any {
 async function callLLMForIntent(prompt: string): Promise<string | null> {
   for (const model of FREE_MODELS) {
     try {
-      const response = await openrouter.chat.completions.create({
+      const llm = await getLLMClient();
+      const response = await llm.chat.completions.create({
         model,
         messages: [{ role: "user", content: prompt }] as any,
         temperature: 0.1,
-        max_tokens: 2000,
+        max_tokens: 8192,
       });
       const content = response.choices[0]?.message?.content || '';
       if (content) return content;
     } catch (error: any) {
-      console.warn(`[QueryIntent] ${model} failed: ${error.message}`);
+      console.warn(`[QueryIntent] ${model} failed: ${error.message}`, error.status, error.error);
     }
   }
   return null;

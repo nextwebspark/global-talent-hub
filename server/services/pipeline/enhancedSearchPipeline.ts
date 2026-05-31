@@ -1,15 +1,9 @@
-import OpenAI from "openai";
+import { getLLMClient, DEFAULT_MODEL } from "../llmClient";
 import { randomUUID } from "crypto";
 import { storage } from "../../storage";
-import { createSerperAdapter } from "./serperAdapter";
+import { createGeminiSearchAdapter } from "./geminiSearchAdapter";
 import type { InferredIntent, SearchSessionCompany, ActivityEvent } from "@shared/schema";
 import { applyCoordinateFallback } from "../coordinateFallback";
-
-// All LLM calls go through OpenRouter
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-});
 
 function makeActivity(type: ActivityEvent["type"], message: string, data?: any): ActivityEvent {
   return { id: randomUUID(), type, message, timestamp: new Date(), data };
@@ -94,9 +88,11 @@ function isCountryInScope(country: string | null | undefined, geoSet: Set<string
 async function extractIntent(query: string, pdContent?: string): Promise<InferredIntent> {
   const pdContext = pdContent ? `\n\nADDITIONAL CONTEXT FROM UPLOADED DOCUMENT:\n${pdContent.substring(0, 3000)}` : "";
 
-  const response = await openrouter.chat.completions.create({
-    model: "anthropic/claude-sonnet-4",
-    max_tokens: 1500,
+  const llm = await getLLMClient();
+  console.log(`[extractIntent] calling model=${DEFAULT_MODEL}`);
+  const response = await llm.chat.completions.create({
+    model: DEFAULT_MODEL,
+    max_tokens: 8192,
     messages: [{
       role: "user",
       content: `You are a senior research analyst extracting search intent from a business query.
@@ -122,7 +118,9 @@ Return ONLY the JSON, no other text.`
     }]
   });
 
-  const parsed = parseJsonSafe(response.choices[0].message.content || "");
+  const rawContent = response.choices[0].message.content || "";
+  console.log(`[extractIntent] raw response (${rawContent.length} chars):`, rawContent.substring(0, 1000));
+  const parsed = parseJsonSafe(rawContent);
   if (!parsed) throw new Error("Failed to parse intent JSON");
 
   return {
@@ -308,8 +306,7 @@ async function searchCompaniesForSector(
   geographies: string[],
   commercialRole?: string
 ): Promise<Array<{ name: string; website?: string; snippet?: string; url?: string }>> {
-  const serper = createSerperAdapter();
-  if (!serper) return [];
+  const searchProvider = createGeminiSearchAdapter();
 
   const mainGeo = geographies[0] || "";
   const queries = generateSearchQueries(sector, mainGeo, commercialRole);
@@ -327,7 +324,7 @@ async function searchCompaniesForSector(
   for (const q of queries) {
     if (companies.length >= 30) break;
     try {
-      const result = await serper.searchWithAnswer(q, 10);
+      const result = await searchProvider.searchWithAnswer(q, 10);
       for (const r of result.results.slice(0, 8)) {
         const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
 
@@ -343,7 +340,7 @@ async function searchCompaniesForSector(
         }
       }
     } catch (err) {
-      console.warn(`[EnhancedPipeline] Serper search failed for query "${q}":`, err);
+      console.warn(`[EnhancedPipeline] Search failed for query "${q}":`, err);
     }
   }
 
@@ -616,8 +613,9 @@ Rules:
 Return ONLY the JSON.`;
 
   try {
-    const response = await openrouter.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: DEFAULT_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.1,
       max_tokens: 300,
@@ -774,8 +772,9 @@ Return ONLY the JSON array, e.g. ["Company A", "Company B", ...]`;
   }
 
   try {
-    const response = await openrouter.chat.completions.create({
-      model: "anthropic/claude-sonnet-4",
+    const llm = await getLLMClient();
+    const response = await llm.chat.completions.create({
+      model: DEFAULT_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.3,
       max_tokens: 1500,
@@ -904,6 +903,7 @@ export async function* runEnhancedSearchPipeline(
       }
       yield emit("intent_extracted", "Intent understood", { intent });
     } catch (err: any) {
+      console.error(`[extractIntent] FAILED:`, err.message, err.status, err.error, err.cause);
       await storage.updateSearchSession(sessionId, { status: "error" }).catch(() => {});
       yield emit("error", `Failed to extract intent: ${err.message}`);
       return;
@@ -927,7 +927,7 @@ export async function* runEnhancedSearchPipeline(
   };
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PHASE 1 — Web-First Seed Discovery (Serper)
+  // PHASE 1 — Web-First Seed Discovery (Gemini Search Grounding)
   // ══════════════════════════════════════════════════════════════════════════
   const mainGeo = intent.targetGeographies[0] || "";
   const hasRole = intent.commercialRole && intent.commercialRole !== "any";
@@ -935,17 +935,12 @@ export async function* runEnhancedSearchPipeline(
   const primarySector = intent.primarySectors[0] || "";
   const currentYear = new Date().getFullYear();
 
-  const serper = createSerperAdapter();
+  const searchProvider = createGeminiSearchAdapter();
   const webSeedNames: string[] = [];
 
-  if (serper) {
-    yield emit("status", "Phase 1: Searching web for companies...");
-  } else {
-    yield emit("status", "Web search unavailable — using AI knowledge as primary source");
-  }
+  yield emit("status", "Phase 1: Searching web for companies...");
 
-  if (serper) {
-
+  {
     const sectorShort = primarySector
       .replace(/fast-moving consumer goods/i, "FMCG")
       .replace(/\s*\(FMCG\)/i, "")
@@ -969,7 +964,19 @@ export async function* runEnhancedSearchPipeline(
       if (signal?.aborted) break;
       try {
         yield emit("status", `Searching: "${q}"`);
-        const result = await serper.searchWithAnswer(q, 10);
+        const result = await searchProvider.searchWithAnswer(q, 10);
+
+        // Extract company names from grounded answer text
+        if (result.answer) {
+          const answerNames = extractCompanyNamesFromFullPage(result.answer);
+          for (let name of answerNames) {
+            name = cleanCompanyName(name);
+            if (!name || name.length < 2) continue;
+            if (!isValidCompanyName(name)) continue;
+            webSeedNames.push(name);
+          }
+        }
+
         for (const r of result.results.slice(0, 10)) {
           const isListicle = ARTICLE_TITLE_RE.test(r.title || "");
           if (isListicle && isSpamAggregator(r.title || "", r.snippet || "", r.url || "")) continue;
@@ -1001,7 +1008,7 @@ export async function* runEnhancedSearchPipeline(
       for (const page of pagesToFetch) {
         if (signal?.aborted) break;
         try {
-          const pageContent = await serper.fetchPageContent(page.url);
+          const pageContent = await searchProvider.fetchPageContent(page.url);
           const pageNames = extractCompanyNamesFromFullPage(pageContent);
           console.log(`[Pipeline] Extracted ${pageNames.length} names from ${page.url}`);
           for (let name of pageNames) {

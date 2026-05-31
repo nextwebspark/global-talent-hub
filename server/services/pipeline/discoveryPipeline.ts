@@ -1,6 +1,6 @@
 import { storage } from "../../storage";
 import type { ISearchProvider, SearchIntent, EnrichedCompany, PipelineResult, CompanyPersistResult } from './types';
-import { SerperAdapter, createSerperAdapter } from './serperAdapter';
+import { createGeminiSearchAdapter } from './geminiSearchAdapter';
 import { extractCompaniesNonDestructive, extractCompaniesFromSearchResults, extractExecutivesForCompany, preProcessListArticles, fetchAndClassifyPages } from './nonDropExtraction';
 import { extractQueryIntent, checkCompanyAgainstIntent, checkCompaniesAgainstIntentBatch } from './queryIntent';
 import type { QueryIntent } from './queryIntent';
@@ -603,9 +603,8 @@ export class DiscoveryPipeline {
   }
 }
 
-export function createDiscoveryPipeline(): DiscoveryPipeline | null {
-  const searchProvider = createSerperAdapter();
-  if (!searchProvider) return null;
+export function createDiscoveryPipeline(): DiscoveryPipeline {
+  const searchProvider = createGeminiSearchAdapter();
   return new DiscoveryPipeline({ searchProvider });
 }
 
@@ -615,18 +614,10 @@ export async function* runDiscoveryPipeline(
   query: string,
   limit: number,
   searchQueryId: number,
-  mode: SearchMode = 'quick'
+  _mode: SearchMode = 'quick'
 ): AsyncGenerator<any> {
-  if (mode === 'quick') {
-    const { runQuickBuildSearch } = await import('./quickBuildSearch');
-    yield* runQuickBuildSearch(query, limit, searchQueryId);
-    return;
-  }
-
-  const pipeline = createDiscoveryPipeline();
-  if (!pipeline) {
-    yield { type: 'error', data: { message: 'Search not configured', code: 'NOT_CONFIGURED' } };
-    return;
-  }
-  yield* pipeline.execute(query, limit, searchQueryId);
+  // TODO(mock-mode): both quick + deep currently hit company_seed_list to avoid
+  // burning grounded-search calls. Restore mode branching once intent->SQL ships.
+  const { runSeedListSearch } = await import('./seedListSearch');
+  yield* runSeedListSearch(query, limit, searchQueryId);
 }

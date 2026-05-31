@@ -226,7 +226,7 @@ import {
   orchestrateEnrichmentMatching,
   researchCompanyDetails,
   exploreClockworkProjectEndpoints
-} from "./services/enrichment";
+} from "./services/clockworkEnrichment";
 import { 
   runMultiPassEnrichment, 
   enrichSearchResults 
@@ -2062,7 +2062,7 @@ Return ONLY JSON.`
   // Test Clockwork connectivity and return detailed diagnostic info
   app.get("/api/clockwork/diagnostics", async (_req, res) => {
     try {
-      const { runClockworkDiagnostics } = await import("./services/enrichment");
+      const { runClockworkDiagnostics } = await import("./services/clockworkEnrichment");
       const diagnostics = await runClockworkDiagnostics();
       res.json(diagnostics);
     } catch (error) {
@@ -2079,7 +2079,7 @@ Return ONLY JSON.`
   // Fetch available Clockwork projects (READ-ONLY)
   app.get("/api/clockwork/projects", async (_req, res) => {
     try {
-      const { getClockworkProjects } = await import("./services/enrichment");
+      const { getClockworkProjects } = await import("./services/clockworkEnrichment");
       const projects = await getClockworkProjects();
       res.json(projects);
     } catch (error) {
@@ -2097,7 +2097,7 @@ Return ONLY JSON.`
         return res.status(400).json({ error: "projectId is required" });
       }
 
-      const { fetchClockworkProjectPeople } = await import("./services/enrichment");
+      const { fetchClockworkProjectPeople } = await import("./services/clockworkEnrichment");
       const result = await fetchClockworkProjectPeople(projectId);
       res.json(result);
     } catch (error) {
@@ -2513,7 +2513,7 @@ Return ONLY JSON.`
 
       // Fetch and store career history from Clockwork
       try {
-        const { fetchClockworkCareerHistory } = await import('./services/enrichment');
+        const { fetchClockworkCareerHistory } = await import('./services/clockworkEnrichment');
         const careerPositions = await fetchClockworkCareerHistory(clockworkId);
 
         if (careerPositions.length > 0) {

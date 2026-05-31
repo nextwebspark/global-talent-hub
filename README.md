@@ -7,7 +7,7 @@ AI-powered executive search & talent mapping platform. Search for companies and 
 - **Frontend:** React 19 + Vite + TypeScript + Tailwind CSS + Mapbox GL
 - **Backend:** Express.js 5 + TypeScript + Drizzle ORM
 - **Database:** PostgreSQL 16
-- **LLMs:** OpenRouter → Gemini 2.5 Flash (primary) / Claude Sonnet 4 (fallback)
+- **LLMs:** Google Gemini via `@google/genai` (Vertex AI or AI Studio per env credentials — see `server/services/llmClient.ts`)
 - **Search:** Serper API (Google Search)
 - **CRM:** Clockwork Recruiting API
 

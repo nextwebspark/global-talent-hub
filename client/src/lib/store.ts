@@ -807,3 +807,8 @@ export const useAppStore = create<AppState>((set) => ({
     mapPositions: {}
   })
 }));
+
+// Expose store to window in dev/test for Playwright state seeding
+if (import.meta.env.DEV) {
+  (window as any).__zustandStore = useAppStore;
+}

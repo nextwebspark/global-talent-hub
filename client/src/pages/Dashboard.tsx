@@ -88,6 +88,11 @@ export default function Dashboard() {
   }, [isResizingRight]);
 
   useEffect(() => {
+    // Allow Playwright to pre-seed state via window.__E2E_SEED__ in DEV
+    if (!currentProject && import.meta.env.DEV && (window as any).__E2E_SEED__?.currentProject) {
+      useAppStore.setState((window as any).__E2E_SEED__);
+      return;
+    }
     if (!currentProject) setLocation('/');
   }, [currentProject, setLocation]);
 

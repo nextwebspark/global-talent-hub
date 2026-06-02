@@ -32,6 +32,7 @@ export interface UseSearchStreamReturn {
   startRefinement: (sessionId: string, refinementMessage: string) => Promise<void>;
   acceptCompany: (id: number) => void;
   rejectCompany: (id: number) => void;
+  addManualCompany: (data: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
   reset: () => void;
 }
 
@@ -59,6 +60,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     addExecutiveToCompany,
     acceptSearchCompany,
     rejectSearchCompany,
+    addManualCompany: addManualCompanyToStore,
     setSearchQueryId,
     setIsSearchStreaming,
     setIsSearchRefining,
@@ -83,7 +85,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
       addPendingCompanyName(data.companyName || data.name);
     }
     if (type === 'company_enriched' && data.company) {
-      addSearchCompany({ ...data.company, accepted: false, rejected: false });
+      addSearchCompany({ ...data.company, accepted: true, rejected: false });
       // Skeleton removal is handled by addSearchCompany in the store
     }
     if (type === 'executive_found' && data.executive && data.companyId) {
@@ -212,6 +214,10 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
 
   const acceptCompany = useCallback((id: number) => acceptSearchCompany(id), [acceptSearchCompany]);
   const rejectCompany = useCallback((id: number) => rejectSearchCompany(id), [rejectSearchCompany]);
+  const addManualCompany = useCallback(
+    (data: { name: string; sector: string; revenueBand: string; employeeBand: string }) => addManualCompanyToStore(data),
+    [addManualCompanyToStore],
+  );
   const reset = useCallback(() => resetSearchSession(), [resetSearchSession]);
 
   return {
@@ -228,6 +234,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     startRefinement,
     acceptCompany,
     rejectCompany,
+    addManualCompany,
     reset,
   };
 }

@@ -39,7 +39,7 @@ export default function Landing() {
     phase, intent, companies, pendingCompanyNames,
     isStreaming,
     startSearch, stopSearch,
-    acceptCompany, rejectCompany, reset,
+    acceptCompany, rejectCompany, addManualCompany, reset,
   } = useSearchStream();
 
   const pd = usePdUpload(sessionId);
@@ -248,6 +248,7 @@ export default function Landing() {
             onResetSearch={reset}
             onAcceptCompany={acceptCompany}
             onRejectCompany={rejectCompany}
+            onAddCompany={addManualCompany}
             onSaveProject={handleSaveProject}
             onGoToDashboard={handleGoToDashboard}
           />

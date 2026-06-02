@@ -56,6 +56,7 @@ export interface SearchSessionActions {
   addExecutiveToCompany: (companyId: number, executive: { name: string; title: string }) => void;
   acceptSearchCompany: (id: number) => void;
   rejectSearchCompany: (id: number) => void;
+  addManualCompany: (data: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
   setSearchQueryId: (id: number | null) => void;
   setIsSearchStreaming: (v: boolean) => void;
   setIsSearchRefining: (v: boolean) => void;
@@ -568,7 +569,10 @@ export const useAppStore = create<AppState>((set) => ({
     const pendingCompanyNames = state.pendingCompanyNames.filter(
       n => n.toLowerCase() !== company.name.toLowerCase()
     );
-    return { searchCompanies: [...state.searchCompanies, company], pendingCompanyNames };
+    const selectedSearchCompanyIds = company.accepted
+      ? new Set([...state.selectedSearchCompanyIds, company.id])
+      : state.selectedSearchCompanyIds;
+    return { searchCompanies: [...state.searchCompanies, company], pendingCompanyNames, selectedSearchCompanyIds };
   }),
   addExecutiveToCompany: (companyId, executive) => set((state) => ({
     searchCompanies: state.searchCompanies.map(c => {
@@ -588,6 +592,33 @@ export const useAppStore = create<AppState>((set) => ({
     return {
       searchCompanies: state.searchCompanies.map(c => c.id === id ? { ...c, rejected: true, accepted: false } : c),
       selectedSearchCompanyIds: next,
+    };
+  }),
+  addManualCompany: (data) => set((state) => {
+    const id = -(Date.now());
+    const company: StreamCompany = {
+      id,
+      name: data.name,
+      sector: data.sector || null,
+      country: null,
+      geography: null,
+      revenue: data.revenueBand || null,
+      employees: null,
+      website: null,
+      summary: null,
+      latitude: null,
+      longitude: null,
+      relevanceType: 'Direct',
+      relevanceRationale: 'Manually added',
+      confidenceScore: 1,
+      isUserAccepted: true,
+      isUserRejected: false,
+      accepted: true,
+      rejected: false,
+    };
+    return {
+      searchCompanies: [...state.searchCompanies, company],
+      selectedSearchCompanyIds: new Set([...state.selectedSearchCompanyIds, id]),
     };
   }),
   setSearchQueryId: (id) => set({ searchQueryId: id }),

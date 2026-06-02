@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, sans-serif; font-size: 14px; background: #fff; color: #0a0a0a; }
+.screen { width: 960px; padding: 48px; background: #fff; }
+.screen-label { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #aaa; margin-bottom: 20px; }
+h1 { font-size: 26px; font-weight: 600; color: #0a0a0a; margin-bottom: 6px; }
+.sub { font-size: 14px; color: #666; margin-bottom: 36px; }
+.mode-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+.mode-card { padding: 20px; border: 1px solid #e5e5e5; border-radius: 14px; background: #fff; }
+.mode-card.selected { border: 2px solid #0a0a0a; }
+.mode-icon { width: 40px; height: 40px; border-radius: 10px; background: #f5f5f5; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+.mode-card.selected .mode-icon { background: #0a0a0a; }
+.mode-icon svg { width: 20px; height: 20px; stroke: #999; stroke-width: 1.75; fill: none; }
+.mode-card.selected .mode-icon svg { stroke: #fff; }
+.mode-title { font-size: 13px; font-weight: 600; color: #0a0a0a; margin-bottom: 4px; }
+.mode-desc { font-size: 12px; color: #888; line-height: 1.5; }
+.panel { background: #f7f7f7; border-radius: 14px; padding: 20px; border: 1px solid #ebebeb; }
+.upload-zone { border: 1.5px dashed #d5d5d5; border-radius: 12px; padding: 36px 20px; text-align: center; background: #fff; margin-bottom: 16px; cursor: pointer; }
+.upload-zone svg { width: 32px; height: 32px; stroke: #ccc; stroke-width: 1.5; fill: none; display: block; margin: 0 auto 12px; }
+.upload-zone .strong { font-size: 14px; font-weight: 600; color: #333; display: block; margin-bottom: 4px; }
+.upload-zone .hint { font-size: 12px; color: #aaa; }
+.upload-zone .types { font-size: 11px; color: #ccc; margin-top: 6px; }
+.format-label { font-size: 12px; color: #aaa; margin-bottom: 10px; }
+.format-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.format-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid #e5e5e5; border-radius: 10px; font-size: 12px; color: #666; background: #fff; font-family: inherit; cursor: pointer; }
+.format-btn svg { width: 16px; height: 16px; stroke: #bbb; stroke-width: 1.75; fill: none; flex-shrink: 0; }
+.panel-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; }
+.hint-text { font-size: 12px; color: #bbb; }
+.btn-primary { display: inline-flex; align-items: center; gap: 7px; padding: 10px 22px; background: #0a0a0a; color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 500; font-family: inherit; }
+.btn-primary svg { width: 14px; height: 14px; stroke: #fff; stroke-width: 2; fill: none; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="screen-label">Screen 1b — Import a list selected</div>
+  <h1>Build your company universe</h1>
+  <p class="sub">Select how you want to define the scope of this search.</p>
+  <div class="mode-grid">
+    <div class="mode-card">
+      <div class="mode-icon"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div>
+      <div class="mode-title">Search</div>
+      <div class="mode-desc">Describe what you're looking for. AI builds the company list.</div>
+    </div>
+    <div class="mode-card selected">
+      <div class="mode-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+      <div class="mode-title">Import a list</div>
+      <div class="mode-desc">Upload an existing company list. Extend it from there.</div>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+      <div class="mode-title">From brief</div>
+      <div class="mode-desc">Upload a JD or brief. AI infers the sectors and companies.</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="upload-zone">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span class="strong">Drop your file here</span>
+      <span class="hint">Drag and drop, or click to browse</span>
+      <div class="types">CSV · XLSX · PDF</div>
+    </div>
+    <div class="format-label">Or connect from</div>
+    <div class="format-grid">
+      <button class="format-btn"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg> Excel / CSV</button>
+      <button class="format-btn"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg> Google Sheets</button>
+      <button class="format-btn"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg> CRM export</button>
+    </div>
+    <div class="panel-footer">
+      <span class="hint-text">All columns in your file will be preserved in the build screen</span>
+      <button class="btn-primary">
+        <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        Continue
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

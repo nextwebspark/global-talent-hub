@@ -19,11 +19,15 @@ export class LandingPage {
   }
 
   get searchButton() {
-    return this.page.getByRole('button', { name: /search|go|send/i }).first();
+    return this.page.getByTestId('button-submit-search');
   }
 
   get importModeButton() {
-    return this.page.getByRole('button', { name: /import|upload/i }).first();
+    return this.page.getByTestId('tab-import');
+  }
+
+  get briefModeButton() {
+    return this.page.getByTestId('tab-brief');
   }
 
   get projectsPanelTrigger() {

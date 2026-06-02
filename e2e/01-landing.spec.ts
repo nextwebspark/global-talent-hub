@@ -69,6 +69,36 @@ test.describe('Landing page', () => {
     await expect(landingPage.importModeButton).toBeVisible();
   });
 
+  test('all three mode cards visible', async ({ page }) => {
+    await expect(page.getByTestId('tab-search')).toBeVisible();
+    await expect(page.getByTestId('tab-import')).toBeVisible();
+    await expect(page.getByTestId('tab-brief')).toBeVisible();
+  });
+
+  test('Search card is selected by default', async ({ page }) => {
+    await expect(page.getByTestId('tab-search')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('search-panel')).toBeVisible();
+  });
+
+  test('clicking Brief card reveals brief panel + upload + textarea', async ({ page }) => {
+    await page.getByTestId('tab-brief').click();
+    await expect(page.getByTestId('brief-panel')).toBeVisible();
+    await expect(page.getByTestId('dropzone-brief-upload')).toBeVisible();
+    await expect(page.getByTestId('input-brief-text')).toBeVisible();
+    await expect(page.getByTestId('button-analyse-brief')).toBeDisabled();
+  });
+
+  test('typing in brief textarea enables Analyse button', async ({ page }) => {
+    await page.getByTestId('tab-brief').click();
+    await page.getByTestId('input-brief-text').fill('Hiring a CFO for a regional FMCG distributor');
+    await expect(page.getByTestId('button-analyse-brief')).not.toBeDisabled();
+  });
+
+  test('clicking Import card reveals import panel', async ({ page }) => {
+    await page.getByTestId('tab-import').click();
+    await expect(page.getByTestId('dropzone-file-upload')).toBeVisible();
+  });
+
   // ── Projects panel ───────────────────────────────────────────────────────────
 
   test('projects panel opens on trigger click', async ({ landingPage, page }) => {

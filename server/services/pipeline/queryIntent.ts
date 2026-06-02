@@ -52,7 +52,7 @@ export interface QueryIntent {
   invalidResultDescription: string;
 }
 
-function parseJsonSafe(content: string): any {
+export function parseJsonSafe(content: string): any {
   let cleaned = content.trim();
   const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) cleaned = jsonMatch[1].trim();

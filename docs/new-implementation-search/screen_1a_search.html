@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', -apple-system, sans-serif; font-size: 14px; background: #ffffff; color: #0a0a0a; }
+.screen { width: 960px; padding: 48px; background: #fff; }
+.screen-title { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #888; margin-bottom: 24px; }
+h1 { font-size: 26px; font-weight: 600; color: #0a0a0a; margin-bottom: 6px; }
+.sub { font-size: 14px; color: #666; margin-bottom: 36px; }
+.mode-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 28px; }
+.mode-card { padding: 20px; border: 1px solid #e5e5e5; border-radius: 14px; cursor: pointer; background: #fff; }
+.mode-card.selected { border: 2px solid #0a0a0a; }
+.mode-icon { width: 40px; height: 40px; border-radius: 10px; background: #f5f5f5; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+.mode-card.selected .mode-icon { background: #0a0a0a; }
+.mode-icon svg { width: 20px; height: 20px; stroke: #666; stroke-width: 1.75; fill: none; }
+.mode-card.selected .mode-icon svg { stroke: #fff; }
+.mode-title { font-size: 13px; font-weight: 600; color: #0a0a0a; margin-bottom: 4px; }
+.mode-desc { font-size: 12px; color: #888; line-height: 1.5; }
+.panel { background: #f7f7f7; border-radius: 14px; padding: 20px; border: 1px solid #ebebeb; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip { font-size: 12px; padding: 5px 12px; border-radius: 100px; border: 1px solid #e5e5e5; color: #555; background: #fff; }
+textarea { width: 100%; background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 12px 14px; font-size: 13px; font-family: inherit; color: #333; resize: none; outline: none; }
+.panel-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+.hint { font-size: 12px; color: #aaa; }
+.btn-primary { display: inline-flex; align-items: center; gap: 7px; padding: 10px 22px; background: #0a0a0a; color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 500; }
+.btn-primary svg { width: 14px; height: 14px; stroke: #fff; stroke-width: 2; fill: none; }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="screen-title">Screen 1 — Build your company universe</div>
+  <h1>Build your company universe</h1>
+  <p class="sub">Select how you want to define the scope of this search.</p>
+
+  <div class="mode-grid">
+    <div class="mode-card selected">
+      <div class="mode-icon">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </div>
+      <div class="mode-title">Search</div>
+      <div class="mode-desc">Describe what you're looking for. AI builds the company list.</div>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <div class="mode-title">Import a list</div>
+      <div class="mode-desc">Upload an existing company list. Extend it from there.</div>
+    </div>
+    <div class="mode-card">
+      <div class="mode-icon">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      </div>
+      <div class="mode-title">From brief</div>
+      <div class="mode-desc">Upload a JD or brief. AI infers the sectors and companies.</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="chip-row">
+      <span class="chip">Top FMCG distributors in UAE</span>
+      <span class="chip">Leading PE firms in Saudi Arabia</span>
+      <span class="chip">Retail chains across GCC</span>
+    </div>
+    <textarea rows="3" placeholder="Describe the companies you're looking for…&#10;e.g. 'Top FMCG distributors in UAE' or 'Leading PE firms in Saudi Arabia'"></textarea>
+    <div class="panel-footer">
+      <span class="hint">⌘ Enter to search</span>
+      <button class="btn-primary">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/></svg>
+        Discover companies
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

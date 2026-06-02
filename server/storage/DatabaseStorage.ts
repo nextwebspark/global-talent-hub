@@ -24,7 +24,12 @@ import type {
 } from "@shared/schema";
 import { keysToCamel, keysToSnake, toSnakeKey } from "./internal/case";
 import { nowIso, sb, sbOpt } from "./internal/sb";
-import type { CompanySeedRow, IStorage } from "./types";
+import type {
+  EnrichedCompanyRow,
+  EnrichedCompanyQuery,
+  EnrichedCompanyMatch,
+  IStorage,
+} from "./types";
 
 // ─── Implementation ───────────────────────────────────────────────────────────
 
@@ -719,16 +724,79 @@ export class DatabaseStorage implements IStorage {
     if (error) throw new Error(`[Storage:deleteSearchQuery] ${error.message}`);
   }
 
-  async getCompanySeedSample(limit: number): Promise<CompanySeedRow[]> {
-    const { data, error } = await supabase
-      .from("company_seed_list")
-      .select("id,name,slug,country,sector,website,description,source_url,source_title")
-      .order("id", { ascending: true })
-      .limit(limit);
-    if (error) throw new Error(`[Storage:getCompanySeedSample] ${error.message}`);
-    return keysToCamel<CompanySeedRow[]>(data ?? []);
-    // TODO(phase-2): accept QueryIntent, build WHERE clause:
-    //   .in('country', intent.countries).ilike('sector', `%${intent.sector}%`)
+  // Query the enriched company universe with a vocabulary-validated filter.
+  // Returns Direct matches (primary_sector ∈ primarySectors) first, ordered by
+  // confidence; if under `limit`, fills with Adjacent matches (primary_sector ∈
+  // adjacentSectors). All filtering uses the Supabase query builder
+  // (parameterized) — no string interpolation reaches the query.
+  async queryEnrichedCompanies(
+    filter: EnrichedCompanyQuery,
+    limit: number,
+  ): Promise<EnrichedCompanyMatch[]> {
+    const columns =
+      "id,company_id,company_name,slug,country,primary_sector,sector_tags,sub_tags,keywords,tagline,business_description,employee_band,employee_count_estimate,revenue_band,revenue_estimate_usd,is_listed,hq_city,confidence,website,phone,email,address";
+
+    // Build a base query with the shared (non-sector) filters applied.
+    const applyShared = <T extends ReturnType<typeof supabase.from> | any>(q: T): T => {
+      let query: any = q;
+      if (filter.countries.length > 0) query = query.in("country", filter.countries);
+      if (filter.subTags.length > 0) query = query.overlaps("sub_tags", filter.subTags);
+      if (filter.revenueBands.length > 0) query = query.in("revenue_band", filter.revenueBands);
+      if (filter.employeeBands.length > 0) query = query.in("employee_band", filter.employeeBands);
+      if (filter.isListed !== null) query = query.eq("is_listed", filter.isListed);
+      return query;
+    };
+
+    const runSectorQuery = async (
+      sectors: string[],
+      take: number,
+      excludeIds: number[],
+    ): Promise<EnrichedCompanyRow[]> => {
+      if (sectors.length === 0 || take <= 0) return [];
+      let query: any = supabase.from("company_enrichment").select(columns);
+      query = applyShared(query);
+      query = query.in("primary_sector", sectors);
+      if (excludeIds.length > 0) query = query.not("id", "in", `(${excludeIds.join(",")})`);
+      query = query.order("confidence", { ascending: false }).limit(take);
+      const { data, error } = await query;
+      if (error) throw new Error(`[Storage:queryEnrichedCompanies] ${error.message}`);
+      return keysToCamel<EnrichedCompanyRow[]>(data ?? []);
+    };
+
+    // No sector at all → fall back to a confidence-ranked sample under the
+    // shared filters so the user still gets relevant results.
+    if (filter.primarySectors.length === 0 && filter.adjacentSectors.length === 0) {
+      let query: any = supabase.from("company_enrichment").select(columns);
+      query = applyShared(query);
+      query = query.order("confidence", { ascending: false }).limit(limit);
+      const { data, error } = await query;
+      if (error) throw new Error(`[Storage:queryEnrichedCompanies] ${error.message}`);
+      return keysToCamel<EnrichedCompanyRow[]>(data ?? []).map((row) => ({
+        ...row,
+        relevanceType: "Direct" as const,
+      }));
+    }
+
+    const direct = await runSectorQuery(filter.primarySectors, limit, []);
+    const directMatches: EnrichedCompanyMatch[] = direct.map((row) => ({
+      ...row,
+      relevanceType: "Direct" as const,
+    }));
+
+    const remaining = limit - directMatches.length;
+    if (remaining <= 0 || filter.adjacentSectors.length === 0) return directMatches;
+
+    const adjacent = await runSectorQuery(
+      filter.adjacentSectors,
+      remaining,
+      direct.map((r) => r.id),
+    );
+    const adjacentMatches: EnrichedCompanyMatch[] = adjacent.map((row) => ({
+      ...row,
+      relevanceType: "Adjacent" as const,
+    }));
+
+    return [...directMatches, ...adjacentMatches];
   }
 
   async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {

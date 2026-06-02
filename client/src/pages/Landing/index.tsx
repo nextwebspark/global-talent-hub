@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
@@ -14,12 +14,11 @@ import { ModeSelector } from './ModeSelector';
 import { SearchPanel } from './panels/SearchPanel';
 import { BriefPanel } from './panels/BriefPanel';
 import { ImportPanel } from './panels/ImportPanel';
-import { ResultsView } from './results/ResultsView';
+import { UniverseView } from './results/UniverseView';
 import { usePdUpload } from './hooks/usePdUpload';
 import { useBriefMode } from './hooks/useBriefMode';
 import { useImportMode } from './hooks/useImportMode';
 import type { LandingMode } from './types';
-import type { CompanyTab } from './results/CompanyList';
 
 export default function Landing() {
   const [, setLocation] = useLocation();
@@ -31,21 +30,15 @@ export default function Landing() {
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [sessionId] = useState(() => crypto.randomUUID());
 
-  const [activeTab, setActiveTab] = useState<CompanyTab>('all');
-  const [mobileTab, setMobileTab] = useState<'intelligence' | 'results'>('results');
-  const [refinementInput, setRefinementInput] = useState('');
-  const [debouncedRefinement, setDebouncedRefinement] = useState('');
-  const refinementDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [savedProjectSummary, setSavedProjectSummary] = useState<{ total: number; direct: number; adjacent: number; executives: number } | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const activityFeedRef = useRef<HTMLDivElement>(null);
 
   const {
-    phase, intent, activities, companies, pendingCompanyNames,
-    isStreaming, isRefining,
-    startSearch, stopSearch, startRefinement,
+    phase, intent, companies, pendingCompanyNames,
+    isStreaming,
+    startSearch, stopSearch,
     acceptCompany, rejectCompany, reset,
   } = useSearchStream();
 
@@ -59,23 +52,10 @@ export default function Landing() {
     document.documentElement.classList.toggle('dark', next);
   };
 
-  useEffect(() => {
-    if (activityFeedRef.current) {
-      activityFeedRef.current.scrollTop = activityFeedRef.current.scrollHeight;
-    }
-  }, [activities]);
-
   const handleEnhancedSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !pd.pdFileName) { toast.error('Please describe what you are looking for, or upload a Position Description'); return; }
     startSearch(input.trim() || `PD: ${pd.pdFileName}`, sessionId);
-  };
-
-  const handleRefinement = async () => {
-    if (!refinementInput.trim()) return;
-    const msg = refinementInput.trim();
-    setRefinementInput('');
-    await startRefinement(sessionId, msg);
   };
 
   const saveCompaniesToProject = async (companiesToSave: StreamCompany[]) => {
@@ -134,12 +114,6 @@ export default function Landing() {
     if (m !== 'import') importState.setImportPreview(null);
   };
 
-  const filteredCompanies = companies.filter(c => {
-    if (c.rejected) return false;
-    if (activeTab === 'direct') return c.relevanceType === 'Direct';
-    if (activeTab === 'adjacent') return c.relevanceType === 'Adjacent' || c.relevanceType === 'AI Inferred';
-    return true;
-  });
   const acceptedCount = companies.filter(c => c.accepted).length;
   const directCount = companies.filter(c => c.relevanceType === 'Direct' && !c.rejected).length;
   const adjacentCount = companies.filter(c => (c.relevanceType === 'Adjacent' || c.relevanceType === 'AI Inferred') && !c.rejected).length;
@@ -260,33 +234,18 @@ export default function Landing() {
         )}
 
         {!savedProjectSummary && (phase === 'streaming' || phase === 'complete') && (
-          <ResultsView
-            phase={phase}
+          <UniverseView
             intent={intent}
-            activities={activities}
             companies={companies}
             pendingCompanyNames={pendingCompanyNames}
             isStreaming={isStreaming}
-            isRefining={isRefining}
             query={input}
             acceptedCount={acceptedCount}
             directCount={directCount}
             adjacentCount={adjacentCount}
-            filteredCompanies={filteredCompanies}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            mobileTab={mobileTab}
-            setMobileTab={setMobileTab}
-            refinementInput={refinementInput}
-            setRefinementInput={setRefinementInput}
-            debouncedRefinement={debouncedRefinement}
-            setDebouncedRefinement={setDebouncedRefinement}
-            refinementDebounceRef={refinementDebounceRef}
-            activityFeedRef={activityFeedRef}
             isSavingProject={isSavingProject}
             onStopSearch={stopSearch}
             onResetSearch={reset}
-            onSubmitRefinement={handleRefinement}
             onAcceptCompany={acceptCompany}
             onRejectCompany={rejectCompany}
             onSaveProject={handleSaveProject}

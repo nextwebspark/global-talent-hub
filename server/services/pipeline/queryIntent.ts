@@ -1,4 +1,8 @@
 import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
+import { parseJsonSafe } from "./utils";
+
+// Re-exported for backward compatibility with existing importers/tests.
+export { parseJsonSafe };
 
 const FREE_MODELS = [DEFAULT_MODEL, FAST_MODEL];
 
@@ -50,20 +54,6 @@ export interface QueryIntent {
   // Plain English summary of what an invalid result looks like
   // Used verbatim in LLM prompts
   invalidResultDescription: string;
-}
-
-export function parseJsonSafe(content: string): any {
-  let cleaned = content.trim();
-  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) cleaned = jsonMatch[1].trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start !== -1 && end !== -1) cleaned = cleaned.substring(start, end + 1);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
-  }
 }
 
 async function callLLMForIntent(prompt: string): Promise<string | null> {

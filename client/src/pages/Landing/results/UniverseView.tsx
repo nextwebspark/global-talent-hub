@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Plus, Upload, Lock, Loader2, Search, Square } from 'lucide-react';
+import { Sparkles, Plus, Upload, Lock, Loader2, Search, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { StreamCompany } from '@/lib/useSearchStream';
 import type { InferredIntent } from '@shared/schema';
@@ -19,19 +19,29 @@ function initials(name: string): string {
     .join('');
 }
 
-function formatRevenue(company: StreamCompany): string {
+function revenueBand(company: StreamCompany): string {
   if (!company.revenue) return '—';
   const n = Number(company.revenue);
-  if (!Number.isFinite(n)) return company.revenue; // already a band label
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `$${Math.round(n / 1e6)}M`;
-  return `$${n.toLocaleString()}`;
+  if (!Number.isFinite(n)) return company.revenue; // already a label
+  if (n >= 5e9)  return '>$5B';
+  if (n >= 1e9)  return '$1B–5B';
+  if (n >= 5e8)  return '$500M–1B';
+  if (n >= 1e8)  return '$100M–500M';
+  if (n >= 1e7)  return '$10M–100M';
+  return '<$10M';
 }
 
-function formatEmployees(employees: number | null): string {
+function employeeBand(employees: number | null): string {
   if (employees == null) return '—';
-  return employees.toLocaleString();
+  if (employees >= 50000) return '>50K';
+  if (employees >= 10000) return '10K–50K';
+  if (employees >= 5000)  return '5K–10K';
+  if (employees >= 1000)  return '1K–5K';
+  if (employees >= 250)   return '250–1K';
+  return '<250';
 }
+
+const GRID_COLS = '32px minmax(140px,200px) 120px 90px 90px 90px 56px 44px';
 
 type RelevanceFilter = 'all' | 'direct';
 
@@ -42,6 +52,7 @@ export function UniverseView({
   isSavingProject,
   onStopSearch, onResetSearch,
   onAcceptCompany, onRejectCompany,
+  onAddCompany,
   onSaveProject, onGoToDashboard,
 }: {
   intent: InferredIntent | null;
@@ -57,19 +68,22 @@ export function UniverseView({
   onResetSearch: () => void;
   onAcceptCompany: (id: number) => void;
   onRejectCompany: (id: number) => void;
+  onAddCompany: (company: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
   onSaveProject: () => void;
   onGoToDashboard: () => void;
 }) {
   const [sectorFilter, setSectorFilter] = useState<string | null>(null);
   const [relevanceFilter, setRelevanceFilter] = useState<RelevanceFilter>('all');
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  const visible = useMemo(() => companies.filter((c) => !c.rejected), [companies]);
+  // non-rejected used for sidebar counts + "X found" badge
+  const nonRejected = useMemo(() => companies.filter((c) => !c.rejected), [companies]);
 
   // Sector groups for the sidebar, split into Direct vs Adjacent buckets.
   const sectorGroups = useMemo(() => {
     const direct = new Map<string, number>();
     const adjacent = new Map<string, number>();
-    for (const c of visible) {
+    for (const c of nonRejected) {
       const bucket = c.relevanceType === 'Direct' ? direct : adjacent;
       const key = c.sector || 'Unknown';
       bucket.set(key, (bucket.get(key) ?? 0) + 1);
@@ -78,15 +92,16 @@ export function UniverseView({
       direct: [...direct.entries()].sort((a, b) => b[1] - a[1]),
       adjacent: [...adjacent.entries()].sort((a, b) => b[1] - a[1]),
     };
-  }, [visible]);
+  }, [nonRejected]);
 
+  // rows = ALL companies (including rejected, shown dimmed); filter by sector/relevance
   const rows = useMemo(() => {
-    return visible.filter((c) => {
+    return companies.filter((c) => {
       if (sectorFilter && (c.sector || 'Unknown') !== sectorFilter) return false;
       if (relevanceFilter === 'direct' && c.relevanceType !== 'Direct') return false;
       return true;
     });
-  }, [visible, sectorFilter, relevanceFilter]);
+  }, [companies, sectorFilter, relevanceFilter]);
 
   const adjacentSuggestions = intent?.adjacentSectors ?? [];
 
@@ -107,10 +122,10 @@ export function UniverseView({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
               <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
             </span>
-            Discovering · {visible.length} found
+            Discovering · {nonRejected.length} found
           </span>
         ) : (
-          <span className="text-[11px] text-muted-foreground">{visible.length} found</span>
+          <span className="text-[11px] text-muted-foreground">{nonRejected.length} found</span>
         )}
         <div className="ml-auto flex items-center gap-2">
           {isStreaming && (
@@ -118,8 +133,11 @@ export function UniverseView({
               <Square className="w-3 h-3 fill-current" />Stop
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={onResetSearch} className="h-7 gap-1.5 text-xs" data-testid="button-add-company">
-            <Plus className="w-3 h-3" />New search
+          <Button variant="outline" size="sm" onClick={() => setShowAddModal(true)} className="h-7 gap-1.5 text-xs" data-testid="button-add-company">
+            <Plus className="w-3 h-3" />Add company
+          </Button>
+          <Button variant="outline" size="sm" onClick={onResetSearch} className="h-7 gap-1.5 text-xs" data-testid="button-new-search">
+            New search
           </Button>
           {!isStreaming && companies.length > 0 && (
             <Button variant="outline" size="sm" onClick={onGoToDashboard} disabled={isSavingProject} className="h-7 gap-1.5 text-xs" data-testid="button-go-dashboard">
@@ -136,8 +154,19 @@ export function UniverseView({
             onClick={() => setSectorFilter(null)}
             className={`w-full flex items-center justify-between px-4 py-1.5 text-xs ${sectorFilter === null ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
           >
-            All <span className="text-[11px] bg-muted px-1.5 rounded-full">{visible.length}</span>
+            All <span className="text-[11px] bg-muted px-1.5 rounded-full">{nonRejected.length}</span>
           </button>
+
+          {isStreaming && sectorGroups.direct.length === 0 && sectorGroups.adjacent.length === 0 && (
+            <div className="px-4 space-y-2 pt-3">
+              {[60, 80, 50, 70].map((w, i) => (
+                <div key={i} className="flex justify-between animate-pulse">
+                  <div className="h-2.5 bg-muted rounded" style={{ width: `${w}%` }} />
+                  <div className="h-2.5 bg-muted rounded w-6" />
+                </div>
+              ))}
+            </div>
+          )}
 
           {sectorGroups.direct.length > 0 && (
             <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/60 px-4 pt-3 pb-1">Direct</p>
@@ -218,7 +247,7 @@ export function UniverseView({
 
           {/* Column header */}
           <div className="grid items-center px-4 py-1.5 border-b border-border bg-muted/30 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70"
-               style={{ gridTemplateColumns: '32px minmax(140px,1fr) 120px 90px 90px 90px 56px 44px' }}>
+               style={{ gridTemplateColumns: GRID_COLS }}>
             <span />
             <span>Company</span>
             <span>Sector</span>
@@ -234,8 +263,8 @@ export function UniverseView({
             {rows.map((c) => (
               <div
                 key={c.id}
-                className="grid items-center px-4 py-2.5 border-b border-border/50 hover:bg-muted/30"
-                style={{ gridTemplateColumns: '32px minmax(140px,1fr) 120px 90px 90px 90px 56px 44px' }}
+                className={`grid items-center px-4 py-2.5 border-b border-border/50 hover:bg-muted/30 transition-opacity ${c.rejected ? 'opacity-40' : ''}`}
+                style={{ gridTemplateColumns: GRID_COLS }}
                 data-testid={`universe-row-${c.id}`}
               >
                 <div className="w-7 h-7 rounded-md bg-muted border border-border flex items-center justify-center text-[9px] font-bold text-muted-foreground">
@@ -246,8 +275,8 @@ export function UniverseView({
                   {c.country && <p className="text-[10px] text-muted-foreground truncate leading-tight">{c.geography || c.country}</p>}
                 </div>
                 <span className="text-[11px] text-muted-foreground truncate pr-2">{c.sector || '—'}</span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">{formatRevenue(c)}</span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">{formatEmployees(c.employees)}</span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">{revenueBand(c)}</span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">{employeeBand(c.employees)}</span>
                 <span>
                   <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
                     c.relevanceType === 'Direct'
@@ -281,7 +310,7 @@ export function UniverseView({
             {/* Pending skeletons while streaming */}
             {pendingCompanyNames.map((name) => (
               <div key={`pending-${name}`} className="grid items-center px-4 py-2.5 border-b border-border/50 animate-pulse"
-                   style={{ gridTemplateColumns: '32px minmax(140px,1fr) 120px 90px 90px 90px 56px 44px' }}>
+                   style={{ gridTemplateColumns: GRID_COLS }}>
                 <div className="w-7 h-7 rounded-md bg-muted" />
                 <div className="min-w-0 pr-2"><p className="text-[12px] text-muted-foreground truncate">{name}</p></div>
                 <span className="text-[11px] text-muted-foreground/40">Classifying…</span>
@@ -289,10 +318,28 @@ export function UniverseView({
               </div>
             ))}
 
-            {rows.length === 0 && pendingCompanyNames.length === 0 && (
+            {/* Grid skeleton rows when streaming with no data yet */}
+            {rows.length === 0 && pendingCompanyNames.length === 0 && isStreaming && (
+              Array.from({ length: 8 }).map((_, i) => (
+                <div key={`skel-${i}`}
+                     className="grid items-center px-4 py-2.5 border-b border-border/50 animate-pulse"
+                     style={{ gridTemplateColumns: GRID_COLS }}>
+                  <div className="w-7 h-7 rounded-md bg-muted" />
+                  <div className="h-3 bg-muted rounded w-3/4" />
+                  <div className="h-2.5 bg-muted rounded w-2/3" />
+                  <div className="h-2.5 bg-muted rounded w-1/2" />
+                  <div className="h-2.5 bg-muted rounded w-1/2" />
+                  <div className="h-4 bg-muted rounded-full w-14" />
+                  <div className="h-2 bg-muted rounded w-8 ml-auto" />
+                  <div className="w-8 h-[18px] rounded-full bg-muted" />
+                </div>
+              ))
+            )}
+
+            {rows.length === 0 && pendingCompanyNames.length === 0 && !isStreaming && (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-                {isStreaming ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-                <p className="text-xs">{isStreaming ? 'Searching…' : 'No companies match the current filters'}</p>
+                <Search className="w-5 h-5" />
+                <p className="text-xs">No companies match the current filters</p>
               </div>
             )}
           </div>
@@ -305,7 +352,7 @@ export function UniverseView({
                 <p className="text-[10px] text-muted-foreground">selected</p>
               </div>
               <div>
-                <p className="text-lg font-semibold text-muted-foreground/40 leading-none">{visible.length - acceptedCount}</p>
+                <p className="text-lg font-semibold text-muted-foreground/40 leading-none">{nonRejected.length - acceptedCount}</p>
                 <p className="text-[10px] text-muted-foreground">not selected</p>
               </div>
               <div>
@@ -329,6 +376,97 @@ export function UniverseView({
           </div>
         </div>
       </div>
+      {showAddModal && (
+        <AddCompanyModal
+          onClose={() => setShowAddModal(false)}
+          onAdd={(company) => { onAddCompany(company); setShowAddModal(false); }}
+        />
+      )}
     </motion.div>
+  );
+}
+
+const REVENUE_BANDS = ['<$10M', '$10M–100M', '$100M–500M', '$500M–1B', '$1B–5B', '>$5B'];
+const EMPLOYEE_BANDS = ['<250', '250–1K', '1K–5K', '5K–10K', '10K–50K', '>50K'];
+
+function AddCompanyModal({ onClose, onAdd }: {
+  onClose: () => void;
+  onAdd: (company: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [sector, setSector] = useState('');
+  const [rev, setRev] = useState('');
+  const [emp, setEmp] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-background border border-border rounded-xl shadow-xl w-full max-w-sm p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-semibold">Add company</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-[11px] text-muted-foreground mb-1 block">Company name <span className="text-red-500">*</span></label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Acme Corp"
+              className="w-full text-sm bg-muted/40 border border-border rounded-md px-3 py-2 outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-muted-foreground mb-1 block">Sector <span className="text-muted-foreground/50">(optional)</span></label>
+            <input
+              value={sector}
+              onChange={(e) => setSector(e.target.value)}
+              placeholder="e.g. FMCG"
+              className="w-full text-sm bg-muted/40 border border-border rounded-md px-3 py-2 outline-none focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-muted-foreground mb-1 block">Revenue <span className="text-muted-foreground/50">(optional)</span></label>
+              <select
+                value={rev}
+                onChange={(e) => setRev(e.target.value)}
+                className="w-full text-sm bg-muted/40 border border-border rounded-md px-2 py-2 outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">—</option>
+                {REVENUE_BANDS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground mb-1 block">Employees <span className="text-muted-foreground/50">(optional)</span></label>
+              <select
+                value={emp}
+                onChange={(e) => setEmp(e.target.value)}
+                className="w-full text-sm bg-muted/40 border border-border rounded-md px-2 py-2 outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">—</option>
+                {EMPLOYEE_BANDS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs">Cancel</Button>
+          <Button
+            size="sm"
+            disabled={!name.trim()}
+            className="h-8 text-xs"
+            onClick={() => name.trim() && onAdd({ name: name.trim(), sector, revenueBand: rev, employeeBand: emp })}
+          >
+            Add company
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

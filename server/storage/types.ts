@@ -26,17 +26,51 @@ import type {
 
 export type DataOrigin = "discovery" | "enrichment" | "manual";
 
-export interface CompanySeedRow {
+// A row from the Supabase `company_enrichment` table (camelCased).
+// Mirrors docs/supabase-schema/company_enrichment.sql (self-contained — carries
+// company_name/country directly, no join needed).
+export interface EnrichedCompanyRow {
   id: number;
-  name: string;
+  companyId: string;
+  companyName: string;
   slug: string;
   country: string;
-  sector: string;
+  primarySector: string;
+  sectorTags: string[];
+  subTags: string[];
+  keywords: string[];
+  tagline: string | null;
+  businessDescription: string | null;
+  employeeBand: string | null;
+  employeeCountEstimate: number | null;
+  revenueBand: string | null;
+  revenueEstimateUsd: number | null;
+  isListed: boolean | null;
+  hqCity: string | null;
+  confidence: number;
   website: string | null;
-  description: string | null;
-  sourceUrl: string;
-  sourceTitle: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
 }
+
+// Vocabulary-validated filter passed to queryEnrichedCompanies. All array values
+// are pre-validated against the controlled taxonomy by the caller.
+export interface EnrichedCompanyQuery {
+  primarySectors: string[];
+  adjacentSectors: string[];
+  subTags: string[];
+  countries: string[];
+  employeeBands: string[];
+  revenueBands: string[];
+  isListed: boolean | null;
+}
+
+// A row tagged with how it matched the query (Direct = primary-sector match,
+// Adjacent = matched only via an adjacent sector).
+export type EnrichedCompanyMatch = EnrichedCompanyRow & {
+  relevanceType: "Direct" | "Adjacent";
+};
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -84,7 +118,7 @@ export interface IStorage {
   ): Promise<{ company: Company; isNew: boolean }>;
   findCompanyByNameAndQuery(name: string, searchQueryId: number): Promise<Company | undefined>;
 
-  getCompanySeedSample(limit: number): Promise<CompanySeedRow[]>;
+  queryEnrichedCompanies(filter: EnrichedCompanyQuery, limit: number): Promise<EnrichedCompanyMatch[]>;
 
   getAllSearchQueries(): Promise<SearchQuery[]>;
   getUniqueSearchQueries(): Promise<SearchQuery[]>;

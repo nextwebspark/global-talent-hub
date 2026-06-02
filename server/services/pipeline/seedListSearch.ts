@@ -1,27 +1,59 @@
-import { storage, type CompanySeedRow } from "../../storage";
+import { storage, type EnrichedCompanyMatch } from "../../storage";
 import type { InferredIntent, InsertCompany } from "@shared/schema";
 import { applyCoordinateFallback } from "../coordinateFallback";
-import { extractQueryIntent, type QueryIntent } from "./queryIntent";
+import { extractEnrichmentFilter, type EnrichmentFilter } from "./enrichmentFilter";
 
-function seedRowToInsertCompany(row: CompanySeedRow): InsertCompany {
-  const fallback = applyCoordinateFallback({ country: row.country });
+// Map a revenue band (e.g. "$250M-1B") or numeric estimate to a revenue string
+// the rest of the app stores. Prefer the estimate; fall back to the band label.
+function revenueValue(row: EnrichedCompanyMatch): string | null {
+  if (row.revenueEstimateUsd != null) return String(row.revenueEstimateUsd);
+  return row.revenueBand ?? null;
+}
+
+function enrichedRowToInsertCompany(row: EnrichedCompanyMatch): InsertCompany {
+  const fallback = applyCoordinateFallback({ city: row.hqCity ?? undefined, country: row.country });
   return {
-    name: row.name,
-    sector: row.sector,
+    name: row.companyName,
+    sector: row.primarySector,
     businessType: null,
     country: row.country,
-    streetAddress: null,
+    region: row.hqCity ?? null,
+    streetAddress: row.address ?? null,
     latitude: fallback.latitude?.toString() ?? null,
     longitude: fallback.longitude?.toString() ?? null,
     locationPrecision: fallback.locationPrecision,
-    revenue: null,
+    revenue: row.revenueEstimateUsd != null ? String(row.revenueEstimateUsd) : null,
+    revenueRange: row.revenueBand ?? null,
     revenueCurrency: "USD",
     revenueFiscalYear: null,
-    employees: null,
+    employees: row.employeeCountEstimate ?? null,
+    companySize: row.employeeBand ?? null,
     website: row.website ?? null,
-    summary: row.description ?? null,
-    confidence: 6,
+    summary: row.businessDescription ?? row.tagline ?? null,
+    // company_enrichment.confidence is 0-1; companies.confidence is a 1-10 scale.
+    confidence: Math.max(1, Math.round(row.confidence * 10)),
   };
+}
+
+function filterToInferredIntent(filter: EnrichmentFilter): InferredIntent {
+  return {
+    primarySectors: filter.primarySectors,
+    adjacentSectors: filter.adjacentSectors,
+    inferredSectors: [],
+    targetGeographies: filter.countries,
+    commercialRole: "any",
+    searchRationale: filter.searchRationale,
+    confidenceScore: 0.85,
+    keyInclusions: filter.subTags,
+    keyExclusions: [],
+  };
+}
+
+function relevanceRationale(row: EnrichedCompanyMatch, filter: EnrichmentFilter): string {
+  if (row.relevanceType === "Adjacent") {
+    return `Adjacent sector (${row.primarySector}) to the target. ${filter.searchRationale}`;
+  }
+  return filter.searchRationale;
 }
 
 export async function* runSeedListSearch(
@@ -29,46 +61,39 @@ export async function* runSeedListSearch(
   limit: number,
   searchQueryId: number,
 ): AsyncGenerator<any> {
-  yield { type: "status", data: { message: "Capturing intent...", progress: 5 } };
+  yield { type: "status", data: { message: "Understanding your query...", progress: 5 } };
 
-  let intent: QueryIntent | null = null;
+  const filter = await extractEnrichmentFilter(query);
+  console.log("[EnrichedSearch] Filter:", JSON.stringify(filter, null, 2));
+  yield {
+    type: "status",
+    data: {
+      message: `Sectors: ${filter.primarySectors.join(", ") || "any"}`,
+      progress: 15,
+      intent: filterToInferredIntent(filter),
+    },
+  };
+
+  yield { type: "status", data: { message: "Querying enriched companies...", progress: 30 } };
+
+  let rows: EnrichedCompanyMatch[] = [];
   try {
-    intent = await extractQueryIntent(query);
-    console.log("[SeedList] Intent:", JSON.stringify(intent, null, 2));
-    yield {
-      type: "status",
-      data: {
-        message: `Intent: ${intent.entityType}/${intent.commercialRole}`,
-        progress: 15,
-        intent,
-      },
-    };
+    rows = await storage.queryEnrichedCompanies(filter, limit);
+    console.log(`[EnrichedSearch] Fetched ${rows.length} enriched rows`);
   } catch (err: any) {
-    console.warn(`[SeedList] Intent extraction failed, continuing with mock sample: ${err?.message ?? err}`);
-    yield { type: "status", data: { message: "Intent skipped (mock mode)", progress: 15 } };
-  }
-
-  // TODO(phase-2): translate QueryIntent -> SQL filter (country IN intent.countries,
-  //                sector ILIKE intent.sector, etc.). For now: blind first-N sample.
-  yield { type: "status", data: { message: "Fetching seed sample...", progress: 30 } };
-
-  let rows: CompanySeedRow[] = [];
-  try {
-    rows = await storage.getCompanySeedSample(limit);
-    console.log(`[SeedList] Fetched ${rows.length} seed rows`);
-  } catch (err: any) {
-    console.error(`[SeedList] Seed fetch failed: ${err?.message ?? err}`);
+    console.error(`[EnrichedSearch] Query failed: ${err?.message ?? err}`);
     yield {
       type: "error",
-      data: { message: `Failed to load seed companies: ${err?.message ?? err}`, code: "SEED_FETCH_FAILED" },
+      data: { message: `Failed to load companies: ${err?.message ?? err}`, code: "ENRICHED_QUERY_FAILED" },
     };
     return;
   }
 
   if (rows.length === 0) {
+    yield { type: "status", data: { message: "No matching companies found", progress: 100 } };
     yield {
-      type: "error",
-      data: { message: "company_seed_list is empty", code: "SEED_EMPTY" },
+      type: "complete",
+      data: { status: "complete", companiesFound: 0, companiesPersisted: 0, newCompanies: 0, searchQueryId },
     };
     return;
   }
@@ -85,7 +110,7 @@ export async function* runSeedListSearch(
     const results = await Promise.all(
       batch.map(async (row) => {
         try {
-          const companyData = seedRowToInsertCompany(row);
+          const companyData = enrichedRowToInsertCompany(row);
           const { company, isNew } = await storage.upsertCompanyNonDestructive(
             companyData,
             searchQueryId,
@@ -93,7 +118,7 @@ export async function* runSeedListSearch(
           );
           return { company, isNew };
         } catch (err: any) {
-          console.error(`[SeedList] Failed to persist "${row.name}":`, err?.message ?? err);
+          console.error(`[EnrichedSearch] Failed to persist "${row.companyName}":`, err?.message ?? err);
           return null;
         }
       }),
@@ -138,8 +163,8 @@ export async function* runSeedListSearch(
 // ─────────────────────────────────────────────────────────────────────────────
 // Enhanced-stream-compatible generator
 // Emits the event shape consumed by client/src/lib/useSearchStream.ts
-// (search_created / intent_extracted / company_found / company_enriched /
-//  search_complete). No web search — all rows come from company_seed_list.
+// (search_created / intent_extracted / adjacent_sector_found / company_found /
+//  company_enriched / search_complete). Data comes from company_enrichment.
 // ─────────────────────────────────────────────────────────────────────────────
 interface EnhancedEvent {
   type: string;
@@ -152,20 +177,6 @@ function emit(type: string, message: string, data?: any): EnhancedEvent {
   return { type, message, data, timestamp: new Date().toISOString() };
 }
 
-function queryIntentToInferredIntent(qi: QueryIntent): InferredIntent {
-  return {
-    primarySectors: qi.sector ? [qi.sector] : [],
-    adjacentSectors: [],
-    inferredSectors: [],
-    targetGeographies: qi.countries ?? [],
-    commercialRole: qi.commercialRole ?? "any",
-    searchRationale: qi.validResultDescription ?? "",
-    confidenceScore: 0.8,
-    keyInclusions: qi.includeTypes ?? [],
-    keyExclusions: qi.excludeTypes ?? [],
-  };
-}
-
 export async function* runSeedListEnhancedStream(
   query: string,
   searchQueryId: number,
@@ -173,47 +184,49 @@ export async function* runSeedListEnhancedStream(
   signal?: AbortSignal,
   sessionId?: string,
 ): AsyncGenerator<EnhancedEvent> {
-  yield emit("status", "Capturing intent...");
+  yield emit("status", "Understanding your query...");
 
-  let intent: QueryIntent | null = null;
-  try {
-    intent = await extractQueryIntent(query);
-    console.log("[SeedList] Intent:", JSON.stringify(intent, null, 2));
-    yield emit("intent_extracted", `Intent: ${intent.entityType}/${intent.commercialRole}`, {
-      intent: queryIntentToInferredIntent(intent),
-    });
-  } catch (err: any) {
-    console.warn(`[SeedList] Intent extraction failed, continuing with mock sample: ${err?.message ?? err}`);
-    yield emit("status", "Intent skipped (mock mode)");
+  const filter = await extractEnrichmentFilter(query);
+  console.log("[EnrichedSearch] Filter:", JSON.stringify(filter, null, 2));
+  yield emit("intent_extracted", `Sectors: ${filter.primarySectors.join(", ") || "any"}`, {
+    intent: filterToInferredIntent(filter),
+  });
+
+  // Surface AI-suggested adjacent sectors (the universe screen's banner).
+  if (filter.adjacentSectors.length > 0) {
+    yield emit(
+      "adjacent_sector_found",
+      `AI suggests ${filter.adjacentSectors.length} adjacent sectors`,
+      { adjacentSectors: filter.adjacentSectors },
+    );
   }
 
   if (signal?.aborted) return;
 
-  // TODO(phase-2): translate QueryIntent -> SQL filter (country IN intent.countries, sector ILIKE ...)
-  yield emit("status", "Fetching seed sample...");
+  yield emit("status", "Querying enriched companies...");
 
-  let rows: CompanySeedRow[] = [];
+  let rows: EnrichedCompanyMatch[] = [];
   try {
-    rows = await storage.getCompanySeedSample(limit);
-    console.log(`[SeedList] Fetched ${rows.length} seed rows`);
+    rows = await storage.queryEnrichedCompanies(filter, limit);
+    console.log(`[EnrichedSearch] Fetched ${rows.length} enriched rows`);
   } catch (err: any) {
-    console.error(`[SeedList] Seed fetch failed: ${err?.message ?? err}`);
-    yield emit("error", `Failed to load seed companies: ${err?.message ?? err}`);
+    console.error(`[EnrichedSearch] Query failed: ${err?.message ?? err}`);
+    yield emit("error", `Failed to load companies: ${err?.message ?? err}`);
     return;
   }
 
   if (rows.length === 0) {
-    yield emit("error", "company_seed_list is empty");
+    yield emit("search_complete", "No matching companies found", { totalCompanies: 0, searchQueryId });
     return;
   }
 
   for (const row of rows) {
     if (signal?.aborted) return;
-    yield emit("company_found", `Found: ${row.name}`, {
-      companyName: row.name,
-      name: row.name,
-      sector: row.sector,
-      relevanceType: "Direct",
+    yield emit("company_found", `Found: ${row.companyName}`, {
+      companyName: row.companyName,
+      name: row.companyName,
+      sector: row.primarySector,
+      relevanceType: row.relevanceType,
     });
   }
 
@@ -222,29 +235,29 @@ export async function* runSeedListEnhancedStream(
   for (const row of rows) {
     if (signal?.aborted) return;
     try {
-      const companyData = { ...seedRowToInsertCompany(row), searchSessionId: sessionId ?? null };
+      const companyData = { ...enrichedRowToInsertCompany(row), searchSessionId: sessionId ?? null };
       const { company, isNew } = await storage.upsertCompanyNonDestructive(
         companyData,
         searchQueryId,
         { country: 7, sector: 7 },
       );
       persistedCount++;
-      const fallback = applyCoordinateFallback({ country: row.country });
+      const fallback = applyCoordinateFallback({ city: row.hqCity ?? undefined, country: row.country });
       const streamCompany = {
         id: company.id,
         name: company.name,
         sector: company.sector,
         country: company.country,
-        geography: company.country,
-        revenue: company.revenue,
+        geography: company.region ?? company.country,
+        revenue: company.revenue ?? revenueValue(row),
         employees: company.employees,
         website: company.website ?? row.website ?? null,
-        summary: company.summary ?? row.description ?? null,
+        summary: company.summary ?? row.businessDescription ?? null,
         latitude: company.latitude ?? (fallback.latitude?.toString() ?? null),
         longitude: company.longitude ?? (fallback.longitude?.toString() ?? null),
-        relevanceType: "Direct" as const,
-        relevanceRationale: "Seeded from company_seed_list (mock mode)",
-        confidenceScore: 0.6,
+        relevanceType: row.relevanceType,
+        relevanceRationale: relevanceRationale(row, filter),
+        confidenceScore: row.confidence,
         isUserAccepted: false,
         isUserRejected: false,
         executives: [] as Array<{ name: string; title: string }>,
@@ -252,7 +265,7 @@ export async function* runSeedListEnhancedStream(
       };
       yield emit("company_enriched", `Classified: ${company.name}`, { company: streamCompany });
     } catch (err: any) {
-      console.error(`[SeedList] Failed to persist "${row.name}":`, err?.message ?? err);
+      console.error(`[EnrichedSearch] Failed to persist "${row.companyName}":`, err?.message ?? err);
     }
   }
 

@@ -4,201 +4,10 @@ import path from "path";
 import { storage } from "../../storage";
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
 import { parseSearchQuery, generateSearchUniqueKey } from "../../services/discovery";
+import { parseJsonSafe } from "../../services/pipeline/utils";
 
 export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   const { pdUpload } = deps;
-
-  // Discovery Layer: Search endpoint using discovery pipeline
-  app.post("/api/search", async (req, res) => {
-    try {
-      const { query, mode: rawMode } = req.body;
-      const mode = (rawMode === 'deep' ? 'deep' : 'quick') as 'quick' | 'deep';
-
-      if (!query) {
-        return res.status(400).json({ error: "Search query is required" });
-      }
-
-      console.log(`[Routes] Processing search (${mode}): "${query}"`);
-
-      // Step 1: Parse query to get limit and criteria (simple heuristic, no LLM)
-      const { criteria, interpretation } = await parseSearchQuery(query);
-
-      // Step 2: Generate unique key to prevent duplicate searches
-      const uniqueKey = generateSearchUniqueKey(query);
-      console.log("[Routes] Generated unique search key:", uniqueKey);
-
-      // Step 3: Persist search query
-      const searchQuery = await storage.upsertSearchQuery({
-        uniqueKey,
-        query,
-        parsedCriteria: JSON.stringify(criteria),
-        resultCount: 0
-      });
-
-      // Step 4: Clear non-enriched companies but preserve enriched ones
-      const preserved = await storage.deleteNonEnrichedCompaniesBySearchQuery(searchQuery.id);
-      if (preserved > 0) {
-        console.log(`[Routes] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
-      }
-
-      // Step 5: Run discovery pipeline (mock mode: seed_list-backed, Gemini-only for intent)
-      const { runDiscoveryPipeline } = await import("../../services/pipeline/discoveryPipeline");
-
-      console.log(`[Routes] Running ${mode} discovery for:`, query);
-      let companyCount = 0;
-      let discoveryError: string | null = null;
-      let discoveryErrorCode: string | null = null;
-
-      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id, mode)) {
-        if (event.type === 'company') {
-          companyCount++;
-        } else if (event.type === 'error' && event.data?.message) {
-          discoveryError = event.data.message;
-          discoveryErrorCode = event.data.code || null;
-          console.error(`[Routes] Discovery error (${discoveryErrorCode}): ${discoveryError}`);
-        }
-      }
-
-      // If we got an error and no companies, return the error
-      if (discoveryError && companyCount === 0) {
-        const isRateLimit = discoveryErrorCode === 'RATE_LIMIT';
-        const statusCode = isRateLimit ? 429 : 500;
-        return res.status(statusCode).json({ error: discoveryError });
-      }
-
-      console.log(`[Routes] Discovery complete: ${companyCount} companies found`);
-
-      // Step 6: Load full company data with executives from DB (pipeline already persisted)
-      const fullResults = await storage.getFullSearchResults(searchQuery.id);
-      const results = fullResults?.companies.map(company => {
-        const coords = applyCoordinateFallback({
-          latitude: company.latitude,
-          longitude: company.longitude,
-          city: company.region || undefined,
-          country: company.country || undefined,
-        });
-        return {
-          ...company,
-          latitude: coords.latitude ? String(coords.latitude) : company.latitude,
-          longitude: coords.longitude ? String(coords.longitude) : company.longitude,
-          executives: company.executives.map(exec => ({ ...exec }))
-        };
-      }) || [];
-
-      res.json({
-        searchQueryId: searchQuery.id,
-        query,
-        interpretation,
-        criteria,
-        results
-      });
-    } catch (error: any) {
-      console.error("[Routes] Error processing search:", error);
-      res.status(500).json({ error: error.message || "Failed to process search. Please try again." });
-    }
-  });
-
-  // Streaming search endpoint using Server-Sent Events
-  app.get("/api/search/stream", async (req, res) => {
-    const query = req.query.query as string;
-    const mode = ((req.query.mode as string) === 'deep' ? 'deep' : 'quick') as 'quick' | 'deep';
-
-    if (!query) {
-      res.status(400).json({ error: "Search query is required" });
-      return;
-    }
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-
-    const sendEvent = (event: string, data: any) => {
-      res.write(`event: ${event}\n`);
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-    };
-
-    try {
-      console.log(`[Routes SSE] Starting streaming search: "${query}"`);
-
-      sendEvent('status', { message: 'Starting search...', progress: 0 });
-
-      // Step 1: Parse the search query (simple heuristic, no LLM)
-      const { criteria, interpretation } = await parseSearchQuery(query);
-      sendEvent('status', { message: 'Criteria parsed', progress: 10, interpretation });
-
-      // Step 2: Generate unique key
-      const uniqueKey = generateSearchUniqueKey(query);
-
-      // Step 3: Persist search query
-      const searchQuery = await storage.upsertSearchQuery({
-        uniqueKey,
-        query,
-        parsedCriteria: JSON.stringify(criteria),
-        resultCount: 0
-      });
-
-      sendEvent('search_created', {
-        searchQueryId: searchQuery.id,
-        query,
-        interpretation,
-        criteria
-      });
-
-      // Step 4: Clear non-enriched companies but preserve enriched ones
-      const preserved = await storage.deleteNonEnrichedCompaniesBySearchQuery(searchQuery.id);
-      if (preserved > 0) {
-        console.log(`[Routes SSE] Preserved ${preserved} enriched companies for search ID:`, searchQuery.id);
-      }
-
-      // ---------------------------------------------------------------
-      // Step 5: Run discovery pipeline (streaming progress via SSE)
-      // ---------------------------------------------------------------
-      let companyCount = 0;
-
-      console.log(`[Routes SSE] Using ${mode} discovery pipeline for: "${query}"`);
-
-      const { runDiscoveryPipeline } = await import("../../services/pipeline/discoveryPipeline");
-
-      sendEvent('status', { message: mode === 'quick' ? 'Generating results...' : 'Searching...', progress: 20 });
-
-      for await (const event of runDiscoveryPipeline(query, criteria.limit || 10, searchQuery.id, mode)) {
-        if (event.type === 'company') {
-          companyCount++;
-          sendEvent('company', { company: event.data });
-          sendEvent('status', {
-            message: `Found ${companyCount} companies...`,
-            progress: Math.min(20 + companyCount * 5, 90)
-          });
-        } else if (event.type === 'status') {
-          sendEvent('status', event.data);
-        } else if (event.type === 'executives') {
-          sendEvent('executives', event.data);
-        } else if (event.type === 'source') {
-          sendEvent('source', event.data);
-        } else if (event.type === 'error' && event.data?.message) {
-          sendEvent('error', event.data);
-        }
-      }
-
-      await storage.updateSearchQueryResultCount(searchQuery.id, companyCount);
-      sendEvent('complete', {
-        total: companyCount,
-        searchQueryId: searchQuery.id
-      });
-      // ---------------------------------------------------------------
-
-      console.log(`[Routes SSE] Streaming complete: ${companyCount} companies`);
-      res.end();
-
-    } catch (error: any) {
-      console.error("[Routes SSE] Error:", error);
-      sendEvent('error', { message: error.message || 'Search failed' });
-      res.end();
-    }
-  });
 
   // ─── PD Upload Endpoint ──────────────────────────────────────────────────────
   app.post("/api/search/upload-pd", (req, res, next) => {
@@ -360,8 +169,8 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
 
       sendSSE("search_created", { searchQueryId: searchQuery.id, query, sessionId });
 
-      // TODO(mock-mode): both first-run + refine currently hit company_seed_list to
-      // skip grounded search. Restore runEnhancedSearchPipeline when intent->SQL ships.
+      // pdContent is extracted/redacted above but not yet fed into the enriched
+      // query (PD-driven filtering is a follow-up). Reference it to keep lint quiet.
       void pdContent;
       const { runSeedListEnhancedStream } = await import("../../services/pipeline/seedListSearch");
 
@@ -484,16 +293,7 @@ Return ONLY JSON.`
       const content = message.content[0];
       if (content.type !== "text") throw new Error("Unexpected response");
 
-      const parseJsonSafeLocal = (str: string) => {
-        let c = str.trim();
-        const m = c.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (m) c = m[1].trim();
-        const s = c.indexOf("{"); const e = c.lastIndexOf("}");
-        if (s !== -1 && e !== -1) c = c.substring(s, e + 1);
-        try { return JSON.parse(c); } catch { return null; }
-      };
-
-      const parsedUpdate = parseJsonSafeLocal(content.text);
+      const parsedUpdate = parseJsonSafe(content.text);
       if (!parsedUpdate) throw new Error("Failed to parse updated intent");
 
       // Merge updated fields with existing intent to preserve any fields not included in the update
@@ -539,8 +339,8 @@ Return ONLY JSON.`
         message: `Refined: ${updatedIntent.refinementSummary || refinementMessage} (targeting: ${changedCriteria.join(", ")})`,
       });
 
-      // TODO(mock-mode): refinement hits company_seed_list — re-enable runEnhancedSearchPipeline
-      // when grounded-search path is restored.
+      // Refinement re-runs the enriched search with the targeted query below.
+      // refinementPdContent/updatedIntent are not yet fed into the query (follow-up).
       void refinementPdContent;
       void updatedIntent;
       const { runSeedListEnhancedStream } = await import("../../services/pipeline/seedListSearch");

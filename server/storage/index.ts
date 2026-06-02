@@ -1,2 +1,8 @@
 export { DatabaseStorage, storage } from "./DatabaseStorage";
-export type { IStorage, CompanySeedRow, DataOrigin } from "./types";
+export type {
+  IStorage,
+  EnrichedCompanyRow,
+  EnrichedCompanyQuery,
+  EnrichedCompanyMatch,
+  DataOrigin,
+} from "./types";

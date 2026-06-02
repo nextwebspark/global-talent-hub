@@ -5,6 +5,16 @@ import type { StreamCompany } from './store';
 
 export type StreamPhase = 'input' | 'streaming' | 'complete';
 
+function makeActivity(type: ActivityEvent['type'], message: string, data?: Record<string, unknown>): ActivityEvent {
+  return {
+    id: crypto.randomUUID(),
+    type,
+    message,
+    timestamp: new Date(),
+    ...(data ? { data } : {}),
+  } as ActivityEvent;
+}
+
 // Re-export StreamCompany for Landing.tsx backward compat
 export type { StreamCompany };
 
@@ -57,6 +67,39 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     clearPendingCompanyNames,
   } = store;
 
+  // Apply one parsed SSE event to the store. Shared by startSearch (EventSource)
+  // and startRefinement (fetch stream) so event handling stays in parity.
+  const applySearchEvent = useCallback((type: string, data: any) => {
+    addSearchActivity(makeActivity(type as ActivityEvent['type'], data.message || type, data));
+
+    if (type === 'search_created' && data.searchQueryId) {
+      setSearchQueryId(data.searchQueryId);
+    }
+    if (type === 'intent_extracted' && data.intent) {
+      setSearchIntent(data.intent);
+    }
+    if (type === 'company_found' && (data.companyName || data.name)) {
+      // Add skeleton placeholder while this company is being enriched
+      addPendingCompanyName(data.companyName || data.name);
+    }
+    if (type === 'company_enriched' && data.company) {
+      addSearchCompany({ ...data.company, accepted: false, rejected: false });
+      // Skeleton removal is handled by addSearchCompany in the store
+    }
+    if (type === 'executive_found' && data.executive && data.companyId) {
+      // Merge discovered executive into the matching company card
+      addExecutiveToCompany(data.companyId, data.executive);
+    }
+    if (type === 'search_complete' || type === 'done') {
+      clearPendingCompanyNames(); // Clear any lingering skeletons for skipped companies
+      setIsSearchStreaming(false);
+      setSearchPhase('complete');
+    }
+    if (type === 'error') {
+      setIsSearchStreaming(false);
+    }
+  }, [addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames, setIsSearchStreaming, setSearchPhase]);
+
   const startSearch = useCallback((query: string, sessionId: string) => {
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
 
@@ -69,45 +112,12 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     const es = new EventSource(`/api/search/enhanced-stream?${params}`);
     esRef.current = es;
 
-    const makeActivity = (type: ActivityEvent['type'], message: string, data?: Record<string, unknown>): ActivityEvent => ({
-      id: crypto.randomUUID(),
-      type,
-      message,
-      timestamp: new Date(),
-      ...(data ? { data } : {}),
-    } as ActivityEvent);
-
     const handleEvent = (type: string, rawData: string) => {
       try {
         const data = JSON.parse(rawData);
-        addSearchActivity(makeActivity(type as ActivityEvent['type'], data.message || type, data));
-
-        if (type === 'search_created' && data.searchQueryId) {
-          setSearchQueryId(data.searchQueryId);
-        }
-        if (type === 'intent_extracted' && data.intent) {
-          setSearchIntent(data.intent);
-        }
-        if (type === 'company_found' && (data.companyName || data.name)) {
-          // Add skeleton placeholder while this company is being enriched
-          addPendingCompanyName(data.companyName || data.name);
-        }
-        if (type === 'company_enriched' && data.company) {
-          addSearchCompany({ ...data.company, accepted: false, rejected: false });
-          // Skeleton removal is handled by addSearchCompany in the store
-        }
-        if (type === 'executive_found' && data.executive && data.companyId) {
-          // Merge discovered executive into the matching company card
-          addExecutiveToCompany(data.companyId, data.executive);
-        }
+        applySearchEvent(type, data);
         if (type === 'search_complete' || type === 'done') {
-          clearPendingCompanyNames(); // Clear any lingering skeletons for skipped companies
-          setIsSearchStreaming(false);
-          setSearchPhase('complete');
           es.close();
-        }
-        if (type === 'error') {
-          setIsSearchStreaming(false);
         }
       } catch (parseErr) {
         console.warn('[useSearchStream] Failed to parse SSE event data:', parseErr);
@@ -128,7 +138,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
       setSearchPhase('complete');
       es.close();
     };
-  }, [resetSearchSession, setSearchPhase, setSearchSessionId, setIsSearchStreaming, addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames]);
+  }, [resetSearchSession, setSearchPhase, setSearchSessionId, setIsSearchStreaming, applySearchEvent]);
 
   const stopSearch = useCallback(() => {
     if (esRef.current) {
@@ -154,14 +164,6 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     setIsSearchStreaming(true);
     setSearchPhase('streaming');
     addSearchRefinement({ message: refinementMessage, timestamp: new Date().toISOString() });
-
-    const makeActivity = (type: ActivityEvent['type'], message: string, data?: Record<string, unknown>): ActivityEvent => ({
-      id: crypto.randomUUID(),
-      type,
-      message,
-      timestamp: new Date(),
-      ...(data ? { data } : {}),
-    } as ActivityEvent);
 
     try {
       const res = await fetch('/api/search/refine', {
@@ -190,25 +192,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
           } else if (line.startsWith('data: ') && currentEvent) {
             try {
               const data = JSON.parse(line.slice(6));
-              addSearchActivity(makeActivity(currentEvent as ActivityEvent['type'], data.message || currentEvent, data));
-              // Full parity with startSearch event handling
-              if (currentEvent === 'intent_extracted' && data.intent) {
-                setSearchIntent(data.intent);
-              }
-              if (currentEvent === 'company_found' && (data.companyName || data.name)) {
-                addPendingCompanyName(data.companyName || data.name);
-              }
-              if (currentEvent === 'company_enriched' && data.company) {
-                addSearchCompany({ ...data.company, accepted: false, rejected: false });
-              }
-              if (currentEvent === 'executive_found' && data.executive && data.companyId) {
-                addExecutiveToCompany(data.companyId, data.executive);
-              }
-              if (currentEvent === 'done' || currentEvent === 'search_complete') {
-                clearPendingCompanyNames(); // Clear any lingering skeletons
-                setSearchPhase('complete');
-                setIsSearchStreaming(false);
-              }
+              applySearchEvent(currentEvent, data);
             } catch (parseErr) {
               console.warn('[useSearchStream] Failed to parse refinement SSE line:', parseErr);
             }
@@ -224,7 +208,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
       setIsSearchRefining(false);
       setIsSearchStreaming(false);
     }
-  }, [setIsSearchRefining, setIsSearchStreaming, setSearchPhase, addSearchActivity, setSearchIntent, addSearchCompany, addPendingCompanyName, addExecutiveToCompany, clearPendingCompanyNames, addSearchRefinement]);
+  }, [setIsSearchRefining, setIsSearchStreaming, setSearchPhase, addSearchActivity, addSearchRefinement, applySearchEvent]);
 
   const acceptCompany = useCallback((id: number) => acceptSearchCompany(id), [acceptSearchCompany]);
   const rejectCompany = useCallback((id: number) => rejectSearchCompany(id), [rejectSearchCompany]);

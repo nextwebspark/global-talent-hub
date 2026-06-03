@@ -1,8 +1,7 @@
 // Shared pipeline helpers.
 
-// Canonical country names recognised in user queries, keyed by lowercase
-// keyword/alias. Used as the whitelist for country filters — the LLM never
-// supplies free-form country strings to the DB query.
+// Country aliases used for normalizing LLM-supplied country strings.
+// The LLM never supplies free-form strings to DB queries — this is the whitelist.
 const COUNTRY_ALIASES: Array<[string, string]> = [
   ['saudi arabia', 'Saudi Arabia'], ['saudi', 'Saudi Arabia'],
   ['united arab emirates', 'United Arab Emirates'], ['uae', 'United Arab Emirates'],
@@ -17,25 +16,6 @@ const COUNTRY_ALIASES: Array<[string, string]> = [
   ['south africa', 'South Africa'], ['nigeria', 'Nigeria'],
   ['brazil', 'Brazil'], ['mexico', 'Mexico'],
 ];
-
-// Set of canonical country names (for whitelisting LLM-supplied countries).
-export const CANONICAL_COUNTRIES: Set<string> = new Set(
-  COUNTRY_ALIASES.map(([, name]) => name),
-);
-
-// Extract canonical country names mentioned in a free-text query.
-export function extractCountriesFromRawQuery(query: string): string[] {
-  const lower = query.toLowerCase();
-  const found: string[] = [];
-  const seen = new Set<string>();
-  for (const [kw, name] of COUNTRY_ALIASES) {
-    if (lower.includes(kw) && !seen.has(name)) {
-      seen.add(name);
-      found.push(name);
-    }
-  }
-  return found;
-}
 
 // Normalize a list of LLM-supplied country strings to canonical names, dropping
 // anything not in the whitelist (matched case-insensitively against aliases).
@@ -67,4 +47,22 @@ export function parseJsonSafe(content: string): any {
   } catch {
     return null;
   }
+}
+
+// Like parseJsonSafe but targets the first [...] array block instead of an object.
+// Falls back to parseJsonSafe if no array is found.
+export function parseJsonArraySafe(content: string): any {
+  let cleaned = content.trim();
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) cleaned = fenceMatch[1].trim();
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  if (start !== -1 && end !== -1) {
+    try {
+      return JSON.parse(cleaned.substring(start, end + 1));
+    } catch {
+      // fall through
+    }
+  }
+  return parseJsonSafe(content);
 }

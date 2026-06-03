@@ -1,7 +1,7 @@
-import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
+import { callLlmWithFallback, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import { storage } from "../../storage";
-import type { Company } from "@shared/schema";
 import { createGeminiSearchAdapter } from './geminiSearchAdapter';
+import { parseJsonSafe } from './utils';
 
 interface EnrichmentResult<T> {
   value: T | null;
@@ -28,47 +28,8 @@ interface ExecutiveEnrichment {
   ethnicityConfidence?: number | null;
 }
 
-async function callLlm(
-  messages: Array<{ role: string; content: string }>
-): Promise<string> {
-  try {
-    const llm = await getLLMClient();
-    const response = await llm.chat.completions.create({
-      model: DEFAULT_MODEL,
-      messages: messages as any,
-      temperature: 0.1,
-      max_tokens: 1000,
-    });
-    return response.choices[0]?.message?.content || '';
-  } catch (error) {
-    console.log(`[Enrichment] Primary model failed, trying fallback...`);
-    const llm = await getLLMClient();
-    const response = await llm.chat.completions.create({
-      model: FAST_MODEL,
-      messages: messages as any,
-      temperature: 0.1,
-      max_tokens: 1000,
-    });
-    return response.choices[0]?.message?.content || '';
-  }
-}
-
-function parseJsonFromResponse(content: string): any {
-  let cleaned = content.trim();
-  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    cleaned = jsonMatch[1].trim();
-  }
-  const startIndex = cleaned.indexOf('{');
-  const endIndex = cleaned.lastIndexOf('}');
-  if (startIndex !== -1 && endIndex !== -1) {
-    cleaned = cleaned.substring(startIndex, endIndex + 1);
-  }
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
-  }
+function callLlm(messages: Array<{ role: string; content: string }>): Promise<string> {
+  return callLlmWithFallback(messages as any, { primaryModel: DEFAULT_MODEL, fallbackModel: FAST_MODEL });
 }
 
 export async function enrichRevenue(
@@ -99,7 +60,7 @@ export async function enrichRevenue(
 ${context}`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (parsed && parsed.found && parsed.revenue) {
       console.log(`[Enrichment] Found revenue for ${companyName}: ${parsed.currency} ${parsed.revenue}`);
@@ -148,7 +109,7 @@ export async function enrichEmployees(
 ${context}`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (parsed && parsed.found && parsed.employees) {
       console.log(`[Enrichment] Found employees for ${companyName}: ${parsed.employees}`);
@@ -193,7 +154,7 @@ Be accurate and factual. If you're not confident about specific information, pro
 Return: {"found":true,"summary":"...","coreActivity":"...","operatingModel":"...","revenueDrivers":"..."} or {"found":false}`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (parsed && parsed.found) {
       console.log(`[Enrichment] Got company profile for ${companyName}`);
@@ -230,7 +191,7 @@ Examples:
 - "CTO mapping fintech London" → {"roles": ["CTO", "Chief Technology Officer"]}`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (parsed && Array.isArray(parsed.roles) && parsed.roles.length > 0) {
       console.log(`[Enrichment] Inferred target roles from query "${searchQueryText}": ${parsed.roles.join(', ')}`);
@@ -281,7 +242,7 @@ or {"found":false}
 ${context}`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (parsed && parsed.found && parsed.name) {
       console.log(`[Enrichment] Found ${role} for ${companyName}: ${parsed.name}`);

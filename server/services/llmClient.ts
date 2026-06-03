@@ -69,3 +69,43 @@ function makeClient() {
 export async function getLLMClient() {
   return makeClient();
 }
+
+interface CallLlmOptions {
+  primaryModel?: string;
+  fallbackModel?: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+// Calls primaryModel, falls back to fallbackModel on error. Returns response text.
+export async function callLlmWithFallback(
+  messages: CompletionMessage[],
+  options: CallLlmOptions = {},
+): Promise<string> {
+  const {
+    primaryModel = DEFAULT_MODEL,
+    fallbackModel = FAST_MODEL,
+    temperature = 0.1,
+    maxTokens = 1000,
+  } = options;
+
+  const client = makeClient();
+  try {
+    const response = await client.chat.completions.create({
+      model: primaryModel,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    });
+    return response.choices[0]?.message?.content || "";
+  } catch {
+    console.warn(`[LLMClient] ${primaryModel} failed, falling back to ${fallbackModel}`);
+    const response = await client.chat.completions.create({
+      model: fallbackModel,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    });
+    return response.choices[0]?.message?.content || "";
+  }
+}

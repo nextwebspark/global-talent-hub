@@ -49,115 +49,21 @@ function filterToInferredIntent(filter: EnrichmentFilter): InferredIntent {
   };
 }
 
+function isUnmappedFilter(filter: EnrichmentFilter, query: string): boolean {
+  const noSectors =
+    filter.primarySectors.length === 0 &&
+    filter.adjacentSectors.length === 0 &&
+    filter.subTags.length === 0;
+  const isFallbackRationale =
+    filter.searchRationale.trim() === `Companies relevant to: ${query}`.trim();
+  return noSectors && isFallbackRationale;
+}
+
 function relevanceRationale(row: EnrichedCompanyMatch, filter: EnrichmentFilter): string {
   if (row.relevanceType === "Adjacent") {
     return `Adjacent sector (${row.primarySector}) to the target. ${filter.searchRationale}`;
   }
   return filter.searchRationale;
-}
-
-export async function* runSeedListSearch(
-  query: string,
-  limit: number,
-  searchQueryId: number,
-): AsyncGenerator<any> {
-  yield { type: "status", data: { message: "Understanding your query...", progress: 5 } };
-
-  const filter = await extractEnrichmentFilter(query);
-  console.log("[EnrichedSearch] Filter:", JSON.stringify(filter, null, 2));
-  yield {
-    type: "status",
-    data: {
-      message: `Sectors: ${filter.primarySectors.join(", ") || "any"}`,
-      progress: 15,
-      intent: filterToInferredIntent(filter),
-    },
-  };
-
-  yield { type: "status", data: { message: "Querying enriched companies...", progress: 30 } };
-
-  let rows: EnrichedCompanyMatch[] = [];
-  try {
-    rows = await storage.queryEnrichedCompanies(filter, limit);
-    console.log(`[EnrichedSearch] Fetched ${rows.length} enriched rows`);
-  } catch (err: any) {
-    console.error(`[EnrichedSearch] Query failed: ${err?.message ?? err}`);
-    yield {
-      type: "error",
-      data: { message: `Failed to load companies: ${err?.message ?? err}`, code: "ENRICHED_QUERY_FAILED" },
-    };
-    return;
-  }
-
-  if (rows.length === 0) {
-    yield { type: "status", data: { message: "No matching companies found", progress: 100 } };
-    yield {
-      type: "complete",
-      data: { status: "complete", companiesFound: 0, companiesPersisted: 0, newCompanies: 0, searchQueryId },
-    };
-    return;
-  }
-
-  yield { type: "source", data: { count: rows.length } };
-  yield { type: "status", data: { message: "Saving results...", progress: 60 } };
-
-  let persistedCount = 0;
-  let newCount = 0;
-
-  const BATCH_SIZE = 5;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(
-      batch.map(async (row) => {
-        try {
-          const companyData = enrichedRowToInsertCompany(row);
-          const { company, isNew } = await storage.upsertCompanyNonDestructive(
-            companyData,
-            searchQueryId,
-            { country: 7, sector: 7 },
-          );
-          return { company, isNew };
-        } catch (err: any) {
-          console.error(`[EnrichedSearch] Failed to persist "${row.companyName}":`, err?.message ?? err);
-          return null;
-        }
-      }),
-    );
-
-    for (const r of results) {
-      if (!r) continue;
-      persistedCount++;
-      if (r.isNew) newCount++;
-      yield {
-        type: "company",
-        data: {
-          id: r.company.id,
-          name: r.company.name,
-          country: r.company.country,
-          sector: r.company.sector,
-          revenue: r.company.revenue,
-          employees: r.company.employees,
-          latitude: r.company.latitude,
-          longitude: r.company.longitude,
-          isNew: r.isNew,
-        },
-      };
-    }
-  }
-
-  await storage.updateSearchQueryResultCount(searchQueryId, persistedCount);
-
-  yield { type: "status", data: { message: "Search complete", progress: 100 } };
-  yield {
-    type: "complete",
-    data: {
-      status: "complete",
-      companiesFound: rows.length,
-      companiesPersisted: persistedCount,
-      newCompanies: newCount,
-      searchQueryId,
-    },
-  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,6 +97,16 @@ export async function* runSeedListEnhancedStream(
   yield emit("intent_extracted", `Sectors: ${filter.primarySectors.join(", ") || "any"}`, {
     intent: filterToInferredIntent(filter),
   });
+
+  if (isUnmappedFilter(filter, query)) {
+    yield emit("no_results", "No relevant sectors identified", {
+      totalCompanies: 0,
+      searchQueryId,
+      noResultsReason:
+        "Could not identify relevant sectors for this query. Try describing an industry, geography, or company type (e.g. 'mid-size pharma companies in Southeast Asia').",
+    });
+    return;
+  }
 
   // Surface AI-suggested adjacent sectors (the universe screen's banner).
   if (filter.adjacentSectors.length > 0) {

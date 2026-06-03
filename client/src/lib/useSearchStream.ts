@@ -25,11 +25,10 @@ export interface UseSearchStreamReturn {
   companies: StreamCompany[];
   pendingCompanyNames: string[];
   searchQueryId: number | null;
+  sessionId: string | null;
   isStreaming: boolean;
-  isRefining: boolean;
   startSearch: (query: string, sessionId: string) => void;
   stopSearch: () => void;
-  startRefinement: (sessionId: string, refinementMessage: string) => Promise<void>;
   acceptCompany: (id: number) => void;
   rejectCompany: (id: number) => void;
   addManualCompany: (data: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
@@ -48,14 +47,13 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     searchCompanies: companies,
     pendingCompanyNames,
     searchQueryId,
+    searchSessionId: sessionId,
     isSearchStreaming: isStreaming,
-    isSearchRefining: isRefining,
     setSearchPhase,
     setSearchSessionId,
     setSearchIntent,
     addSearchActivity,
     addPendingCompanyName,
-    removePendingCompanyName,
     addSearchCompany,
     addExecutiveToCompany,
     acceptSearchCompany,
@@ -64,7 +62,6 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     setSearchQueryId,
     setIsSearchStreaming,
     setIsSearchRefining,
-    addSearchRefinement,
     resetSearchSession,
     clearPendingCompanyNames,
   } = store;
@@ -92,7 +89,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
       // Merge discovered executive into the matching company card
       addExecutiveToCompany(data.companyId, data.executive);
     }
-    if (type === 'search_complete' || type === 'done') {
+    if (type === 'search_complete' || type === 'done' || type === 'no_results') {
       clearPendingCompanyNames(); // Clear any lingering skeletons for skipped companies
       setIsSearchStreaming(false);
       setSearchPhase('complete');
@@ -118,7 +115,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
       try {
         const data = JSON.parse(rawData);
         applySearchEvent(type, data);
-        if (type === 'search_complete' || type === 'done') {
+        if (type === 'search_complete' || type === 'done' || type === 'no_results') {
           es.close();
         }
       } catch (parseErr) {
@@ -128,7 +125,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
 
     const events: Array<string> = [
       'search_created', 'intent_extracted', 'company_found', 'company_enriched',
-      'adjacent_sector_found', 'executive_found', 'search_complete', 'status', 'done', 'error'
+      'adjacent_sector_found', 'executive_found', 'search_complete', 'no_results', 'status', 'done', 'error'
     ];
 
     events.forEach(evType => {
@@ -157,61 +154,6 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     setSearchPhase('complete');
   }, [clearPendingCompanyNames, setIsSearchStreaming, setIsSearchRefining, setSearchPhase]);
 
-  const startRefinement = useCallback(async (sessionId: string, refinementMessage: string) => {
-    if (abortRef.current) { abortRef.current.abort(); }
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setIsSearchRefining(true);
-    setIsSearchStreaming(true);
-    setSearchPhase('streaming');
-    addSearchRefinement({ message: refinementMessage, timestamp: new Date().toISOString() });
-
-    try {
-      const res = await fetch('/api/search/refine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, refinementMessage }),
-        signal: controller.signal,
-      });
-
-      if (!res.body) throw new Error('No response body');
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let currentEvent = '';
-      let lineBuffer = ''; // Buffer to handle chunk-boundary partial lines
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        // Accumulate into buffer and split on newlines, keeping partial last line
-        const chunk = lineBuffer + decoder.decode(value, { stream: true });
-        const rawLines = chunk.split('\n');
-        lineBuffer = rawLines.pop() ?? ''; // Last element may be incomplete
-        for (const line of rawLines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith('data: ') && currentEvent) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              applySearchEvent(currentEvent, data);
-            } catch (parseErr) {
-              console.warn('[useSearchStream] Failed to parse refinement SSE line:', parseErr);
-            }
-            currentEvent = '';
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'AbortError') {
-        addSearchActivity(makeActivity('error', err.message || 'Refinement failed'));
-      }
-    } finally {
-      setIsSearchRefining(false);
-      setIsSearchStreaming(false);
-    }
-  }, [setIsSearchRefining, setIsSearchStreaming, setSearchPhase, addSearchActivity, addSearchRefinement, applySearchEvent]);
-
   const acceptCompany = useCallback((id: number) => acceptSearchCompany(id), [acceptSearchCompany]);
   const rejectCompany = useCallback((id: number) => rejectSearchCompany(id), [rejectSearchCompany]);
   const addManualCompany = useCallback(
@@ -227,11 +169,10 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     companies,
     pendingCompanyNames,
     searchQueryId,
+    sessionId,
     isStreaming,
-    isRefining,
     startSearch,
     stopSearch,
-    startRefinement,
     acceptCompany,
     rejectCompany,
     addManualCompany,

@@ -21,3 +21,5 @@ TAVILY_API_KEY
 QueryIntent
 discoverCompanies
 heuristic
+.mcp.json
+.playwright-mcp/*

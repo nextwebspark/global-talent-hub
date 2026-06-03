@@ -51,6 +51,7 @@ function makeClient() {
               maxOutputTokens: req.max_tokens ?? 4096,
               temperature: req.temperature,
               ...(req.thinkingBudget !== undefined && { thinkingConfig: { thinkingBudget: req.thinkingBudget } }),
+              ...(req.response_format?.type === "json_object" && { responseMimeType: "application/json" }),
             },
           });
 

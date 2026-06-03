@@ -5,6 +5,4 @@ export * from "./normalize";
 export * from "./validate";
 export * from "./queryParser";
 export * from "./prompts";
-export * from "./streaming";
-export * from "./sync";
 export * from "./researchCompany";

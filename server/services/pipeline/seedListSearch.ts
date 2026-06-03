@@ -151,14 +151,14 @@ export async function* runSeedListEnhancedStream(
   for (const row of rows) {
     if (signal?.aborted) return;
     try {
-      const companyData = { ...enrichedRowToInsertCompany(row), searchSessionId: sessionId ?? null };
+      const rowData = enrichedRowToInsertCompany(row);
+      const companyData = { ...rowData, searchSessionId: sessionId ?? null };
       const { company, isNew } = await storage.upsertCompanyNonDestructive(
         companyData,
         searchQueryId,
         { country: 7, sector: 7 },
       );
       persistedCount++;
-      const fallback = applyCoordinateFallback({ city: row.hqCity ?? undefined, country: row.country });
       const streamCompany = {
         id: company.id,
         name: company.name,
@@ -169,8 +169,8 @@ export async function* runSeedListEnhancedStream(
         employees: company.employees,
         website: company.website ?? row.website ?? null,
         summary: company.summary ?? row.businessDescription ?? null,
-        latitude: company.latitude ?? (fallback.latitude?.toString() ?? null),
-        longitude: company.longitude ?? (fallback.longitude?.toString() ?? null),
+        latitude: company.latitude ?? rowData.latitude,
+        longitude: company.longitude ?? rowData.longitude,
         relevanceType: row.relevanceType,
         relevanceRationale: relevanceRationale(row, filter),
         confidenceScore: row.confidence,

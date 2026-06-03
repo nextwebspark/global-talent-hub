@@ -1,53 +1,9 @@
-import { getLLMClient, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
+import { callLlmWithFallback, DEFAULT_MODEL, FAST_MODEL } from "../llmClient";
 import { storage } from "../../storage";
+import { parseJsonSafe, parseJsonArraySafe } from './utils';
 
-async function callLlm(
-  messages: Array<{ role: string; content: string }>
-): Promise<string> {
-  try {
-    const llm = await getLLMClient();
-    const response = await llm.chat.completions.create({
-      model: DEFAULT_MODEL,
-      messages: messages as any,
-      temperature: 0.1,
-      max_tokens: 2000,
-    });
-    return response.choices[0]?.message?.content || '';
-  } catch (error) {
-    console.log(`[DiversityInference] Primary model failed, trying fallback...`);
-    const llm = await getLLMClient();
-    const response = await llm.chat.completions.create({
-      model: FAST_MODEL,
-      messages: messages as any,
-      temperature: 0.1,
-      max_tokens: 2000,
-    });
-    return response.choices[0]?.message?.content || '';
-  }
-}
-
-function parseJsonFromResponse(content: string): any {
-  let cleaned = content.trim();
-  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    cleaned = jsonMatch[1].trim();
-  }
-  const startIndex = cleaned.indexOf('[');
-  const endIndex = cleaned.lastIndexOf(']');
-  if (startIndex !== -1 && endIndex !== -1) {
-    cleaned = cleaned.substring(startIndex, endIndex + 1);
-  } else {
-    const objStart = cleaned.indexOf('{');
-    const objEnd = cleaned.lastIndexOf('}');
-    if (objStart !== -1 && objEnd !== -1) {
-      cleaned = cleaned.substring(objStart, objEnd + 1);
-    }
-  }
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
-  }
+function callLlm(messages: Array<{ role: string; content: string }>): Promise<string> {
+  return callLlmWithFallback(messages as any, { primaryModel: DEFAULT_MODEL, fallbackModel: FAST_MODEL, maxTokens: 2000 });
 }
 
 export async function inferDiversityForExecutive(executiveId: number): Promise<boolean> {
@@ -99,7 +55,7 @@ Return JSON only:
 }`;
 
     const response = await callLlm([{ role: "user", content: prompt }]);
-    const parsed = parseJsonFromResponse(response);
+    const parsed = parseJsonSafe(response);
 
     if (!parsed) return false;
 
@@ -189,7 +145,7 @@ Return a JSON array with one object per executive, in the same order:
 
     try {
       const response = await callLlm([{ role: "user", content: prompt }]);
-      const results = parseJsonFromResponse(response);
+      const results = parseJsonArraySafe(response);
 
       if (Array.isArray(results) && results.length === batch.length) {
         for (let j = 0; j < batch.length; j++) {

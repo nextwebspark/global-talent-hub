@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Sparkles, Plus, Upload, Lock, Loader2, Search, Square, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { StreamCompany } from '@/lib/useSearchStream';
-import type { InferredIntent } from '@shared/schema';
+import type { ActivityEvent, InferredIntent } from '@shared/schema';
 
 // Confidence in StreamCompany is 0-1; display as a whole percent.
 function confidencePct(score: number): number {
@@ -47,7 +47,9 @@ type RelevanceFilter = 'all' | 'direct';
 
 export function UniverseView({
   intent, companies, pendingCompanyNames,
-  isStreaming, query,
+  activities,
+  isStreaming,
+  query,
   acceptedCount, directCount, adjacentCount,
   isSavingProject,
   onStopSearch, onResetSearch,
@@ -58,6 +60,7 @@ export function UniverseView({
   intent: InferredIntent | null;
   companies: StreamCompany[];
   pendingCompanyNames: string[];
+  activities: ActivityEvent[];
   isStreaming: boolean;
   query: string;
   acceptedCount: number;
@@ -75,6 +78,34 @@ export function UniverseView({
   const [sectorFilter, setSectorFilter] = useState<string | null>(null);
   const [relevanceFilter, setRelevanceFilter] = useState<RelevanceFilter>('all');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Derive no-results reason from activities
+  const noResultsReason = useMemo(() => {
+    const ev = [...activities].reverse().find((a) => a.type === 'no_results');
+    return (ev?.data?.noResultsReason as string | undefined) ?? null;
+  }, [activities]);
+
+  // Thinking lines for the AI panel
+  const thinkingLines = useMemo(() => {
+    return activities
+      .filter((a) =>
+        a.type === 'status' ||
+        a.type === 'intent_extracted' ||
+        a.type === 'adjacent_sector_found' ||
+        a.type === 'search_complete' ||
+        a.type === 'no_results',
+      )
+      .map((a) => {
+        let text = a.message;
+        if (a.type === 'intent_extracted' && typeof (a.data as any)?.intent?.searchRationale === 'string') {
+          text = (a.data as any).intent.searchRationale as string;
+        } else if (a.type === 'adjacent_sector_found' && Array.isArray((a.data as any)?.adjacentSectors)) {
+          text = `Found ${((a.data as any).adjacentSectors as string[]).length} adjacent sectors`;
+        }
+        return { id: a.id, text };
+      });
+  }, [activities]);
+
 
   // non-rejected used for sidebar counts + "X found" badge
   const nonRejected = useMemo(() => companies.filter((c) => !c.rejected), [companies]);
@@ -148,53 +179,97 @@ export function UniverseView({
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Sector sidebar */}
-        <div className="w-56 shrink-0 border-r border-border bg-muted/10 overflow-y-auto py-3 hidden sm:block">
-          <button
-            onClick={() => setSectorFilter(null)}
-            className={`w-full flex items-center justify-between px-4 py-1.5 text-xs ${sectorFilter === null ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
-          >
-            All <span className="text-[11px] bg-muted px-1.5 rounded-full">{nonRejected.length}</span>
-          </button>
+        {/* Sector sidebar — 3 regions: thinking (top) + sectors (scroll) + chat (bottom) */}
+        <div className="w-72 shrink-0 border-r border-border bg-muted/10 flex-col hidden sm:flex">
 
-          {isStreaming && sectorGroups.direct.length === 0 && sectorGroups.adjacent.length === 0 && (
-            <div className="px-4 space-y-2 pt-3">
-              {[60, 80, 50, 70].map((w, i) => (
-                <div key={i} className="flex justify-between animate-pulse">
-                  <div className="h-2.5 bg-muted rounded" style={{ width: `${w}%` }} />
-                  <div className="h-2.5 bg-muted rounded w-6" />
-                </div>
-              ))}
+          {/* Region A: AI thinking panel */}
+          <div className="shrink-0 border-b border-border px-3 py-2.5">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              {isStreaming
+                ? <Loader2 className="w-3 h-3 animate-spin text-violet-600 dark:text-violet-400" />
+                : <Sparkles className="w-3 h-3 text-violet-600 dark:text-violet-400" />}
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {isStreaming ? 'AI thinking' : 'AI rationale'}
+              </span>
             </div>
-          )}
+            {isStreaming ? (
+              <div className="space-y-0.5">
+                {thinkingLines.slice(-4).map((line) => (
+                  <p key={line.id} className="text-[11px] text-muted-foreground leading-snug truncate">{line.text}</p>
+                ))}
+                {thinkingLines.length === 0 && (
+                  <div className="flex gap-1 items-center">
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1 h-1 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                {noResultsReason ?? intent?.searchRationale ?? 'Search complete.'}
+              </p>
+            )}
+          </div>
 
-          {sectorGroups.direct.length > 0 && (
-            <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/60 px-4 pt-3 pb-1">Direct</p>
-          )}
-          {sectorGroups.direct.map(([sector, count]) => (
-            <button
-              key={`d-${sector}`}
-              onClick={() => setSectorFilter(sector)}
-              className={`w-full flex items-center justify-between gap-2 px-4 py-1.5 text-xs text-left ${sectorFilter === sector ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
-            >
-              <span className="truncate">{sector}</span>
-              <span className="text-[11px] bg-muted px-1.5 rounded-full shrink-0">{count}</span>
-            </button>
-          ))}
+          {/* Region B: sectors or no-results message (scrollable) */}
+          <div className="flex-1 overflow-y-auto py-3">
+            {noResultsReason && companies.length === 0 && !isStreaming ? (
+              <div className="px-4 py-6 text-center">
+                <Search className="w-5 h-5 mx-auto mb-2 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground leading-relaxed">{noResultsReason}</p>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setSectorFilter(null)}
+                  className={`w-full flex items-center justify-between px-4 py-1.5 text-xs ${sectorFilter === null ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
+                >
+                  All <span className="text-[11px] bg-muted px-1.5 rounded-full">{nonRejected.length}</span>
+                </button>
 
-          {sectorGroups.adjacent.length > 0 && (
-            <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/60 px-4 pt-3 pb-1">Adjacent</p>
-          )}
-          {sectorGroups.adjacent.map(([sector, count]) => (
-            <button
-              key={`a-${sector}`}
-              onClick={() => setSectorFilter(sector)}
-              className={`w-full flex items-center justify-between gap-2 px-4 py-1.5 text-xs text-left ${sectorFilter === sector ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-blue-600/80 dark:text-blue-400/80 hover:bg-blue-50/50 dark:hover:bg-blue-950/20'}`}
-            >
-              <span className="truncate">{sector}</span>
-              <span className="text-[11px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 rounded-full shrink-0">{count}</span>
-            </button>
-          ))}
+                {isStreaming && sectorGroups.direct.length === 0 && sectorGroups.adjacent.length === 0 && (
+                  <div className="px-4 space-y-2 pt-3">
+                    {[60, 80, 50, 70].map((w, i) => (
+                      <div key={i} className="flex justify-between animate-pulse">
+                        <div className="h-2.5 bg-muted rounded" style={{ width: `${w}%` }} />
+                        <div className="h-2.5 bg-muted rounded w-6" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {sectorGroups.direct.length > 0 && (
+                  <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/60 px-4 pt-3 pb-1">Direct</p>
+                )}
+                {sectorGroups.direct.map(([sector, count]) => (
+                  <button
+                    key={`d-${sector}`}
+                    onClick={() => setSectorFilter(sector)}
+                    className={`w-full flex items-center justify-between gap-2 px-4 py-1.5 text-xs text-left ${sectorFilter === sector ? 'bg-muted text-foreground font-medium' : 'text-muted-foreground hover:bg-muted/50'}`}
+                  >
+                    <span className="truncate">{sector}</span>
+                    <span className="text-[11px] bg-muted px-1.5 rounded-full shrink-0">{count}</span>
+                  </button>
+                ))}
+
+                {sectorGroups.adjacent.length > 0 && (
+                  <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/60 px-4 pt-3 pb-1">Adjacent</p>
+                )}
+                {sectorGroups.adjacent.map(([sector, count]) => (
+                  <button
+                    key={`a-${sector}`}
+                    onClick={() => setSectorFilter(sector)}
+                    className={`w-full flex items-center justify-between gap-2 px-4 py-1.5 text-xs text-left ${sectorFilter === sector ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-blue-600/80 dark:text-blue-400/80 hover:bg-blue-50/50 dark:hover:bg-blue-950/20'}`}
+                  >
+                    <span className="truncate">{sector}</span>
+                    <span className="text-[11px] bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 rounded-full shrink-0">{count}</span>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+
         </div>
 
         {/* Main */}
@@ -336,10 +411,17 @@ export function UniverseView({
               ))
             )}
 
-            {rows.length === 0 && pendingCompanyNames.length === 0 && !isStreaming && (
+            {rows.length === 0 && pendingCompanyNames.length === 0 && !isStreaming && !noResultsReason && (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
                 <Search className="w-5 h-5" />
                 <p className="text-xs">No companies match the current filters</p>
+              </div>
+            )}
+
+            {rows.length === 0 && pendingCompanyNames.length === 0 && !isStreaming && noResultsReason && (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+                <Search className="w-5 h-5" />
+                <p className="text-xs text-center max-w-xs">{noResultsReason}</p>
               </div>
             )}
           </div>

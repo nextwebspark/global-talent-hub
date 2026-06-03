@@ -22,7 +22,7 @@ export interface InferredIntent {
 
 export interface ActivityEvent {
   id: string;
-  type: 'intent_extracted' | 'company_found' | 'company_enriched' | 'adjacent_sector_found' | 'executive_found' | 'search_complete' | 'error' | 'status' | 'refinement_started';
+  type: 'intent_extracted' | 'company_found' | 'company_enriched' | 'adjacent_sector_found' | 'executive_found' | 'search_complete' | 'no_results' | 'error' | 'status' | 'refinement_started';
   message: string;
   timestamp: Date;
   data?: any;

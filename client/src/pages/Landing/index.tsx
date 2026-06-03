@@ -37,7 +37,7 @@ export default function Landing() {
 
   const {
     phase, intent, companies, pendingCompanyNames,
-    isStreaming,
+    activities, isStreaming,
     startSearch, stopSearch,
     acceptCompany, rejectCompany, addManualCompany, reset,
   } = useSearchStream();
@@ -238,6 +238,7 @@ export default function Landing() {
             intent={intent}
             companies={companies}
             pendingCompanyNames={pendingCompanyNames}
+            activities={activities}
             isStreaming={isStreaming}
             query={input}
             acceptedCount={acceptedCount}

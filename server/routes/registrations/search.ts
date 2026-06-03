@@ -3,8 +3,7 @@ import type { Multer } from "multer";
 import path from "path";
 import { storage } from "../../storage";
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
-import { parseSearchQuery, generateSearchUniqueKey } from "../../services/discovery";
-import { parseJsonSafe } from "../../services/pipeline/utils";
+
 
 export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   const { pdUpload } = deps;
@@ -123,34 +122,8 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     };
 
     try {
-      // Load session to retrieve pdContent and confidentiality flag
       const session = await storage.getSearchSession(sessionId);
       const rawPdContent = session?.pdContent || undefined;
-      const pdIsConfidential = session?.pdConfidential === true;
-
-      // Confidentiality enforcement: For confidential PDs, extract only structured search criteria
-      // via Claude (Anthropic — private model) and pass ONLY those criteria to the pipeline.
-      // Raw PD text is NEVER forwarded to external models (OpenRouter/GPT-4o).
-      let pdContent: string | undefined = rawPdContent;
-      if (rawPdContent && pdIsConfidential) {
-        try {
-          const AnthropicSdk = (await import("@anthropic-ai/sdk")).default;
-          const anthropicLocal = new AnthropicSdk({ apiKey: process.env.ANTHROPIC_API_KEY });
-          const extractMsg = await anthropicLocal.messages.create({
-            model: "claude-opus-4-5",
-            max_tokens: 400,
-            messages: [{
-              role: "user",
-              content: `Extract only the following from this confidential document — do NOT quote or reproduce any original text:\n- Target industry sectors\n- Target geographies/countries\n- Commercial role type (e.g. distributor, retailer, manufacturer)\n- Company size or revenue range\n- Key inclusion/exclusion criteria\n\nDocument:\n${rawPdContent.slice(0, 2000)}\n\nReturn a 2-3 sentence structured summary of search criteria ONLY.`,
-            }],
-          });
-          const extractedCriteria = extractMsg.content[0]?.type === "text" ? extractMsg.content[0].text : "";
-          pdContent = extractedCriteria ? `[Extracted search criteria from confidential document]\n${extractedCriteria}` : undefined;
-        } catch {
-          // If extraction fails, use no PD context rather than risk leaking raw content
-          pdContent = undefined;
-        }
-      }
 
       const { parseSearchQuery, generateSearchUniqueKey } = await import("../../services/discovery");
       const { criteria } = await parseSearchQuery(query);
@@ -162,16 +135,11 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         resultCount: 0,
       });
 
-      // Ensure session exists in DB — do NOT pass pdContent here (already stored via upload-pd endpoint)
-      // Pass rawPdContent (unredacted) if we need to create a new session without a prior PD upload
       await storage.createSearchSession({ id: sessionId, rawQuery: query, pdContent: rawPdContent });
       await storage.updateSearchSession(sessionId, { searchQueryId: searchQuery.id });
 
       sendSSE("search_created", { searchQueryId: searchQuery.id, query, sessionId });
 
-      // pdContent is extracted/redacted above but not yet fed into the enriched
-      // query (PD-driven filtering is a follow-up). Reference it to keep lint quiet.
-      void pdContent;
       const { runSeedListEnhancedStream } = await import("../../services/pipeline/seedListSearch");
 
       let enrichedCompanyCount = 0;
@@ -184,6 +152,11 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       )) {
         if (controller.signal.aborted) break;
         sendSSE(event.type, { ...event.data, message: event.message, timestamp: event.timestamp });
+        // Persist the extracted intent so later refinements merge against the
+        // real universe (existing sectors/geos) instead of an empty base.
+        if (event.type === 'intent_extracted' && event.data?.intent) {
+          await storage.updateSearchSession(sessionId, { inferredIntent: event.data.intent });
+        }
         if (event.type === 'company_enriched') enrichedCompanyCount++;
         if (event.type === 'search_complete' && event.data?.totalCompanies) {
           enrichedCompanyCount = event.data.totalCompanies;
@@ -199,180 +172,6 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       if (!res.writableEnded) {
         sendSSE("error", { message: err.message || "Search failed" });
       }
-    } finally {
-      if (!res.writableEnded) res.end();
-    }
-  });
-
-  // ─── Refinement Endpoint ─────────────────────────────────────────────────────
-  app.post("/api/search/refine", async (req, res) => {
-    const { sessionId, refinementMessage } = req.body;
-
-    if (!sessionId || !refinementMessage) {
-      return res.status(400).json({ error: "sessionId and refinementMessage are required" });
-    }
-
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.flushHeaders();
-
-    const controller = new AbortController();
-    req.on("close", () => controller.abort());
-
-    const sendSSE = (event: string, data: any) => {
-      if (!res.writableEnded) {
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-      }
-    };
-
-    try {
-      // Load existing intent, PD content, and confidentiality flag from session
-      const session = await storage.getSearchSession(sessionId);
-      const existingIntent = session?.inferredIntent || null;
-      const rawPdContent = session?.pdContent ?? undefined;
-      const pdIsConfidential = session?.pdConfidential === true;
-
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-      // Confidentiality enforcement: same logic as enhanced-stream
-      // For confidential PDs, extract structured criteria via Anthropic only — never pass raw text to OpenRouter
-      let refinementPdContent: string | undefined = rawPdContent;
-      if (rawPdContent && pdIsConfidential) {
-        try {
-          const extractMsg = await anthropic.messages.create({
-            model: "claude-opus-4-5",
-            max_tokens: 400,
-            messages: [{
-              role: "user",
-              content: `Extract only the following from this confidential document — do NOT quote or reproduce any original text:\n- Target industry sectors\n- Target geographies/countries\n- Commercial role type\n- Company size or revenue range\n- Key inclusion/exclusion criteria\n\nDocument:\n${rawPdContent.slice(0, 2000)}\n\nReturn a 2-3 sentence structured summary of search criteria ONLY.`,
-            }],
-          });
-          const extractedCriteria = extractMsg.content[0]?.type === "text" ? extractMsg.content[0].text : "";
-          refinementPdContent = extractedCriteria ? `[Extracted search criteria from confidential document]\n${extractedCriteria}` : undefined;
-        } catch {
-          refinementPdContent = undefined;
-        }
-      }
-
-      sendSSE("refinement_started", { message: "Processing refinement..." });
-
-      const existingIntentStr = existingIntent ? JSON.stringify(existingIntent) : "{}";
-      const message = await anthropic.messages.create({
-        model: "claude-opus-4-5",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `You are refining a business search query based on user feedback.
-
-ORIGINAL INTENT (from DB):
-${existingIntentStr}
-
-USER REFINEMENT: "${refinementMessage}"
-
-Update the search intent based on this refinement — only change what the user specified.
-Return JSON:
-{
-  "primarySectors": [...],
-  "adjacentSectors": [...],
-  "targetGeographies": [...],
-  "commercialRole": "...",
-  "searchRationale": "updated rationale",
-  "confidenceScore": 0.85,
-  "keyInclusions": [...],
-  "keyExclusions": [...],
-  "refinementSummary": "one sentence describing what changed"
-}
-
-Return ONLY JSON.`
-        }]
-      });
-
-      const content = message.content[0];
-      if (content.type !== "text") throw new Error("Unexpected response");
-
-      const parsedUpdate = parseJsonSafe(content.text);
-      if (!parsedUpdate) throw new Error("Failed to parse updated intent");
-
-      // Merge updated fields with existing intent to preserve any fields not included in the update
-      const updatedIntent = {
-        ...existingIntent,
-        ...parsedUpdate,
-        inferredSectors: parsedUpdate.inferredSectors || existingIntent?.inferredSectors || [],
-      };
-
-      // Persist updated intent and refinement history to session
-      const history = session?.refinementHistory || [];
-      history.push({ message: refinementMessage, timestamp: new Date().toISOString() });
-      await storage.updateSearchSession(sessionId, {
-        inferredIntent: updatedIntent,
-        refinementHistory: history,
-        status: "searching",
-      });
-
-      // Compute criteria delta — which fields changed between old and new intent
-      const changedCriteria: string[] = [];
-      const arrDiff = (a: string[] = [], b: string[] = []) =>
-        JSON.stringify([...a].sort()) !== JSON.stringify([...b].sort());
-      if (arrDiff(existingIntent?.primarySectors, updatedIntent.primarySectors) ||
-          arrDiff(existingIntent?.adjacentSectors, updatedIntent.adjacentSectors)) {
-        changedCriteria.push("sectors");
-      }
-      if (arrDiff(existingIntent?.targetGeographies, updatedIntent.targetGeographies)) {
-        changedCriteria.push("geographies");
-      }
-      if (existingIntent?.commercialRole !== updatedIntent.commercialRole) {
-        changedCriteria.push("commercialRole");
-      }
-      if (arrDiff(existingIntent?.keyInclusions, updatedIntent.keyInclusions) ||
-          arrDiff(existingIntent?.keyExclusions, updatedIntent.keyExclusions)) {
-        changedCriteria.push("filters");
-      }
-      // If nothing detectably changed, run everything
-      if (changedCriteria.length === 0) changedCriteria.push("sectors", "geographies");
-
-      sendSSE("intent_extracted", {
-        intent: updatedIntent,
-        changedCriteria,
-        message: `Refined: ${updatedIntent.refinementSummary || refinementMessage} (targeting: ${changedCriteria.join(", ")})`,
-      });
-
-      // Refinement re-runs the enriched search with the targeted query below.
-      // refinementPdContent/updatedIntent are not yet fed into the query (follow-up).
-      void refinementPdContent;
-      void updatedIntent;
-      const { runSeedListEnhancedStream } = await import("../../services/pipeline/seedListSearch");
-      const { parseSearchQuery, generateSearchUniqueKey } = await import("../../services/discovery");
-      const { criteria } = await parseSearchQuery(refinementMessage);
-      const uniqueKey = generateSearchUniqueKey(`refined:${sessionId}:${Date.now()}`);
-      const searchQuery = await storage.upsertSearchQuery({
-        uniqueKey,
-        query: refinementMessage,
-        parsedCriteria: JSON.stringify(criteria),
-        resultCount: 0,
-      });
-
-      const targetedQuery = changedCriteria.length < 4
-        ? `[Targeted refinement — changed: ${changedCriteria.join(", ")}] ${refinementMessage}`
-        : refinementMessage;
-
-      for await (const event of runSeedListEnhancedStream(
-        targetedQuery,
-        searchQuery.id,
-        criteria.limit || 10,
-        controller.signal,
-        sessionId,
-      )) {
-        if (controller.signal.aborted) break;
-        sendSSE(event.type, { ...event.data, message: event.message, timestamp: event.timestamp });
-      }
-
-      sendSSE("done", { message: "Refinement complete" });
-    } catch (err: any) {
-      console.error("[Routes] Refinement error:", err);
-      sendSSE("error", { message: err.message || "Refinement failed" });
     } finally {
       if (!res.writableEnded) res.end();
     }

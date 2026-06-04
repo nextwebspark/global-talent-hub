@@ -89,10 +89,11 @@ export async function* runSeedListEnhancedStream(
   limit: number = 10,
   signal?: AbortSignal,
   sessionId?: string,
+  briefContext?: string,
 ): AsyncGenerator<EnhancedEvent> {
   yield emit("status", "Understanding your query...");
 
-  const filter = await extractEnrichmentFilter(query);
+  const filter = await extractEnrichmentFilter(query, briefContext);
   console.log("[EnrichedSearch] Filter:", JSON.stringify(filter, null, 2));
   yield emit("intent_extracted", `Sectors: ${filter.primarySectors.join(", ") || "any"}`, {
     intent: filterToInferredIntent(filter),

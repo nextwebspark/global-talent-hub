@@ -15,7 +15,7 @@ import { SearchPanel } from './panels/SearchPanel';
 import { BriefPanel } from './panels/BriefPanel';
 import { ImportPanel } from './panels/ImportPanel';
 import { UniverseView } from './results/UniverseView';
-import { usePdUpload } from './hooks/usePdUpload';
+import { useBriefUpload } from './hooks/useBriefUpload';
 import { useBriefMode } from './hooks/useBriefMode';
 import { useImportMode } from './hooks/useImportMode';
 import type { LandingMode } from './types';
@@ -42,8 +42,8 @@ export default function Landing() {
     acceptCompany, rejectCompany, addManualCompany, reset,
   } = useSearchStream();
 
-  const pd = usePdUpload(sessionId);
-  const brief = useBriefMode({ pd, sessionId, startSearch });
+  const briefUpload = useBriefUpload(sessionId);
+  const brief = useBriefMode({ upload: briefUpload, sessionId, startSearch });
   const importState = useImportMode({ setProject, loadFromAPI, setLocation });
 
   const toggleTheme = () => {
@@ -54,8 +54,8 @@ export default function Landing() {
 
   const handleEnhancedSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() && !pd.pdFileName) { toast.error('Please describe what you are looking for, or upload a Position Description'); return; }
-    startSearch(input.trim() || `PD: ${pd.pdFileName}`, sessionId);
+    if (!input.trim()) { toast.error('Please describe what you are looking for'); return; }
+    startSearch(input.trim(), sessionId);
   };
 
   const saveCompaniesToProject = async (companiesToSave: StreamCompany[]) => {
@@ -187,12 +187,11 @@ export default function Landing() {
                 <SearchPanel
                   input={input}
                   setInput={setInput}
-                  pd={pd}
                   onSubmit={handleEnhancedSearch}
                   inputRef={inputRef}
                 />
               )}
-              {mode === 'brief' && <BriefPanel pd={pd} brief={brief} />}
+              {mode === 'brief' && <BriefPanel upload={briefUpload} brief={brief} />}
               {mode === 'import' && <ImportPanel importState={importState} />}
             </div>
           </motion.div>

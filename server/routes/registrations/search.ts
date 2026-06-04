@@ -1,15 +1,16 @@
 import type { Express } from "express";
 import type { Multer } from "multer";
-import path from "path";
 import { storage } from "../../storage";
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
-
+import { extractBriefText, BriefExtractError } from "../../services/briefExtract";
 
 export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   const { pdUpload } = deps;
 
-  // ─── PD Upload Endpoint ──────────────────────────────────────────────────────
-  app.post("/api/search/upload-pd", (req, res, next) => {
+  // ─── Brief Upload Endpoint ───────────────────────────────────────────────────
+  // Accepts a job description / company brief (PDF, DOCX, TXT), extracts the text,
+  // and persists it on the search session (pd_content). Used by the "From brief" flow.
+  app.post("/api/search/upload-brief", (req, res, next) => {
     pdUpload.single("file")(req, res, (err) => {
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
@@ -25,36 +26,14 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const ext = path.extname(req.file.originalname).toLowerCase();
-      let extractedText = "";
-
-      if (ext === ".pdf") {
-        try {
-          // pdf-parse ships CommonJS with no @types; use createRequire to get the callable directly
-          const { createRequire } = await import("module");
-          const require = createRequire(import.meta.url);
-          const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
-          const data = await pdfParse(req.file.buffer);
-          extractedText = data.text.substring(0, 20000);
-        } catch (err: any) {
-          return res.status(422).json({ error: `Failed to parse PDF: ${err.message}` });
+      let extractedText: string;
+      try {
+        extractedText = await extractBriefText(req.file.buffer, req.file.originalname);
+      } catch (err) {
+        if (err instanceof BriefExtractError) {
+          return res.status(err.kind === "unsupported" ? 400 : 422).json({ error: err.message });
         }
-      } else if (ext === ".docx") {
-        try {
-          const mammoth = await import("mammoth");
-          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-          extractedText = result.value.substring(0, 20000);
-        } catch (err: any) {
-          return res.status(422).json({ error: `Failed to parse DOCX: ${err.message}` });
-        }
-      } else if (ext === ".txt") {
-        extractedText = req.file.buffer.toString("utf-8").substring(0, 20000);
-      } else {
-        return res.status(400).json({ error: "Unsupported file type. Use PDF, DOCX, or TXT." });
-      }
-
-      if (!extractedText.trim()) {
-        return res.status(422).json({ error: "Could not extract text from the file. It may be empty or image-based." });
+        throw err;
       }
 
       // Persist pdContent (and confidentiality flag) to the search session if sessionId provided
@@ -125,6 +104,20 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       const session = await storage.getSearchSession(sessionId);
       const rawPdContent = session?.pdContent || undefined;
 
+      // Build the brief context fed to the classifier. Confidential uploads are summarised
+      // to neutral criteria first so raw text never reaches the prompt; otherwise the raw
+      // text is passed through, capped to the configured limit.
+      let briefContext: string | undefined;
+      if (rawPdContent) {
+        if (session?.pdConfidential) {
+          const { summarizeConfidentialBrief } = await import("../../services/pipeline/briefSummary");
+          briefContext = (await summarizeConfidentialBrief(rawPdContent)) || undefined;
+        } else {
+          const { briefConfig } = await import("../../services/pipeline/briefConfig");
+          briefContext = rawPdContent.slice(0, briefConfig.classifierCharLimit);
+        }
+      }
+
       const { parseSearchQuery, generateSearchUniqueKey } = await import("../../services/discovery");
       const { criteria } = await parseSearchQuery(query);
       const uniqueKey = generateSearchUniqueKey(`enhanced:${sessionId}`);
@@ -149,6 +142,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         criteria.limit || 10,
         controller.signal,
         sessionId,
+        briefContext,
       )) {
         if (controller.signal.aborted) break;
         sendSSE(event.type, { ...event.data, message: event.message, timestamp: event.timestamp });

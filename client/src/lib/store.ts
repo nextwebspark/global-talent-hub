@@ -52,6 +52,7 @@ export interface SearchSessionActions {
   addPendingCompanyName: (name: string) => void;
   removePendingCompanyName: (name: string) => void;
   clearPendingCompanyNames: () => void;
+  setSearchCompanies: (companies: StreamCompany[]) => void;
   addSearchCompany: (company: StreamCompany) => void;
   addExecutiveToCompany: (companyId: number, executive: { name: string; title: string }) => void;
   acceptSearchCompany: (id: number) => void;
@@ -215,6 +216,8 @@ export interface Project {
   search_string: string;
   created_at: Date;
   clockworkProjectId?: string | null;
+  status?: 'draft' | 'active';
+  selectedCount?: number;
 }
 
 export interface ExecutiveDetails {
@@ -285,6 +288,12 @@ export interface ExecutiveDetails {
 export type DiscoveryStatus = 'complete' | 'partial' | 'degraded';
 
 interface AppState extends SearchSessionState, SearchSessionActions {
+  // Global UI: command palette (shared across all screens) + dashboard active view
+  commandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+  dashboardView: 'map' | 'table' | 'dashboard';
+  setDashboardView: (view: 'map' | 'table' | 'dashboard') => void;
+
   currentProject: Project | null;
   companies: Company[];
   executives: Executive[];
@@ -563,6 +572,11 @@ export const useAppStore = create<AppState>((set) => ({
     pendingCompanyNames: state.pendingCompanyNames.filter(n => n !== name),
   })),
   clearPendingCompanyNames: () => set({ pendingCompanyNames: [] }),
+  setSearchCompanies: (companies) => set({
+    searchCompanies: companies,
+    selectedSearchCompanyIds: new Set(companies.filter(c => c.accepted).map(c => c.id)),
+    pendingCompanyNames: [],
+  }),
   addSearchCompany: (company) => set((state) => {
     if (state.searchCompanies.some(c => c.id === company.id)) return {};
     // Remove matching pending skeleton when enriched company arrives
@@ -643,6 +657,12 @@ export const useAppStore = create<AppState>((set) => ({
     isSearchStreaming: false,
     isSearchRefining: false,
   }),
+
+  // ─── Global UI ──────────────────────────────────────────────────────────────
+  commandPaletteOpen: false,
+  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  dashboardView: 'map',
+  setDashboardView: (view) => set({ dashboardView: view }),
 
   // ─── Legacy State ───────────────────────────────────────────────────────────
   currentProject: null,

@@ -17,6 +17,27 @@ export function registerSearchQueries(app: Express): void {
     }
   });
 
+  app.patch("/api/search-queries/:id/draft", async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid search query ID" });
+
+      const existing = await storage.getSearchQuery(id);
+      if (!existing) return res.status(404).json({ error: "Search query not found" });
+
+      const { selectedCount, query } = req.body;
+      const updated = await storage.updateSearchQueryDraft(id, {
+        ...(typeof selectedCount === "number" ? { selectedCount } : {}),
+        ...(typeof query === "string" ? { query } : {}),
+      });
+
+      res.json({ searchQueryId: updated.id, status: updated.status, selectedCount: updated.selectedCount });
+    } catch (error) {
+      console.error("Error saving draft:", error);
+      res.status(500).json({ error: "Failed to save draft" });
+    }
+  });
+
   app.post("/api/search-queries/bulk-delete", async (req, res) => {
     try {
       const { ids } = req.body;

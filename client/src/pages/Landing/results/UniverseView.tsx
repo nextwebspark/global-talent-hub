@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, Plus, Upload, Lock, Loader2, Search, Square, X } from 'lucide-react';
+import { Sparkles, Plus, Upload, Lock, Loader2, Search, Square, X, Save, Check, PencilLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { StreamCompany } from '@/lib/useSearchStream';
 import type { ActivityEvent, InferredIntent } from '@shared/schema';
@@ -52,10 +52,11 @@ export function UniverseView({
   query,
   acceptedCount, directCount, adjacentCount,
   isSavingProject,
+  draftSaved, resume,
   onStopSearch, onResetSearch,
   onAcceptCompany, onRejectCompany,
   onAddCompany,
-  onSaveProject, onGoToDashboard,
+  onSaveDraft, onSaveProject, onGoToDashboard,
 }: {
   intent: InferredIntent | null;
   companies: StreamCompany[];
@@ -67,11 +68,14 @@ export function UniverseView({
   directCount: number;
   adjacentCount: number;
   isSavingProject: boolean;
+  draftSaved: boolean;
+  resume?: boolean;
   onStopSearch: () => void;
   onResetSearch: () => void;
   onAcceptCompany: (id: number) => void;
   onRejectCompany: (id: number) => void;
   onAddCompany: (company: { name: string; sector: string; revenueBand: string; employeeBand: string }) => void;
+  onSaveDraft: () => void;
   onSaveProject: () => void;
   onGoToDashboard: () => void;
 }) {
@@ -155,6 +159,10 @@ export function UniverseView({
             </span>
             Discovering · {nonRejected.length} found
           </span>
+        ) : resume ? (
+          <span className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-900 px-2.5 py-1 rounded-full">
+            <PencilLine className="w-3 h-3" />Draft resumed · {nonRejected.length} found
+          </span>
         ) : (
           <span className="text-[11px] text-muted-foreground">{nonRejected.length} found</span>
         )}
@@ -167,6 +175,11 @@ export function UniverseView({
           <Button variant="outline" size="sm" onClick={() => setShowAddModal(true)} className="h-7 gap-1.5 text-xs" data-testid="button-add-company">
             <Plus className="w-3 h-3" />Add company
           </Button>
+          {!isStreaming && (
+            <Button variant="outline" size="sm" onClick={onSaveDraft} className="h-7 gap-1.5 text-xs" title="Save your progress without confirming" data-testid="button-save-draft">
+              {draftSaved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}{draftSaved ? 'Saved' : 'Save draft'}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onResetSearch} className="h-7 gap-1.5 text-xs" data-testid="button-new-search">
             New search
           </Button>
@@ -446,15 +459,29 @@ export function UniverseView({
                 <p className="text-[10px] text-muted-foreground">direct</p>
               </div>
             </div>
-            <Button
-              onClick={onSaveProject}
-              disabled={isSavingProject || acceptedCount === 0}
-              className="h-9 gap-2 font-semibold"
-              data-testid="button-confirm-universe"
-            >
-              {isSavingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-              Confirm universe ({acceptedCount})
-            </Button>
+            <div className="flex items-center gap-2.5">
+              <Button
+                variant="outline"
+                onClick={onSaveDraft}
+                disabled={isStreaming}
+                className="h-9 gap-2"
+                title="Save your progress without confirming — resume it later from Projects"
+                data-testid="button-save-draft-footer"
+              >
+                {draftSaved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                {draftSaved ? 'Draft saved' : 'Save draft'}
+              </Button>
+              <Button
+                onClick={onSaveProject}
+                disabled={isSavingProject || isStreaming || acceptedCount === 0}
+                title={isStreaming ? 'Still discovering companies…' : acceptedCount === 0 ? 'Select at least one company to confirm' : undefined}
+                className="h-9 gap-2 font-semibold"
+                data-testid="button-confirm-universe"
+              >
+                {isStreaming || isSavingProject ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                {isStreaming ? 'Discovering…' : `Confirm universe (${acceptedCount})`}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

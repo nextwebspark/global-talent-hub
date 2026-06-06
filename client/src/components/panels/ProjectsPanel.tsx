@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
-import { useSearchHistory } from '@/lib/api';
+import { useEffect, useRef } from 'react';
+import { useSearchHistory, type SearchHistoryItem } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
-import { Building2, Clock, Loader2, FolderOpen, Trash2, CheckSquare, Square, MinusSquare } from 'lucide-react';
+import { Building2, Clock, Loader2, FolderOpen, CheckSquare, LayoutGrid, ArrowRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useLocation } from 'wouter';
-import { useQueryClient } from '@tanstack/react-query';
+import ProjectStatusChip from './ProjectStatusChip';
+import { useResumeDraft } from '@/lib/useLoadProject';
 
 interface ProjectsPanelProps {
   onClose: () => void;
@@ -17,12 +18,7 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
   const { data: history, isLoading } = useSearchHistory();
   const { currentProject, setProject, loadFromAPI } = useAppStore();
   const [, setLocation] = useLocation();
-  const queryClient = useQueryClient();
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [selectMode, setSelectMode] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const resumeDraft = useResumeDraft();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,38 +33,16 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  const toggleSelect = (id: number) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (!history) return;
-    if (selectedIds.size === history.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(history.map(h => h.id)));
-    }
-  };
-
-  const exitSelectMode = () => {
-    setSelectMode(false);
-    setSelectedIds(new Set());
-    setConfirmBulkDelete(false);
-  };
-
-  const handleLoadProject = async (item: { id: number; query: string; createdAt: string; companyCount: number }) => {
-    if (selectMode) {
-      toggleSelect(item.id);
+  const handleLoadProject = async (item: SearchHistoryItem) => {
+    if (String(item.id) === currentProject?.id) {
+      onClose();
       return;
     }
 
-    if (String(item.id) === currentProject?.id) {
+    if (item.status === 'draft') {
+      const ok = await resumeDraft(item);
       onClose();
+      if (ok) setLocation(`/universe/${item.id}`);
       return;
     }
 
@@ -101,62 +75,59 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
     }
   };
 
-  const handleDeleteProject = async (id: number) => {
-    setIsDeleting(true);
-    try {
-      const response = await fetch(`/api/search-queries/${id}/results`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete');
+  const byLatest = (a: SearchHistoryItem, b: SearchHistoryItem) =>
+    new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+  const drafts = (history || []).filter(h => h.status === 'draft').sort(byLatest).slice(0, 3);
+  const recents = (history || []).filter(h => h.status !== 'draft').sort(byLatest).slice(0, 3);
 
-      queryClient.invalidateQueries({ queryKey: ['search-history'] });
+  const renderItem = (item: SearchHistoryItem) => {
+    const isActive = String(item.id) === currentProject?.id;
+    const isDraft = item.status === 'draft';
 
-      if (String(id) === currentProject?.id) {
-        const { reset } = useAppStore.getState();
-        reset();
-        setLocation('/');
-        onClose();
-      }
-
-      toast.success('Project deleted');
-      setConfirmDeleteId(null);
-    } catch {
-      toast.error('Failed to delete project');
-    } finally {
-      setIsDeleting(false);
-    }
+    return (
+      <div
+        key={item.id}
+        className={`mx-1 flex items-center rounded-md mb-0.5 cursor-pointer transition-colors ${
+          isActive ? 'bg-primary/10' : 'hover:bg-muted'
+        }`}
+        data-testid={`project-item-${item.id}`}
+      >
+        <button
+          onClick={() => handleLoadProject(item)}
+          className="flex-1 text-left py-2 min-w-0 px-3"
+          data-testid={`project-load-${item.id}`}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className={`text-sm font-medium truncate ${isActive ? 'text-primary' : ''}`}>
+              {item.query}
+            </p>
+            {isDraft && <ProjectStatusChip status="draft" />}
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+            {isDraft ? (
+              <span className="flex items-center gap-1">
+                <CheckSquare className="w-3 h-3" />
+                {item.selectedCount || 0} selected
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3 h-3" />
+                {item.companyCount || 0}
+              </span>
+            )}
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              {formatDistanceToNow(new Date(item.updatedAt || item.createdAt), { addSuffix: true })}
+            </span>
+          </div>
+        </button>
+      </div>
+    );
   };
 
-  const handleBulkDelete = async () => {
-    if (selectedIds.size === 0) return;
-    setIsDeleting(true);
-    try {
-      const ids = Array.from(selectedIds);
-      const response = await fetch('/api/search-queries/bulk-delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
-      });
-      if (!response.ok) throw new Error('Failed to delete');
-
-      queryClient.invalidateQueries({ queryKey: ['search-history'] });
-
-      if (currentProject && ids.includes(Number(currentProject.id))) {
-        const { reset } = useAppStore.getState();
-        reset();
-        setLocation('/');
-        onClose();
-      }
-
-      toast.success(`Deleted ${ids.length} project${ids.length > 1 ? 's' : ''}`);
-      exitSelectMode();
-    } catch {
-      toast.error('Failed to delete projects');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const allSelected = history && history.length > 0 && selectedIds.size === history.length;
-  const someSelected = selectedIds.size > 0 && !allSelected;
+  const groupHeader = (label: string) => (
+    <div className="text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground px-3 pt-2 pb-1">{label}</div>
+  );
 
   return (
     <div
@@ -168,70 +139,7 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <FolderOpen className="w-4 h-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold flex-1">Projects</h2>
-        {history && history.length > 0 && (
-          <button
-            onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)}
-            className={`text-xs px-2 py-0.5 rounded transition-colors ${
-              selectMode
-                ? 'bg-primary/10 text-primary font-medium'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
-            data-testid="button-toggle-select-mode"
-          >
-            {selectMode ? 'Cancel' : 'Select'}
-          </button>
-        )}
       </div>
-
-      {selectMode && history && history.length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/30 shrink-0">
-          <button
-            onClick={toggleSelectAll}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            data-testid="button-select-all"
-          >
-            {allSelected ? (
-              <CheckSquare className="w-3.5 h-3.5 text-primary" />
-            ) : someSelected ? (
-              <MinusSquare className="w-3.5 h-3.5 text-primary" />
-            ) : (
-              <Square className="w-3.5 h-3.5" />
-            )}
-            {allSelected ? 'Deselect all' : 'Select all'}
-          </button>
-          <span className="flex-1" />
-          {selectedIds.size > 0 && !confirmBulkDelete && (
-            <button
-              onClick={() => setConfirmBulkDelete(true)}
-              className="flex items-center gap-1 text-xs text-destructive hover:text-destructive/80 transition-colors font-medium"
-              data-testid="button-bulk-delete"
-            >
-              <Trash2 className="w-3 h-3" />
-              Delete {selectedIds.size}
-            </button>
-          )}
-          {confirmBulkDelete && (
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleBulkDelete}
-                disabled={isDeleting}
-                className="text-xs px-2 py-0.5 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
-                data-testid="button-confirm-bulk-delete"
-              >
-                {isDeleting ? 'Deleting...' : 'Confirm'}
-              </button>
-              <button
-                onClick={() => setConfirmBulkDelete(false)}
-                disabled={isDeleting}
-                className="text-xs px-2 py-0.5 rounded border border-border hover:bg-muted transition-colors"
-                data-testid="button-cancel-bulk-delete"
-              >
-                No
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8" data-testid="projects-loading">
@@ -243,105 +151,23 @@ export default function ProjectsPanel({ onClose, onProjectLoaded, offsetTop = 56
           <p className="text-xs">No projects yet</p>
         </div>
       ) : (
-        <div className="overflow-y-auto flex-1 py-1">
-          {history.map((item) => {
-            const isActive = String(item.id) === currentProject?.id;
-            const isSelected = selectedIds.has(item.id);
-            const isConfirming = confirmDeleteId === item.id;
-
-            if (isConfirming && !selectMode) {
-              return (
-                <div
-                  key={item.id}
-                  className="mx-1 px-3 py-2 rounded-md border border-destructive/30 bg-destructive/5 mb-0.5"
-                  data-testid={`project-delete-confirm-${item.id}`}
-                >
-                  <p className="text-xs text-destructive font-medium mb-2">
-                    Delete this project and all its data?
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleDeleteProject(item.id)}
-                      disabled={isDeleting}
-                      className="flex-1 text-xs px-2 py-1 rounded bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
-                      data-testid={`button-confirm-delete-${item.id}`}
-                    >
-                      {isDeleting ? 'Deleting...' : 'Delete'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      disabled={isDeleting}
-                      className="flex-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted transition-colors"
-                      data-testid={`button-cancel-delete-${item.id}`}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={item.id}
-                className={`mx-1 flex items-center rounded-md mb-0.5 cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-primary/10 ring-1 ring-primary/20'
-                    : isActive
-                      ? 'bg-primary/10'
-                      : 'hover:bg-muted'
-                }`}
-                data-testid={`project-item-${item.id}`}
-              >
-                {selectMode && (
-                  <button
-                    onClick={() => toggleSelect(item.id)}
-                    className="pl-2.5 pr-0.5 py-2 shrink-0"
-                    data-testid={`checkbox-project-${item.id}`}
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="w-4 h-4 text-primary" />
-                    ) : (
-                      <Square className="w-4 h-4 text-muted-foreground" />
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={() => handleLoadProject(item)}
-                  className={`flex-1 text-left py-2 min-w-0 ${selectMode ? 'px-1.5' : 'px-3'}`}
-                  data-testid={`project-load-${item.id}`}
-                >
-                  <p className={`text-sm font-medium truncate ${isActive ? 'text-primary' : ''}`}>
-                    {item.query}
-                  </p>
-                  <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Building2 className="w-3 h-3" />
-                      {item.companyCount || 0}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-                    </span>
-                  </div>
-                </button>
-                {!selectMode && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDeleteId(item.id);
-                    }}
-                    className="p-1.5 mr-1 rounded hover:bg-destructive/10 hover:text-destructive transition-colors text-muted-foreground/50 shrink-0"
-                    title="Delete project"
-                    data-testid={`button-delete-project-${item.id}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <div className="overflow-y-auto flex-1 py-1">
+            {drafts.length > 0 && groupHeader('Drafts')}
+            {drafts.map(renderItem)}
+            {recents.length > 0 && groupHeader('Recent')}
+            {recents.map(renderItem)}
+          </div>
+          <button
+            onClick={() => { onClose(); setLocation('/projects'); }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 border-t border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            data-testid="button-see-all-projects"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            See all projects ({history.length})
+            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+          </button>
+        </>
       )}
     </div>
   );

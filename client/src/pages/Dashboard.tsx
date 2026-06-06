@@ -4,7 +4,6 @@ import { useCompanies, useLoadSearchResults, useEnrichmentMatch, EnrichmentMatch
 import { transformAPICompany, transformAPIExecutive } from '@/lib/store';
 import Sidebar, { type ViewMode } from '@/components/layout/Sidebar';
 import TopBar from '@/components/layout/TopBar';
-import CommandPalette from '@/components/layout/CommandPalette';
 import CompanyList from '@/components/layout/CompanyList';
 import RightPanel from '@/components/panels/RightPanel';
 import MapComponent from '@/components/map/Map';
@@ -21,13 +20,11 @@ import * as XLSX from 'xlsx';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { currentProject, setProject, selectedCompanyId, selectedExecutiveId, companies, executives, selectCompany, selectExecutive, setCompanies, setExecutives, loadFromAPI } = useAppStore();
+  const { currentProject, setProject, selectedCompanyId, selectedExecutiveId, companies, executives, selectCompany, selectExecutive, setCompanies, setExecutives, loadFromAPI, dashboardView: activeView, setDashboardView, setCommandPaletteOpen } = useAppStore();
   const { isLoading, refetch: refetchCompanies } = useCompanies();
   const loadSearchResults = useLoadSearchResults();
 
-  const [activeView, setActiveViewRaw] = useState<ViewMode>('map');
   const mapViewStateRef = useRef<{ center: [number, number]; zoom: number; hasRestored: boolean }>({ center: [0, 20], zoom: 1.5, hasRestored: false });
-  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importModalMode, setImportModalMode] = useState<'import' | 'add'>('import');
   const [rightPanelWidth, setRightPanelWidth] = useState(384);
@@ -45,14 +42,14 @@ export default function Dashboard() {
       selectCompany(null);
       selectExecutive(null);
     }
-    setActiveViewRaw(view);
+    setDashboardView(view);
   };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setShowCommandPalette(prev => !prev);
+        setCommandPaletteOpen(!useAppStore.getState().commandPaletteOpen);
       }
       if (e.key === '1' && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
         setActiveView('map');
@@ -385,10 +382,10 @@ export default function Dashboard() {
       <Sidebar
         activeView={activeView}
         onViewChange={setActiveView}
-        onCommandPalette={() => setShowCommandPalette(true)}
         onHome={() => setLocation('/')}
         onProjects={() => setShowProjectsPanel(prev => !prev)}
         isProjectsOpen={showProjectsPanel}
+        projectOpen={!!currentProject}
       />
 
       {showProjectsPanel && (
@@ -398,7 +395,7 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar
           activeView={activeView}
-          onCommandPalette={() => setShowCommandPalette(true)}
+          onCommandPalette={() => setCommandPaletteOpen(true)}
           onExport={handleExport}
           onImport={() => { setImportModalMode('import'); setShowImportModal(true); }}
           onEnrichAll={handleEnrichAll}
@@ -456,14 +453,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      <CommandPalette
-        isOpen={showCommandPalette}
-        onClose={() => setShowCommandPalette(false)}
-        onNavigate={setActiveView}
-        onExport={handleExport}
-        onEnrichAll={handleEnrichAll}
-      />
 
       <ImportModal
         isOpen={showImportModal}

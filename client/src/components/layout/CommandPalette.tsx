@@ -1,18 +1,19 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Command } from 'cmdk';
 import { useAppStore } from '@/lib/store';
-import { Building2, User, Search, Map, Table2, LayoutDashboard, Download, Zap, ArrowRight, Hash } from 'lucide-react';
+import { Building2, User, Search, Map, Table2, LayoutDashboard, ArrowRight, Hash } from 'lucide-react';
 
-interface CommandPaletteProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onNavigate: (view: 'map' | 'table' | 'dashboard') => void;
-  onExport?: () => void;
-  onEnrichAll?: () => void;
-}
-
-export default function CommandPalette({ isOpen, onClose, onNavigate, onExport, onEnrichAll }: CommandPaletteProps) {
-  const { companies, executives, selectCompany, selectExecutive } = useAppStore();
+/** Shared command palette — mounted once at the app root, opened from any screen via
+ *  the store's commandPaletteOpen flag (Sidebar search icon / Ctrl+K). Navigation items
+ *  only appear when a project is loaded (currentProject), since they switch dashboard views. */
+export default function CommandPalette() {
+  const {
+    companies, executives, selectCompany, selectExecutive,
+    commandPaletteOpen: isOpen, setCommandPaletteOpen,
+    currentProject, setDashboardView,
+  } = useAppStore();
+  const onClose = () => setCommandPaletteOpen(false);
+  const showNav = !!currentProject;
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -72,13 +73,11 @@ export default function CommandPalette({ isOpen, onClose, onNavigate, onExport, 
                 No results found.
               </Command.Empty>
 
-              {!search.trim() && (
+              {!search.trim() && showNav && (
                 <Command.Group heading="Navigation" className="px-1 pb-1">
-                  <PaletteItem icon={Map} label="Map View" shortcut="1" onSelect={() => { onNavigate('map'); onClose(); }} />
-                  <PaletteItem icon={Table2} label="Table View" shortcut="2" onSelect={() => { onNavigate('table'); onClose(); }} />
-                  <PaletteItem icon={LayoutDashboard} label="Dashboard" shortcut="3" onSelect={() => { onNavigate('dashboard'); onClose(); }} />
-                  {onExport && <PaletteItem icon={Download} label="Export to Excel" onSelect={() => { onExport(); onClose(); }} />}
-                  {onEnrichAll && <PaletteItem icon={Zap} label="Enrich All Companies" onSelect={() => { onEnrichAll(); onClose(); }} />}
+                  <PaletteItem icon={Map} label="Map View" shortcut="1" onSelect={() => { setDashboardView('map'); onClose(); }} />
+                  <PaletteItem icon={Table2} label="Table View" shortcut="2" onSelect={() => { setDashboardView('table'); onClose(); }} />
+                  <PaletteItem icon={LayoutDashboard} label="Dashboard" shortcut="3" onSelect={() => { setDashboardView('dashboard'); onClose(); }} />
                 </Command.Group>
               )}
 

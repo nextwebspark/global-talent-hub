@@ -174,15 +174,17 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   // ─── Add selected companies to project from session ───────────────────────
   app.post("/api/search/add-to-project", async (req, res) => {
     try {
-      const { companyIds, sessionId, query } = req.body;
+      const { companyIds, sessionId, searchQueryId } = req.body;
       if (!companyIds || !Array.isArray(companyIds)) {
         return res.status(400).json({ error: "companyIds array is required" });
       }
       if (!sessionId) {
         return res.status(400).json({ error: "sessionId is required for ownership validation" });
       }
+      if (!searchQueryId) {
+        return res.status(400).json({ error: "searchQueryId is required to promote the draft" });
+      }
 
-      const { parseSearchQuery, generateSearchUniqueKey } = await import("../../services/discovery");
       const { supabase } = await import("../../supabase");
 
       // Ownership validation: only allow company IDs that belong to the supplied session (unconditional)
@@ -201,16 +203,12 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         return res.status(400).json({ error: "No valid companies found for the provided session" });
       }
 
-      const { criteria } = await parseSearchQuery(query || "Enhanced Search");
-      const uniqueKey = generateSearchUniqueKey(`accepted:${sessionId || Date.now()}`);
-      const searchQuery = await storage.upsertSearchQuery({
-        uniqueKey,
-        query: query || "Enhanced AI Search",
-        parsedCriteria: JSON.stringify(criteria),
-        resultCount: authorisedIds.length,
-      });
+      // Promote the existing draft (created at search_created with its original query
+      // name) to active — keeping it the same row instead of spawning a second project.
+      const searchQuery = await storage.updateSearchQueryStatus(searchQueryId, "active", authorisedIds.length);
 
-      // Re-associate selected companies to this search query
+      // Companies already carry this searchQueryId from the live stream; re-affirm the
+      // association so any manually-added rows are pulled in too.
       if (authorisedIds.length > 0) {
         const { error: updateErr } = await supabase
           .from("hak_companies")
@@ -231,6 +229,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
 
       res.json({
         searchQueryId: searchQuery.id,
+        query: searchQuery.query,
         companiesAdded: validCompanies.length,
         executivesAdded: totalExecutives,
         companies: validCompanies,
@@ -281,6 +280,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       res.json({
         results: formattedCompanies,
         searchQueryId: searchId,
+        query: data.searchQuery.query,
+        status: data.searchQuery.status,
+        sessionId: data.companies.find(c => c.searchSessionId)?.searchSessionId || null,
         satelliteHierarchies: data.searchQuery.satelliteHierarchies || {},
         satelliteOrders: data.searchQuery.satelliteOrders || {},
         tableConfig: data.searchQuery.tableConfig || null,

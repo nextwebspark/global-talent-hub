@@ -634,6 +634,8 @@ export class DatabaseStorage implements IStorage {
             query: query.query,
             parsed_criteria: keysToSnake(query.parsedCriteria),
             result_count: query.resultCount || 0,
+            ...(query.status !== undefined ? { status: query.status } : {}),
+            ...(query.selectedCount !== undefined ? { selected_count: query.selectedCount } : {}),
             updated_at: nowIso(),
           })
           .eq("id", existing.id)
@@ -662,6 +664,38 @@ export class DatabaseStorage implements IStorage {
         .select()
         .single(),
       "updateSearchQueryName"
+    );
+  }
+
+  async updateSearchQueryDraft(id: number, fields: { selectedCount?: number; query?: string }): Promise<SearchQuery> {
+    return sb<SearchQuery>(
+      await supabase
+        .from("hak_search_queries")
+        .update({
+          ...(fields.selectedCount !== undefined ? { selected_count: fields.selectedCount } : {}),
+          ...(fields.query !== undefined ? { query: fields.query } : {}),
+          updated_at: nowIso(),
+        })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateSearchQueryDraft"
+    );
+  }
+
+  async updateSearchQueryStatus(id: number, status: string, selectedCount?: number): Promise<SearchQuery> {
+    return sb<SearchQuery>(
+      await supabase
+        .from("hak_search_queries")
+        .update({
+          status,
+          ...(selectedCount !== undefined ? { selected_count: selectedCount } : {}),
+          updated_at: nowIso(),
+        })
+        .eq("id", id)
+        .select()
+        .single(),
+      "updateSearchQueryStatus"
     );
   }
 
@@ -801,19 +835,14 @@ export class DatabaseStorage implements IStorage {
 
   async getSearchHistoryWithResults(): Promise<Array<SearchQuery & { companyCount: number }>> {
     const all = await this.getAllSearchQueries();
-    const seen = new Set<string>();
     const result: Array<SearchQuery & { companyCount: number }> = [];
 
     for (const q of all) {
-      const key = q.query.toLowerCase().trim();
-      if (!seen.has(key)) {
-        seen.add(key);
-        const { count } = await supabase
-          .from("hak_companies")
-          .select("*", { count: "exact", head: true })
-          .eq("search_query_id", q.id);
-        result.push({ ...q, companyCount: count ?? 0 });
-      }
+      const { count } = await supabase
+        .from("hak_companies")
+        .select("*", { count: "exact", head: true })
+        .eq("search_query_id", q.id);
+      result.push({ ...q, companyCount: count ?? 0 });
     }
     return result;
   }

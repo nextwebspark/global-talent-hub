@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Loader2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 
@@ -15,11 +15,13 @@ export function SearchPanel({
   setInput,
   onSubmit,
   inputRef,
+  isSearching = false,
 }: {
   input: string;
   setInput: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  isSearching?: boolean;
 }) {
   return (
     <motion.div
@@ -60,7 +62,7 @@ export function SearchPanel({
             placeholder={"Describe the companies you're looking for…\n\ne.g. 'Top FMCG distributors in UAE' or 'Leading PE firms in Saudi Arabia'"}
             className="bg-card border border-border rounded-xl text-sm leading-relaxed resize-none min-h-[120px] placeholder:text-muted-foreground/50"
             data-testid="input-search-query"
-            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit({ preventDefault: () => {} } as React.FormEvent); } }}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isSearching && input.trim()) { e.preventDefault(); onSubmit({ preventDefault: () => {} } as React.FormEvent); } }}
           />
 
           <div className="flex items-center justify-between pt-4">
@@ -69,12 +71,21 @@ export function SearchPanel({
             </p>
             <Button
               onClick={onSubmit}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isSearching}
               data-testid="button-submit-search"
-              className="gap-2"
+              className="gap-2 cursor-pointer"
             >
-              <Sparkles className="w-4 h-4" />
-              Discover Companies
+              {isSearching ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Discovering…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Discover Companies
+                </>
+              )}
             </Button>
           </div>
         </div>

@@ -266,7 +266,10 @@ export interface SearchHistoryItem {
   parsedCriteria: string | null;
   resultCount: number;
   companyCount: number;
+  status: 'draft' | 'active';
+  selectedCount?: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export function useSearchHistory() {

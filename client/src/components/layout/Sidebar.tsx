@@ -1,19 +1,25 @@
-import { Map, Table2, Upload, Search, Settings, Home, Zap, LayoutDashboard, FolderOpen } from 'lucide-react';
+import { Map, Table2, Search, Home, LayoutDashboard, FolderOpen, Sun, Moon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAppStore } from '@/lib/store';
 
 export type ViewMode = 'map' | 'table' | 'dashboard';
 
 interface SidebarProps {
   activeView: ViewMode;
   onViewChange: (view: ViewMode) => void;
-  onCommandPalette: () => void;
   onHome: () => void;
   onImport?: () => void;
   onProjects?: () => void;
   isProjectsOpen?: boolean;
+  /** When false, the map/table/dashboard nav icons render disabled (no project open). */
+  projectOpen?: boolean;
+  /** Optional theme control. When omitted, the theme button renders inert. */
+  isDark?: boolean;
+  onToggleTheme?: () => void;
 }
 
-export default function Sidebar({ activeView, onViewChange, onCommandPalette, onHome, onImport, onProjects, isProjectsOpen }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, onHome, onProjects, isProjectsOpen, projectOpen = true, isDark, onToggleTheme }: SidebarProps) {
+  const setCommandPaletteOpen = useAppStore(s => s.setCommandPaletteOpen);
   const navItems = [
     { id: 'map' as const, icon: Map, label: 'Map View', shortcut: '1' },
     { id: 'table' as const, icon: Table2, label: 'Table View', shortcut: '2' },
@@ -39,7 +45,7 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={onCommandPalette}
+              onClick={() => setCommandPaletteOpen(true)}
               className="w-8 h-8 rounded-lg flex items-center justify-center mb-1 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
               data-testid="sidebar-search"
             >
@@ -71,16 +77,19 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
         <div className="w-6 h-px bg-sidebar-border mb-3" />
 
         {navItems.map(item => {
-          const isActive = activeView === item.id;
+          const isActive = projectOpen && activeView === item.id;
           return (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => onViewChange(item.id)}
+                  onClick={() => projectOpen && onViewChange(item.id)}
+                  disabled={!projectOpen}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1 transition-all ${
-                    isActive
-                      ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm'
-                      : 'text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+                    !projectOpen
+                      ? 'text-sidebar-foreground/30 cursor-default'
+                      : isActive
+                        ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm'
+                        : 'text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
                   }`}
                   data-testid={`sidebar-${item.id}`}
                 >
@@ -88,13 +97,50 @@ export default function Sidebar({ activeView, onViewChange, onCommandPalette, on
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="text-xs flex items-center gap-2">
-                {item.label} <kbd className="px-1.5 py-0.5 text-[10px] bg-muted rounded font-mono">{item.shortcut}</kbd>
+                {projectOpen ? (
+                  <>{item.label} <kbd className="px-1.5 py-0.5 text-[10px] bg-muted rounded font-mono">{item.shortcut}</kbd></>
+                ) : (
+                  <>{item.label} — open a project first</>
+                )}
               </TooltipContent>
             </Tooltip>
           );
         })}
 
         <div className="flex-1" />
+
+        {/* Settings & theme — icons only for now (wired in a later session) */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold bg-sidebar-accent text-sidebar-foreground mb-2 cursor-default"
+              data-testid="sidebar-settings"
+            >
+              GT
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">Settings &amp; account</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={onToggleTheme}
+              disabled={!onToggleTheme}
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                onToggleTheme
+                  ? 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'
+                  : 'text-sidebar-foreground/40 cursor-default'
+              }`}
+              data-testid="sidebar-theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">
+            {onToggleTheme ? (isDark ? 'Light mode' : 'Dark mode') : 'Theme (coming soon)'}
+          </TooltipContent>
+        </Tooltip>
       </TooltipProvider>
     </div>
   );

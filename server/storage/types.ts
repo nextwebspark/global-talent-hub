@@ -128,6 +128,8 @@ export interface IStorage {
   upsertSearchQuery(query: InsertSearchQuery): Promise<SearchQuery>;
   updateSearchQueryResultCount(id: number, count: number): Promise<void>;
   updateSearchQueryName(id: number, name: string): Promise<SearchQuery>;
+  updateSearchQueryDraft(id: number, fields: { selectedCount?: number; query?: string }): Promise<SearchQuery>;
+  updateSearchQueryStatus(id: number, status: string, selectedCount?: number): Promise<SearchQuery>;
   updateSearchQueryClockworkProject(id: number, clockworkProjectId: string): Promise<SearchQuery>;
   deleteCompaniesBySearchQuery(searchQueryId: number): Promise<void>;
   deleteNonEnrichedCompaniesBySearchQuery(searchQueryId: number): Promise<number>;

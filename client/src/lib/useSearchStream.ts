@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from './store';
 import type { ActivityEvent } from '@shared/schema';
 import type { StreamCompany } from './store';
@@ -37,6 +38,7 @@ export interface UseSearchStreamReturn {
 
 export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
   const store = useAppStore();
+  const queryClient = useQueryClient();
   const esRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -73,6 +75,9 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
 
     if (type === 'search_created' && data.searchQueryId) {
       setSearchQueryId(data.searchQueryId);
+      // New draft search-query row exists server-side; refresh the project lists
+      // (popup, recents, Projects screen) so it shows without a browser refresh.
+      queryClient.invalidateQueries({ queryKey: ['search-history'] });
     }
     if (type === 'intent_extracted' && data.intent) {
       setSearchIntent(data.intent);
@@ -97,7 +102,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     if (type === 'error') {
       setIsSearchStreaming(false);
     }
-  }, [addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames, setIsSearchStreaming, setSearchPhase]);
+  }, [addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames, setIsSearchStreaming, setSearchPhase, queryClient]);
 
   const startSearch = useCallback((query: string, sessionId: string) => {
     if (esRef.current) { esRef.current.close(); esRef.current = null; }

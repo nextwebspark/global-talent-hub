@@ -197,6 +197,8 @@ export const searchQueries = pgTable("search_queries", {
   query: text("query").notNull(),
   parsedCriteria: text("parsed_criteria"),
   resultCount: integer("result_count").default(0),
+  status: text("status").notNull().default("draft"),
+  selectedCount: integer("selected_count").default(0),
   clockworkProjectId: text("clockwork_project_id"),
   satelliteHierarchies: jsonb("satellite_hierarchies").default({}),
   satelliteOrders: jsonb("satellite_orders").default({}),

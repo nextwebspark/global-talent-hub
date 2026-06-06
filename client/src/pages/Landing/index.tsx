@@ -1,20 +1,17 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import {
-  FolderOpen, Sun, Moon, ArrowRight, Sparkles, CheckCheck,
-} from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/lib/store';
+import Sidebar from '@/components/layout/Sidebar';
 import ProjectsPanel from '@/components/panels/ProjectsPanel';
-import { useSearchStream, type StreamCompany } from '@/lib/useSearchStream';
+import { RecentProjects } from './panels/RecentProjects';
+import { useSearchHistory } from '@/lib/api';
+import { useSearchStream } from '@/lib/useSearchStream';
 import { ModeSelector } from './ModeSelector';
 import { SearchPanel } from './panels/SearchPanel';
 import { BriefPanel } from './panels/BriefPanel';
 import { ImportPanel } from './panels/ImportPanel';
-import { UniverseView } from './results/UniverseView';
 import { useBriefUpload } from './hooks/useBriefUpload';
 import { useBriefMode } from './hooks/useBriefMode';
 import { useImportMode } from './hooks/useImportMode';
@@ -23,6 +20,12 @@ import type { LandingMode } from './types';
 export default function Landing() {
   const [, setLocation] = useLocation();
   const { setProject, loadFromAPI } = useAppStore();
+  const { data: history, isLoading: historyLoading } = useSearchHistory();
+  // While the first fetch is in flight we don't yet know if projects exist — treat as
+  // "returning" so the Recent section reserves its space (and shows a skeleton) instead
+  // of flashing the new-user hero and then jumping when data arrives.
+  const hasProjects = historyLoading || (history?.length || 0) > 0;
+  const hasProjectsLoaded = (history?.length || 0) > 0;
 
   const [mode, setMode] = useState<LandingMode>('search');
   const [input, setInput] = useState('');
@@ -30,21 +33,19 @@ export default function Landing() {
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [sessionId] = useState(() => crypto.randomUUID());
 
-  const [isSavingProject, setIsSavingProject] = useState(false);
-  const [savedProjectSummary, setSavedProjectSummary] = useState<{ total: number; direct: number; adjacent: number; executives: number } | null>(null);
-
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const {
-    phase, intent, companies, pendingCompanyNames,
-    activities, isStreaming,
-    startSearch, stopSearch,
-    acceptCompany, rejectCompany, addManualCompany, reset,
-  } = useSearchStream();
+  const { phase, searchQueryId, startSearch, reset } = useSearchStream();
 
   const briefUpload = useBriefUpload(sessionId);
   const brief = useBriefMode({ upload: briefUpload, sessionId, startSearch });
   const importState = useImportMode({ setProject, loadFromAPI, setLocation });
+
+  // The draft searchQuery row exists once the stream emits `search_created`; hand the
+  // live session off to the universe route, where it keeps streaming into the store.
+  useEffect(() => {
+    if (phase === 'streaming' && searchQueryId) setLocation(`/universe/${searchQueryId}`);
+  }, [phase, searchQueryId, setLocation]);
 
   const toggleTheme = () => {
     const next = !isDark;
@@ -54,59 +55,9 @@ export default function Landing() {
 
   const handleEnhancedSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    if (phase === 'streaming') return; // already searching — block double submit
     if (!input.trim()) { toast.error('Please describe what you are looking for'); return; }
     startSearch(input.trim(), sessionId);
-  };
-
-  const saveCompaniesToProject = async (companiesToSave: StreamCompany[]) => {
-    const res = await fetch('/api/search/add-to-project', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ companyIds: companiesToSave.map(c => c.id), sessionId, query: input })
-    });
-    if (!res.ok) throw new Error('Failed to save project');
-    const data = await res.json();
-    setProject({ id: String(data.searchQueryId), name: input || 'AI Search', search_string: input, created_at: new Date() });
-    const fullResults = await fetch(`/api/search-history/${data.searchQueryId}/load`);
-    if (fullResults.ok) {
-      const loaded = await fullResults.json();
-      loadFromAPI(loaded.results || [], loaded.satelliteHierarchies || {}, loaded.tableConfig || null, loaded.mapPositions || {});
-    } else {
-      loadFromAPI([], {}, null, {});
-    }
-    return data;
-  };
-
-  const handleSaveProject = async () => {
-    const accepted = companies.filter(c => c.accepted);
-    if (accepted.length === 0) { toast.error('Select at least one company to save'); return; }
-    setIsSavingProject(true);
-    try {
-      await saveCompaniesToProject(accepted);
-      toast.success(`Saved ${accepted.length} companies to your project`);
-      const direct = accepted.filter(c => c.relevanceType === 'Direct').length;
-      const adjacent = accepted.filter(c => c.relevanceType !== 'Direct').length;
-      const executives = accepted.reduce((sum, c) => sum + (c.executives?.length ?? 0), 0);
-      setSavedProjectSummary({ total: accepted.length, direct, adjacent, executives });
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save project');
-    } finally {
-      setIsSavingProject(false);
-    }
-  };
-
-  const handleGoToDashboard = async () => {
-    const nonRejected = companies.filter(c => !c.rejected);
-    if (nonRejected.length === 0) { reset(); return; }
-    setIsSavingProject(true);
-    try {
-      await saveCompaniesToProject(nonRejected);
-      setLocation('/dashboard');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to navigate');
-    } finally {
-      setIsSavingProject(false);
-    }
   };
 
   const handleSelectMode = (m: LandingMode) => {
@@ -114,146 +65,80 @@ export default function Landing() {
     if (m !== 'import') importState.setImportPreview(null);
   };
 
-  const acceptedCount = companies.filter(c => c.accepted).length;
-  const directCount = companies.filter(c => c.relevanceType === 'Direct' && !c.rejected).length;
-  const adjacentCount = companies.filter(c => (c.relevanceType === 'Adjacent' || c.relevanceType === 'AI Inferred') && !c.rejected).length;
-
   return (
     <div className="h-screen w-screen flex bg-background relative overflow-hidden">
-      <TooltipProvider delayDuration={300}>
-        <div className="h-full w-12 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-2 shrink-0 z-20" data-testid="landing-sidebar">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setShowProjectsPanel(prev => !prev)}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1 transition-colors ${showProjectsPanel ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm' : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'}`}
-                data-testid="sidebar-projects"
-              >
-                <FolderOpen className="w-4 h-4" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">Projects</TooltipContent>
-          </Tooltip>
-          <div className="flex-1" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button onClick={toggleTheme} className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors" data-testid="landing-theme-toggle">
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">{isDark ? 'Light mode' : 'Dark mode'}</TooltipContent>
-          </Tooltip>
-        </div>
-      </TooltipProvider>
+      <Sidebar
+        activeView="map"
+        onViewChange={() => {}}
+        onHome={reset}
+        onProjects={() => setShowProjectsPanel(prev => !prev)}
+        isProjectsOpen={showProjectsPanel}
+        projectOpen={false}
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
+      />
 
       {showProjectsPanel && (
         <ProjectsPanel onClose={() => setShowProjectsPanel(false)} onProjectLoaded={() => setLocation('/dashboard')} offsetTop={8} />
       )}
 
-      <AnimatePresence mode="wait">
-        {phase === 'input' && (
-          <motion.div
-            key="input"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex-1 flex flex-col overflow-y-auto"
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex-1 flex flex-col overflow-y-auto"
+      >
+        <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
+          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
+        </div>
+
+        <div className="z-10 w-full max-w-3xl mx-auto px-6 pt-12 pb-16 flex flex-col items-center">
+          <div className="flex items-center gap-2 mb-3.5 self-start">
+            <span className="w-7 h-7 rounded-lg bg-foreground text-background flex items-center justify-center text-[11px] font-bold tracking-wide">GT</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Global Talent Map</span>
+          </div>
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-3xl md:text-4xl font-serif font-bold tracking-tight text-foreground mb-2 text-center self-start"
           >
-            <div className="absolute inset-0 z-0 opacity-5 pointer-events-none">
-              <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
-            </div>
-
-            <div className="z-10 w-full max-w-3xl mx-auto px-6 pt-12 pb-16 flex flex-col items-center">
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6 }}
-                className="text-3xl md:text-4xl font-serif font-bold tracking-tight text-foreground mb-2 text-center"
-              >
-                Build your company universe
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                className="text-base text-muted-foreground mb-7 text-center"
-              >
-                Select how you want to define the scope of this search.
-              </motion.p>
-
-              <ModeSelector mode={mode} onSelectMode={handleSelectMode} />
-
-              {mode === 'search' && (
-                <SearchPanel
-                  input={input}
-                  setInput={setInput}
-                  onSubmit={handleEnhancedSearch}
-                  inputRef={inputRef}
-                />
-              )}
-              {mode === 'brief' && <BriefPanel upload={briefUpload} brief={brief} />}
-              {mode === 'import' && <ImportPanel importState={importState} />}
-            </div>
-          </motion.div>
-        )}
-
-        {savedProjectSummary && (
-          <motion.div
-            key="completion"
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex-1 flex flex-col items-center justify-center p-8 text-center"
-            data-testid="completion-screen"
+            {hasProjectsLoaded ? 'Welcome back' : 'Build your company universe'}
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1 }}
+            className="text-base text-muted-foreground mb-7 text-center self-start"
           >
-            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mb-6">
-              <CheckCheck className="w-8 h-8 text-emerald-600" />
-            </div>
-            <h2 className="text-2xl font-bold mb-2">Project Saved</h2>
-            <p className="text-muted-foreground mb-6 max-w-sm" data-testid="completion-summary">
-              {savedProjectSummary.total} companies added — {savedProjectSummary.direct} core matches, {savedProjectSummary.adjacent} AI suggested
-              {savedProjectSummary.executives > 0 && (
-                <span className="block text-sm mt-1">{savedProjectSummary.executives} executive{savedProjectSummary.executives !== 1 ? 's' : ''} identified</span>
-              )}
-            </p>
-            {intent?.searchRationale && (
-              <div className="bg-muted/40 rounded-xl px-5 py-4 mb-6 max-w-md text-sm text-left text-muted-foreground" data-testid="completion-rationale">
-                <p className="font-medium text-foreground mb-1 text-xs uppercase tracking-wide">AI Search Rationale</p>
-                <p>{intent.searchRationale}</p>
+            {hasProjectsLoaded ? 'Resume a project, or start a new search.' : 'Select how you want to define the scope of this search.'}
+          </motion.p>
+
+          {hasProjects && (
+            <>
+              <RecentProjects />
+              <div className="flex items-center gap-3 w-full mb-6 text-[11px] text-muted-foreground">
+                <span className="flex-1 h-px bg-border" />
+                <span>or start a new search</span>
+                <span className="flex-1 h-px bg-border" />
               </div>
-            )}
-            <div className="flex gap-3">
-              <Button onClick={() => setLocation('/dashboard')} className="gap-2" data-testid="button-completion-view-project">
-                <ArrowRight className="w-4 h-4" />View Project
-              </Button>
-              <Button variant="outline" onClick={() => { setSavedProjectSummary(null); reset(); }} className="gap-2" data-testid="button-completion-new-search">
-                <Sparkles className="w-4 h-4" />Refine &amp; Search Again
-              </Button>
-            </div>
-          </motion.div>
-        )}
+            </>
+          )}
 
-        {!savedProjectSummary && (phase === 'streaming' || phase === 'complete') && (
-          <UniverseView
-            intent={intent}
-            companies={companies}
-            pendingCompanyNames={pendingCompanyNames}
-            activities={activities}
-            isStreaming={isStreaming}
-            query={input}
-            acceptedCount={acceptedCount}
-            directCount={directCount}
-            adjacentCount={adjacentCount}
-            isSavingProject={isSavingProject}
-            onStopSearch={stopSearch}
-            onResetSearch={reset}
-            onAcceptCompany={acceptCompany}
-            onRejectCompany={rejectCompany}
-            onAddCompany={addManualCompany}
-            onSaveProject={handleSaveProject}
-            onGoToDashboard={handleGoToDashboard}
-          />
-        )}
-      </AnimatePresence>
+          <ModeSelector mode={mode} onSelectMode={handleSelectMode} />
+
+          {mode === 'search' && (
+            <SearchPanel
+              input={input}
+              setInput={setInput}
+              onSubmit={handleEnhancedSearch}
+              inputRef={inputRef}
+              isSearching={phase === 'streaming'}
+            />
+          )}
+          {mode === 'brief' && <BriefPanel upload={briefUpload} brief={brief} />}
+          {mode === 'import' && <ImportPanel importState={importState} />}
+        </div>
+      </motion.div>
     </div>
   );
 }

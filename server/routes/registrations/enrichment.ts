@@ -2,11 +2,12 @@ import type { Express } from "express";
 import { storage } from "../../storage";
 import { orchestrateEnrichmentMatching, researchCompanyDetails } from "../../services/clockworkEnrichment";
 import { normalizeOrInferSector } from "../../services/sectorInference";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerEnrichment(app: Express): void {
   // ENRICHMENT LAYER: Orchestrate matching between local executives and Clockwork project
   // This endpoint is deterministic and side-effect free - it only returns match results
-  app.post("/api/enrichment/match", async (req, res) => {
+  app.post("/api/enrichment/match", async (req: AuthedRequest, res) => {
     try {
       const { searchId, clockworkProjectId } = req.body;
 
@@ -22,7 +23,7 @@ export function registerEnrichment(app: Express): void {
       }
 
       // Verify the search exists
-      const searchQuery = await storage.getSearchQuery(searchIdNum);
+      const searchQuery = await storage.getSearchQuery(searchIdNum, req.orgId!);
       if (!searchQuery) {
         return res.status(404).json({ error: "Search not found" });
       }
@@ -30,7 +31,8 @@ export function registerEnrichment(app: Express): void {
       // Run the orchestration (read-only, no side effects)
       const matchResult = await orchestrateEnrichmentMatching(
         searchIdNum,
-        String(clockworkProjectId)
+        String(clockworkProjectId),
+        req.orgId!
       );
 
       res.json(matchResult);
@@ -42,8 +44,9 @@ export function registerEnrichment(app: Express): void {
 
   // ENRICHMENT LAYER: Confirm and persist enrichment for a single executive
   // User-triggered only - enriches empty fields and stores metadata
-  app.post("/api/enrichment/confirm", async (req, res) => {
+  app.post("/api/enrichment/confirm", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const { executiveId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
 
       if (!executiveId || !clockworkData) {
@@ -57,7 +60,7 @@ export function registerEnrichment(app: Express): void {
         return res.status(400).json({ error: "Invalid executiveId" });
       }
 
-      const executive = await storage.getExecutive(execIdNum);
+      const executive = await storage.getExecutive(execIdNum, orgId);
       if (!executive) {
         return res.status(404).json({ error: "Executive not found" });
       }
@@ -73,6 +76,7 @@ export function registerEnrichment(app: Express): void {
           profileUrl: clockworkData.profileUrl,
           imageUrl: clockworkData.imageUrl
         },
+        orgId,
         {
           source: 'clockwork',
           confidence: confidence || 0,
@@ -103,8 +107,9 @@ export function registerEnrichment(app: Express): void {
   // ENRICHMENT LAYER: Create new executive from Clockwork data
   // User-triggered only - creates a new executive when no local match exists
   // IDEMPOTENT: If executive with same clockworkId already exists, returns existing
-  app.post("/api/enrichment/create-from-clockwork", async (req, res) => {
+  app.post("/api/enrichment/create-from-clockwork", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const { companyId, clockworkData, confidence, clockworkId, clockworkProjectId } = req.body;
 
       if (!companyId || !clockworkData || !clockworkId) {
@@ -118,7 +123,7 @@ export function registerEnrichment(app: Express): void {
         return res.status(400).json({ error: "Invalid companyId" });
       }
 
-      const company = await storage.getCompany(companyIdNum);
+      const company = await storage.getCompany(companyIdNum, orgId);
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
@@ -141,7 +146,8 @@ export function registerEnrichment(app: Express): void {
           confidence: confidence || 0,
           clockworkId,
           clockworkProjectId
-        }
+        },
+        orgId
       );
 
       res.json({
@@ -164,7 +170,7 @@ export function registerEnrichment(app: Express): void {
 
   // ENRICHMENT LAYER: Import a Clockwork candidate into search results
   // Creates both company (if needed) and executive from Clockwork project candidate
-  app.post("/api/enrichment/import-candidate", async (req, res) => {
+  app.post("/api/enrichment/import-candidate", async (req: AuthedRequest, res) => {
     try {
       const {
         searchId,
@@ -189,15 +195,16 @@ export function registerEnrichment(app: Express): void {
         return res.status(400).json({ error: "Invalid searchId" });
       }
 
+      const orgId = req.orgId!;
       // Check if search exists
-      const search = await storage.getSearchQuery(searchIdNum);
+      const search = await storage.getSearchQuery(searchIdNum, orgId);
       if (!search) {
         return res.status(404).json({ error: "Search not found" });
       }
 
       // Find or create company for this candidate
       // First, check if we already have a company with this name in this search
-      const companiesInSearch = await storage.getCompaniesBySearchQuery(searchIdNum);
+      const companiesInSearch = await storage.getCompaniesBySearchQuery(searchIdNum, orgId);
       let targetCompany = companiesInSearch.find(
         c => c.name.toLowerCase() === (companyName || '').toLowerCase()
       );
@@ -227,7 +234,7 @@ export function registerEnrichment(app: Express): void {
             confidence: researchedData.confidence,
             color: '#6366f1',
             searchQueryId: searchIdNum
-          });
+          }, orgId);
           console.log(`[Import] Created researched company: ${researchedData.name} (ID: ${targetCompany.id}, Revenue: $${researchedData.revenue}, Location: ${researchedData.country})`);
         } else {
           console.log(`[Import] Company research failed for "${companyName}" - using fallback`);
@@ -249,7 +256,7 @@ export function registerEnrichment(app: Express): void {
       // This ensures idempotency across all companies in the search
       let existingExec = null;
       for (const comp of companiesInSearch) {
-        const execs = await storage.getExecutivesByCompany(comp.id);
+        const execs = await storage.getExecutivesByCompany(comp.id, orgId);
         const found = execs.find(e => e.clockworkId === clockworkId);
         if (found) {
           existingExec = found;
@@ -284,7 +291,7 @@ export function registerEnrichment(app: Express): void {
         enrichmentTimestamp: new Date(),
         clockworkId,
         clockworkProjectId
-      });
+      }, orgId);
 
       console.log(`[Import] Created executive from Clockwork: ${name} (ID: ${newExecutive.id})`);
 

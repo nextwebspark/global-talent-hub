@@ -15,6 +15,8 @@ import { ImportPanel } from './panels/ImportPanel';
 import { useBriefUpload } from './hooks/useBriefUpload';
 import { useBriefMode } from './hooks/useBriefMode';
 import { useImportMode } from './hooks/useImportMode';
+import { SAMPLE_RETAIL_COMPANIES } from '@/lib/sampleData';
+import { Globe } from 'lucide-react';
 import type { LandingMode } from './types';
 
 export default function Landing() {
@@ -63,6 +65,12 @@ export default function Landing() {
   const handleSelectMode = (m: LandingMode) => {
     setMode(m);
     if (m !== 'import') importState.setImportPreview(null);
+  };
+
+  const handleViewSampleGlobe = () => {
+    setProject({ id: 'demo', name: 'Sample Retail Globe', search_string: 'Global retail companies', created_at: new Date() });
+    loadFromAPI(SAMPLE_RETAIL_COMPANIES, {}, null, {});
+    setLocation('/dashboard');
   };
 
   return (
@@ -137,6 +145,15 @@ export default function Landing() {
           )}
           {mode === 'brief' && <BriefPanel upload={briefUpload} brief={brief} />}
           {mode === 'import' && <ImportPanel importState={importState} />}
+
+          <button
+            type="button"
+            onClick={handleViewSampleGlobe}
+            className="mt-5 inline-flex items-center gap-2 self-start text-[13px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            View sample globe — 20 global retail companies
+          </button>
         </div>
       </motion.div>
     </div>

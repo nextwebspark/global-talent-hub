@@ -27,11 +27,12 @@ export function isEnrichmentEnabled(sourceType: string): boolean {
  */
 export async function enrichExecutive(
   executiveId: number,
+  orgId: string,
   sourceType: string = 'clockwork'
 ): Promise<EnrichmentResult> {
   console.log(`[Enrichment] User-triggered enrichment for executive ${executiveId} using ${sourceType}`);
 
-  const executive = await storage.getExecutive(executiveId);
+  const executive = await storage.getExecutive(executiveId, orgId);
   if (!executive) {
     return {
       success: false,
@@ -83,11 +84,12 @@ export async function enrichExecutive(
  */
 export async function enrichCompany(
   companyId: number,
+  orgId: string,
   sourceType: string = 'clockwork'
 ): Promise<CompanyEnrichmentResult> {
   console.log(`[Enrichment] User-triggered enrichment for company ${companyId} using ${sourceType}`);
 
-  const company = await storage.getCompany(companyId);
+  const company = await storage.getCompany(companyId, orgId);
   if (!company) {
     return {
       success: false,
@@ -117,12 +119,12 @@ export async function enrichCompany(
  */
 export async function enrichCompanyExecutives(
   companyId: number,
+  orgId: string,
   sourceType: string = 'clockwork'
 ): Promise<EnrichmentResult[]> {
   console.log(`[Enrichment] User-triggered bulk enrichment for company ${companyId} executives`);
 
-  // Get company with executives via storage
-  const company = await storage.getCompanyWithExecutives(companyId);
+  const company = await storage.getCompanyWithExecutives(companyId, orgId);
   if (!company) {
     return [];
   }
@@ -130,7 +132,7 @@ export async function enrichCompanyExecutives(
   const results: EnrichmentResult[] = [];
 
   for (const exec of company.executives) {
-    const result = await enrichExecutive(exec.id, sourceType);
+    const result = await enrichExecutive(exec.id, orgId, sourceType);
     results.push(result);
   }
 

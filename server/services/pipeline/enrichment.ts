@@ -279,6 +279,7 @@ export async function enrichExecutives(
 
 export async function runMultiPassEnrichment(
   companyId: number,
+  orgId: string,
   options: { revenue?: boolean; employees?: boolean; executives?: boolean; profile?: boolean } = { revenue: true, employees: true, executives: true, profile: true },
   targetRoles?: string[]
 ): Promise<{
@@ -287,16 +288,16 @@ export async function runMultiPassEnrichment(
   executivesAdded: number;
   profileUpdated: boolean;
 }> {
-  const company = await storage.getCompany(companyId);
+  const company = await storage.getCompany(companyId, orgId);
   if (!company) {
     throw new Error(`Company ${companyId} not found`);
   }
 
   const result = { revenueUpdated: false, employeesUpdated: false, executivesAdded: 0, profileUpdated: false };
-  
+
   const needsRevenue = options.revenue && !company.revenue;
   const needsEmployees = options.employees && !company.employees;
-  const existingExecs = await storage.getExecutivesByCompany(companyId);
+  const existingExecs = await storage.getExecutivesByCompany(companyId, orgId);
   const needsExecutives = options.executives && existingExecs.length === 0;
   const needsProfile = (options.profile !== false) && !company.summary;
 
@@ -353,7 +354,7 @@ export async function runMultiPassEnrichment(
         genderConfidence: exec.genderConfidence,
         ethnicity: exec.ethnicity,
         ethnicityConfidence: exec.ethnicityConfidence,
-      });
+      }, orgId);
       result.executivesAdded++;
     } catch (error) {
       console.error(`[MultiPass] Failed to add executive ${exec.name}:`, error);
@@ -364,15 +365,15 @@ export async function runMultiPassEnrichment(
   return result;
 }
 
-export async function enrichSearchResults(searchQueryId: number): Promise<{
+export async function enrichSearchResults(searchQueryId: number, orgId: string): Promise<{
   companiesProcessed: number;
   revenueEnriched: number;
   employeesEnriched: number;
   executivesAdded: number;
   profilesEnriched: number;
 }> {
-  const companies = await storage.getCompaniesBySearchQuery(searchQueryId);
-  const searchQuery = await storage.getSearchQuery(searchQueryId);
+  const companies = await storage.getCompaniesBySearchQuery(searchQueryId, orgId);
+  const searchQuery = await storage.getSearchQuery(searchQueryId, orgId);
   
   const result = {
     companiesProcessed: 0,
@@ -394,8 +395,8 @@ export async function enrichSearchResults(searchQueryId: number): Promise<{
   for (let i = 0; i < companies.length; i += BATCH_SIZE) {
     const batch = companies.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(company => 
-        runMultiPassEnrichment(company.id, { revenue: true, employees: true, executives: true, profile: true }, targetRoles).catch(err => {
+      batch.map(company =>
+        runMultiPassEnrichment(company.id, orgId, { revenue: true, employees: true, executives: true, profile: true }, targetRoles).catch(err => {
           console.error(`[MultiPass] Failed ${company.name}:`, err);
           return null;
         })

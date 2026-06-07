@@ -5,46 +5,57 @@ import { insertExecutiveSchema, insertCareerHistorySchema, type InsertExecutive 
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
 import { inferSectorsBatch, isStandardSector } from "../../services/sectorInference";
 import { normalizeCountryName } from "../shared/countryNormalization";
+import type { AuthedRequest } from "../../auth/middleware";
+import { assertCompanyInOrg, assertExecutiveInOrg, NotInOrgError } from "../../auth/orgGuard";
 
 export function registerExecutives(app: Express, deps: { upload: Multer }): void {
   const { upload } = deps;
 
-  app.get("/api/companies/:companyId/executives", async (req, res) => {
+  app.get("/api/companies/:companyId/executives", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const companyId = parseInt(String(req.params.companyId));
-      const executives = await storage.getExecutivesByCompany(companyId);
+      await assertCompanyInOrg(companyId, orgId);
+      const executives = await storage.getExecutivesByCompany(companyId, orgId);
       res.json(executives);
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error fetching executives:", error);
       res.status(500).json({ error: "Failed to fetch executives" });
     }
   });
 
   // UI/MANUAL LAYER: User-initiated executive creation
-  app.post("/api/executives", async (req, res) => {
+  app.post("/api/executives", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const validated = insertExecutiveSchema.parse(req.body);
-      const executive = await storage.createExecutiveManual(validated);
+      // The target company must belong to the caller's org.
+      await assertCompanyInOrg(validated.companyId, orgId);
+      const executive = await storage.createExecutiveManual(validated, orgId);
       res.status(201).json(executive);
 
       if (!validated.gender || !validated.ethnicity) {
         import("../../services/pipeline/diversityInference").then(({ inferDiversityForExecutive }) => {
-          inferDiversityForExecutive(executive.id).catch(err =>
+          inferDiversityForExecutive(executive.id, orgId).catch(err =>
             console.error("[Routes] Background diversity inference failed:", err)
           );
         });
       }
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error creating executive:", error);
       res.status(400).json({ error: "Invalid executive data" });
     }
   });
 
   // UI/MANUAL LAYER: User-initiated executive edits always override imported data
-  app.patch("/api/executives/:id", async (req, res) => {
+  app.patch("/api/executives/:id", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
-      const executive = await storage.updateExecutiveManual(id, req.body);
+      await assertExecutiveInOrg(id, orgId);
+      const executive = await storage.updateExecutiveManual(id, req.body, orgId);
 
       if (req.body.remunerationNotes !== undefined) {
         const text = req.body.remunerationNotes;
@@ -83,22 +94,28 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
 
       res.json(executive);
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error updating executive:", error);
       res.status(500).json({ error: "Failed to update executive" });
     }
   });
 
   // Bulk import executives from Excel/pasted data
-  app.post("/api/executives/bulk-import", async (req, res) => {
+  app.post("/api/executives/bulk-import", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const { searchQueryId, mappings, records } = req.body;
 
       if (!searchQueryId || !mappings || !records || !Array.isArray(records)) {
         return res.status(400).json({ error: "Missing required fields: searchQueryId, mappings, records" });
       }
 
+      // The target project must belong to the caller's org before we write into it.
+      const targetQuery = await storage.getSearchQuery(searchQueryId, orgId);
+      if (!targetQuery) return res.status(404).json({ error: "Search query not found" });
+
       // Prefetch all companies for this search query to avoid N+1 queries
-      const existingCompanies = await storage.getCompaniesBySearchQuery(searchQueryId);
+      const existingCompanies = await storage.getCompaniesBySearchQuery(searchQueryId, orgId);
       const companyMap = new Map<string, number>();
       existingCompanies.forEach(c => companyMap.set(c.name.toLowerCase(), c.id));
 
@@ -165,7 +182,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
               if (city) companyUpdates.region = city;
               if (sector) companyUpdates.sector = sector;
               if (Object.keys(companyUpdates).length > 0) {
-                await storage.enrichCompanyEmptyFields(companyId, companyUpdates);
+                await storage.enrichCompanyEmptyFields(companyId, companyUpdates, orgId);
               }
             } else {
               const countryForCoords = normalizedCountry || 'Unknown';
@@ -181,7 +198,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
                 searchQueryId,
                 latitude: coords.latitude ? String(coords.latitude) : null,
                 longitude: coords.longitude ? String(coords.longitude) : null,
-              });
+              }, orgId);
               companyId = newCompany.id;
               companyMap.set(lowerName, companyId);
               if (!isStandardSector(sector)) {
@@ -202,7 +219,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
                 searchQueryId,
                 latitude: placeholderCoords.latitude ? String(placeholderCoords.latitude) : null,
                 longitude: placeholderCoords.longitude ? String(placeholderCoords.longitude) : null,
-              });
+              }, orgId);
               companyId = newCompany.id;
               companyMap.set('imported contacts', companyId);
             } else {
@@ -212,7 +229,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
 
           if (companyId) {
             const execName = name || 'Unknown';
-            const existingExec = execName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(execName, companyId) : undefined;
+            const existingExec = execName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(execName, companyId, orgId) : undefined;
 
             let exec;
             if (existingExec) {
@@ -230,7 +247,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
               if (availability) mergeData.availability = availability;
               if (level) mergeData.level = level;
               if (Object.keys(mergeData).length > 0) {
-                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, { source: 'import', confidence: 5 });
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, orgId, { source: 'import', confidence: 5 });
               }
               exec = existingExec;
             } else {
@@ -249,7 +266,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
                 level,
                 customFields: Object.keys(customFields).length > 0 ? customFields : null,
                 confidence: 5
-              });
+              }, orgId);
               imported++;
             }
 
@@ -288,7 +305,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
       if (newCompaniesForSectorInference.length > 0) {
         const sectorResults = await inferSectorsBatch(newCompaniesForSectorInference);
         for (const r of sectorResults) {
-          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
+          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category }, orgId);
         }
         console.log(`[Routes] Sector inference: filled ${sectorResults.length}/${newCompaniesForSectorInference.length} sectors`);
       }
@@ -302,7 +319,7 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
 
       if (imported > 0) {
         import("../../services/pipeline/diversityInference").then(({ inferDiversityForSearch }) => {
-          inferDiversityForSearch(searchQueryId).catch(err =>
+          inferDiversityForSearch(searchQueryId, orgId).catch(err =>
             console.error("[Routes] Background diversity inference after bulk import failed:", err)
           );
         });
@@ -314,26 +331,30 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
   });
 
   // Executive image upload endpoint
-  app.post("/api/executives/:id/image", upload.single('image'), async (req, res) => {
+  app.post("/api/executives/:id/image", upload.single('image'), async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
       if (!req.file) {
         return res.status(400).json({ error: "No image file provided" });
       }
+      await assertExecutiveInOrg(id, orgId);
 
       const imageUrl = `/uploads/${req.file.filename}`;
-      await storage.updateExecutiveManual(id, { imageUrl });
+      await storage.updateExecutiveManual(id, { imageUrl }, orgId);
 
       res.json({ imageUrl });
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error uploading executive image:", error);
       res.status(500).json({ error: "Failed to upload image" });
     }
   });
 
   // Extract profile from raw text using AI (OpenRouter)
-  app.post("/api/executives/:id/extract-profile", async (req, res) => {
+  app.post("/api/executives/:id/extract-profile", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
       const { sourceText, model = 'meta-llama/llama-3.3-70b-instruct:free' } = req.body;
 
@@ -341,8 +362,8 @@ export function registerExecutives(app: Express, deps: { upload: Multer }): void
         return res.status(400).json({ error: "Source text is required" });
       }
 
-      // Check executive exists
-      const existingExec = await storage.getExecutive(id);
+      // Check executive exists in the caller's org
+      const existingExec = await storage.getExecutive(id, orgId);
       if (!existingExec) {
         return res.status(404).json({ error: "Executive not found" });
       }
@@ -401,7 +422,7 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
       if (extracted.linkedin) updateData.linkedin = extracted.linkedin;
       if (extracted.remunerationNotes) updateData.remunerationNotes = extracted.remunerationNotes;
 
-      const updatedExecutive = await storage.updateExecutiveManual(id, updateData);
+      const updatedExecutive = await storage.updateExecutiveManual(id, updateData, orgId);
 
       if (extracted.remunerationNotes && extracted.remunerationNotes.trim().length >= 5) {
         try {
@@ -438,22 +459,25 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
     }
   });
 
-  app.delete("/api/executives/:id", async (req, res) => {
+  app.delete("/api/executives/:id", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
-      await storage.deleteExecutive(id);
+      await assertExecutiveInOrg(id, orgId);
+      await storage.deleteExecutive(id, orgId);
       res.status(204).send();
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error deleting executive:", error);
       res.status(500).json({ error: "Failed to delete executive" });
     }
   });
 
   // Executive Details API
-  app.get("/api/executives/:id/details", async (req, res) => {
+  app.get("/api/executives/:id/details", async (req: AuthedRequest, res) => {
     try {
       const id = parseInt(String(req.params.id));
-      const details = await storage.getExecutiveDetails(id);
+      const details = await storage.getExecutiveDetails(id, req.orgId!);
       if (!details) {
         return res.status(404).json({ error: "Executive not found" });
       }
@@ -530,24 +554,28 @@ Return ONLY a valid JSON object with these fields. Use null for any field that c
   });
 
   // Career History endpoints (GET, POST) — sit in executives block (origin 899-921)
-  app.get("/api/executives/:id/career-history", async (req, res) => {
+  app.get("/api/executives/:id/career-history", async (req: AuthedRequest, res) => {
     try {
       const id = parseInt(String(req.params.id));
+      await assertExecutiveInOrg(id, req.orgId!);
       const careerHistory = await storage.getCareerHistory(id);
       res.json(careerHistory);
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error fetching career history:", error);
       res.status(500).json({ error: "Failed to fetch career history" });
     }
   });
 
-  app.post("/api/executives/:id/career-history", async (req, res) => {
+  app.post("/api/executives/:id/career-history", async (req: AuthedRequest, res) => {
     try {
       const executiveId = parseInt(String(req.params.id));
+      await assertExecutiveInOrg(executiveId, req.orgId!);
       const validated = insertCareerHistorySchema.parse({ ...req.body, executiveId });
       const entry = await storage.createCareerHistory(validated);
       res.status(201).json(entry);
     } catch (error) {
+      if (error instanceof NotInOrgError) return res.status(404).json({ error: error.message });
       console.error("Error creating career history:", error);
       res.status(400).json({ error: "Invalid career history data" });
     }

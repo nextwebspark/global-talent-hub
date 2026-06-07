@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../../storage";
+import type { AuthedRequest } from "../../auth/middleware";
 
 const REGION_DEFINITIONS: Record<string, string[]> = {
   'GCC': ['UAE', 'United Arab Emirates', 'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman'],
@@ -11,14 +12,14 @@ const REGION_DEFINITIONS: Record<string, string[]> = {
 };
 
 export function registerDashboard(app: Express): void {
-  app.get("/api/dashboard/:searchId", async (req, res) => {
+  app.get("/api/dashboard/:searchId", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.searchId);
+      const searchId = parseInt(String(req.params.searchId));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
 
-      const results = await storage.getFullSearchResults(searchId);
+      const results = await storage.getFullSearchResults(searchId, req.orgId!);
       if (!results) {
         return res.status(404).json({ error: "Search not found" });
       }

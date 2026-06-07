@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../../storage";
 import { orchestrateEnrichmentMatching, exploreClockworkProjectEndpoints } from "../../services/clockworkEnrichment";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerClockwork(app: Express): void {
   // CLOCKWORK DIAGNOSTICS
@@ -55,9 +56,9 @@ export function registerClockwork(app: Express): void {
   });
 
   // Update the Clockwork project selection for a search
-  app.patch("/api/search/:searchId/name", async (req, res) => {
+  app.patch("/api/search/:searchId/name", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.searchId);
+      const searchId = parseInt(String(req.params.searchId));
       const { name } = req.body;
 
       if (isNaN(searchId)) {
@@ -68,7 +69,11 @@ export function registerClockwork(app: Express): void {
         return res.status(400).json({ error: "name is required" });
       }
 
-      const updated = await storage.updateSearchQueryName(searchId, name.trim());
+      // Guard org ownership before mutating (404 instead of a cross-org 500).
+      const existing = await storage.getSearchQuery(searchId, req.orgId!);
+      if (!existing) return res.status(404).json({ error: "Search query not found" });
+
+      const updated = await storage.updateSearchQueryName(searchId, name.trim(), req.orgId!);
       res.json(updated);
     } catch (error) {
       console.error("Error renaming project:", error);
@@ -76,9 +81,9 @@ export function registerClockwork(app: Express): void {
     }
   });
 
-  app.patch("/api/search/:searchId/clockwork-project", async (req, res) => {
+  app.patch("/api/search/:searchId/clockwork-project", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.searchId);
+      const searchId = parseInt(String(req.params.searchId));
       const { clockworkProjectId } = req.body;
 
       if (isNaN(searchId)) {
@@ -89,7 +94,11 @@ export function registerClockwork(app: Express): void {
         return res.status(400).json({ error: "clockworkProjectId is required" });
       }
 
-      const updated = await storage.updateSearchQueryClockworkProject(searchId, clockworkProjectId);
+      // Guard org ownership before mutating (404 instead of a cross-org 500).
+      const existing = await storage.getSearchQuery(searchId, req.orgId!);
+      if (!existing) return res.status(404).json({ error: "Search query not found" });
+
+      const updated = await storage.updateSearchQueryClockworkProject(searchId, clockworkProjectId, req.orgId!);
       console.log(`[Clockwork] Updated search ${searchId} to use project ${clockworkProjectId}`);
       res.json(updated);
     } catch (error) {
@@ -100,7 +109,7 @@ export function registerClockwork(app: Express): void {
 
   // DIAGNOSTIC ENDPOINT: Test Clockwork project candidate fetch
   // Returns detailed info about what would be fetched without persisting anything
-  app.get("/api/clockwork/diagnostics/project/:clockworkProjectId", async (req, res) => {
+  app.get("/api/clockwork/diagnostics/project/:clockworkProjectId", async (req: AuthedRequest, res) => {
     try {
       const { clockworkProjectId } = req.params;
 
@@ -109,7 +118,7 @@ export function registerClockwork(app: Express): void {
       }
 
       // Run orchestration with a dummy search ID to test fetch
-      const matchResult = await orchestrateEnrichmentMatching(0, clockworkProjectId);
+      const matchResult = await orchestrateEnrichmentMatching(0, String(clockworkProjectId), req.orgId!);
 
       // Build diagnostic response
       const diagnostics = {

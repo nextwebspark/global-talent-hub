@@ -1,6 +1,8 @@
-import { Map, Table2, Search, Home, LayoutDashboard, FolderOpen, Sun, Moon } from 'lucide-react';
+import { Map, Table2, Search, Home, LayoutDashboard, FolderOpen, Sun, Moon, LogOut, Settings } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth';
 
 export type ViewMode = 'map' | 'table' | 'dashboard';
 
@@ -20,6 +22,10 @@ interface SidebarProps {
 
 export default function Sidebar({ activeView, onViewChange, onHome, onProjects, isProjectsOpen, projectOpen = true, isDark, onToggleTheme }: SidebarProps) {
   const setCommandPaletteOpen = useAppStore(s => s.setCommandPaletteOpen);
+  const { signOut, profile, session } = useAuth();
+  const [, navigate] = useLocation();
+  const displayName = profile?.fullName || session?.user.email || '';
+  const initials = displayName ? displayName.slice(0, 2).toUpperCase() : 'GT';
   const navItems = [
     { id: 'map' as const, icon: Map, label: 'Map View', shortcut: '1' },
     { id: 'table' as const, icon: Table2, label: 'Table View', shortcut: '2' },
@@ -109,17 +115,31 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
 
         <div className="flex-1" />
 
-        {/* Settings & theme — icons only for now (wired in a later session) */}
+        {/* Account avatar — opens Settings */}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold bg-sidebar-accent text-sidebar-foreground mb-2 cursor-default"
+              onClick={() => navigate('/settings')}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold bg-sidebar-accent text-sidebar-foreground mb-2 hover:ring-2 hover:ring-sidebar-accent transition"
               data-testid="sidebar-settings"
             >
-              GT
+              {initials}
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">Settings &amp; account</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => navigate('/settings')}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              data-testid="sidebar-settings-gear"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">Settings</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -140,6 +160,19 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
           <TooltipContent side="right" className="text-xs">
             {onToggleTheme ? (isDark ? 'Light mode' : 'Dark mode') : 'Theme (coming soon)'}
           </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => signOut()}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              data-testid="sidebar-signout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">Sign out</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>

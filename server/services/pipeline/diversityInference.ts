@@ -6,9 +6,9 @@ function callLlm(messages: Array<{ role: string; content: string }>): Promise<st
   return callLlmWithFallback(messages as any, { primaryModel: DEFAULT_MODEL, fallbackModel: FAST_MODEL, maxTokens: 2000 });
 }
 
-export async function inferDiversityForExecutive(executiveId: number): Promise<boolean> {
+export async function inferDiversityForExecutive(executiveId: number, orgId: string): Promise<boolean> {
   try {
-    const exec = await storage.getExecutive(executiveId);
+    const exec = await storage.getExecutive(executiveId, orgId);
     if (!exec) return false;
 
     const manualFields = exec.manuallyEditedFields || [];
@@ -27,7 +27,7 @@ export async function inferDiversityForExecutive(executiveId: number): Promise<b
 
     if (!needGender && !needEthnicity) return false;
 
-    const company = await storage.getCompany(exec.companyId);
+    const company = await storage.getCompany(exec.companyId, orgId);
     const companyName = company?.name || 'Unknown';
     const country = company?.country || '';
 
@@ -72,7 +72,7 @@ Return JSON only:
     }
 
     if (Object.keys(updates).length > 0) {
-      await storage.enrichExecutiveEmptyFields(executiveId, updates);
+      await storage.enrichExecutiveEmptyFields(executiveId, updates, orgId);
       console.log(`[DiversityInference] Updated executive ${exec.name} (${executiveId}):`, Object.keys(updates).join(', '));
       return true;
     }
@@ -84,18 +84,18 @@ Return JSON only:
   }
 }
 
-export async function inferDiversityBatch(executiveIds: number[]): Promise<{ updated: number; total: number }> {
+export async function inferDiversityBatch(executiveIds: number[], orgId: string): Promise<{ updated: number; total: number }> {
   if (executiveIds.length === 0) return { updated: 0, total: 0 };
 
   const executives = [];
   for (const id of executiveIds) {
-    const exec = await storage.getExecutive(id);
+    const exec = await storage.getExecutive(id, orgId);
     if (!exec) continue;
     const manualFields = exec.manuallyEditedFields || [];
     const needGender = !exec.gender && !manualFields.includes('gender');
     const needEthnicity = !exec.ethnicity && !manualFields.includes('ethnicity');
     if (needGender || needEthnicity) {
-      const company = await storage.getCompany(exec.companyId);
+      const company = await storage.getCompany(exec.companyId, orgId);
       executives.push({
         id: exec.id,
         name: exec.name,
@@ -166,14 +166,14 @@ Return a JSON array with one object per executive, in the same order:
           }
 
           if (Object.keys(updates).length > 0) {
-            await storage.enrichExecutiveEmptyFields(exec.id, updates);
+            await storage.enrichExecutiveEmptyFields(exec.id, updates, orgId);
             console.log(`[DiversityInference] Batch updated: ${exec.name} (${exec.id})`);
             updated++;
           }
         }
       } else {
         for (const exec of batch) {
-          const success = await inferDiversityForExecutive(exec.id);
+          const success = await inferDiversityForExecutive(exec.id, orgId);
           if (success) updated++;
         }
       }
@@ -181,7 +181,7 @@ Return a JSON array with one object per executive, in the same order:
       console.error(`[DiversityInference] Batch error, falling back to individual:`, error);
       for (const exec of batch) {
         try {
-          const success = await inferDiversityForExecutive(exec.id);
+          const success = await inferDiversityForExecutive(exec.id, orgId);
           if (success) updated++;
         } catch (e) {
           console.error(`[DiversityInference] Individual inference failed for ${exec.name}:`, e);
@@ -194,13 +194,13 @@ Return a JSON array with one object per executive, in the same order:
   return { updated, total: executives.length };
 }
 
-export async function inferDiversityForSearch(searchQueryId: number): Promise<{ updated: number; total: number }> {
+export async function inferDiversityForSearch(searchQueryId: number, orgId: string): Promise<{ updated: number; total: number }> {
   try {
-    const companies = await storage.getCompaniesBySearchQuery(searchQueryId);
+    const companies = await storage.getCompaniesBySearchQuery(searchQueryId, orgId);
     const allExecIds: number[] = [];
 
     for (const company of companies) {
-      const executives = await storage.getExecutivesByCompany(company.id);
+      const executives = await storage.getExecutivesByCompany(company.id, orgId);
       for (const exec of executives) {
         const manualFields = exec.manuallyEditedFields || [];
         const needGender = !exec.gender && !manualFields.includes('gender');
@@ -217,7 +217,7 @@ export async function inferDiversityForSearch(searchQueryId: number): Promise<{ 
     }
 
     console.log(`[DiversityInference] Starting inference for ${allExecIds.length} executives in search ${searchQueryId}`);
-    return await inferDiversityBatch(allExecIds);
+    return await inferDiversityBatch(allExecIds, orgId);
   } catch (error) {
     console.error(`[DiversityInference] Error in search-level inference:`, error);
     return { updated: 0, total: 0 };

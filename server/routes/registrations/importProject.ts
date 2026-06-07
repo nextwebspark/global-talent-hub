@@ -5,10 +5,13 @@ import { applyCoordinateFallback } from "../../services/coordinateFallback";
 import { inferSectorsBatch, isStandardSector } from "../../services/sectorInference";
 import { enrichSearchResults } from "../../services/pipeline/enrichment";
 import { normalizeCountryName } from "../shared/countryNormalization";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerImportProject(app: Express): void {
-  app.post("/api/import-project", async (req, res) => {
+  app.post("/api/import-project", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
+      const userId = req.userId!;
       const { projectName, records, mappings } = req.body;
 
       if (!records || !Array.isArray(records) || records.length === 0) {
@@ -26,6 +29,8 @@ export function registerImportProject(app: Express): void {
         uniqueKey,
         parsedCriteria: JSON.stringify({ source: 'excel-import', recordCount: records.length }),
         resultCount: 0,
+        orgId,
+        createdBy: userId,
       });
       const searchQueryId = searchQuery.id;
 
@@ -91,7 +96,7 @@ export function registerImportProject(app: Express): void {
             if (city) companyUpdates.region = city;
             if (sector) companyUpdates.sector = sector;
             if (Object.keys(companyUpdates).length > 0) {
-              await storage.enrichCompanyEmptyFields(companyId, companyUpdates);
+              await storage.enrichCompanyEmptyFields(companyId, companyUpdates, orgId);
             }
           } else {
             const countryForCoords = normalizedCountry || 'Unknown';
@@ -107,7 +112,7 @@ export function registerImportProject(app: Express): void {
               searchQueryId,
               latitude: coords.latitude ? String(coords.latitude) : null,
               longitude: coords.longitude ? String(coords.longitude) : null,
-            });
+            }, orgId);
             companyId = newCompany.id;
             companyMap.set(lowerName, companyId);
             if (!isStandardSector(sector) && resolvedCompanyName !== 'Imported Contacts') {
@@ -117,7 +122,7 @@ export function registerImportProject(app: Express): void {
 
           if (companyId && (execName || title !== 'Executive')) {
             const resolvedExecName = execName || 'Unknown';
-            const existingExec = resolvedExecName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(resolvedExecName, companyId) : undefined;
+            const existingExec = resolvedExecName !== 'Unknown' ? await storage.findExecutiveByNameAndCompany(resolvedExecName, companyId, orgId) : undefined;
 
             let exec;
             if (existingExec) {
@@ -133,7 +138,7 @@ export function registerImportProject(app: Express): void {
               if (availability) mergeData.availability = availability;
               if (level) mergeData.level = level;
               if (Object.keys(mergeData).length > 0) {
-                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, { source: 'import', confidence: 5 });
+                await storage.enrichExecutiveEmptyFields(existingExec.id, mergeData, orgId, { source: 'import', confidence: 5 });
               }
               exec = existingExec;
             } else {
@@ -150,7 +155,7 @@ export function registerImportProject(app: Express): void {
                 level,
                 customFields: Object.keys(customFields).length > 0 ? customFields : null,
                 confidence: 5
-              });
+              }, orgId);
               imported++;
             }
 
@@ -185,16 +190,16 @@ export function registerImportProject(app: Express): void {
         }
       }
 
-      await storage.updateSearchQueryResultCount(searchQueryId, companyMap.size);
+      await storage.updateSearchQueryResultCount(searchQueryId, companyMap.size, orgId);
 
-      const fullResults = await storage.getFullSearchResults(searchQueryId);
+      const fullResults = await storage.getFullSearchResults(searchQueryId, orgId);
 
       console.log(`[ImportProject] Created project "${name}" with ${companyMap.size} companies, ${imported} imported, ${skipped} duplicates skipped`);
 
       if (newCompaniesForSectorInference2.length > 0) {
         const sectorResults2 = await inferSectorsBatch(newCompaniesForSectorInference2);
         for (const r of sectorResults2) {
-          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
+          await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category }, orgId);
         }
         console.log(`[ImportProject] Sector inference: filled ${sectorResults2.length}/${newCompaniesForSectorInference2.length} sectors`);
       }
@@ -211,10 +216,10 @@ export function registerImportProject(app: Express): void {
       });
 
       // Fire-and-forget enrichment in background
-      enrichSearchResults(searchQueryId).then(async enrichResult => {
+      enrichSearchResults(searchQueryId, orgId).then(async enrichResult => {
         console.log(`[ImportProject] Background enrichment complete for "${name}":`, enrichResult);
         const { inferDiversityForSearch } = await import("../../services/pipeline/diversityInference");
-        const diversityResult = await inferDiversityForSearch(searchQueryId);
+        const diversityResult = await inferDiversityForSearch(searchQueryId, orgId);
         console.log(`[ImportProject] Diversity inference complete for "${name}": ${diversityResult.updated}/${diversityResult.total}`);
       }).catch(err => {
         console.error(`[ImportProject] Background enrichment failed for "${name}":`, err);

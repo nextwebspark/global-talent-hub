@@ -1,15 +1,21 @@
 import type { Express } from "express";
 import { storage } from "../../storage";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerCompanyEnrichDeepseek(app: Express): void {
-  app.post("/api/companies/:id/enrich-deepseek", async (req, res) => {
+  app.post("/api/companies/:id/enrich-deepseek", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
       const { companyName, country, model } = req.body;
 
       if (!companyName) {
         return res.status(400).json({ error: "Company name is required" });
       }
+
+      // Guard org ownership before enriching.
+      const existing = await storage.getCompany(id, orgId);
+      if (!existing) return res.status(404).json({ error: "Company not found" });
 
       const openrouterApiKey = process.env.OPENROUTER_API_KEY;
       if (!openrouterApiKey) {
@@ -82,7 +88,7 @@ Please provide a comprehensive business profile as JSON. Remember: return ONLY r
         coreActivity: enrichedInfo.coreActivity || null,
         operatingModel: enrichedInfo.operatingModel || null,
         revenueDrivers: enrichedInfo.revenueDrivers || null
-      });
+      }, orgId);
 
       console.log(`[DeepSeek Enrich] Successfully enriched: ${companyName}`);
       res.json(enrichedInfo);

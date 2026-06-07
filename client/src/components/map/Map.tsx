@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import ExecutiveSatellites, { satelliteAnchors } from './ExecutiveSatellites';
+import MapLegend from './MapLegend';
 
 declare global {
   interface Window {
@@ -94,6 +95,7 @@ export default function MapComponent({
   const lastFitTimeRef = useRef(0);
   const isUserInteractingRef = useRef(false);
   const interactionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const spinRafRef = useRef<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const styleLoadedRef = useRef(false);
@@ -126,11 +128,11 @@ export default function MapComponent({
     map.on('style.load', () => {
       styleLoadedRef.current = true;
       map.setFog({
-        color: isDark ? 'rgb(10, 10, 20)' : 'rgb(220, 230, 240)',
-        'high-color': isDark ? 'rgb(20, 20, 40)' : 'rgb(180, 200, 220)',
-        'horizon-blend': 0.02,
-        'space-color': isDark ? 'rgb(5, 5, 15)' : 'rgb(200, 210, 225)',
-        'star-intensity': isDark ? 0.6 : 0.0,
+        color: isDark ? 'rgb(12, 16, 32)' : 'rgb(222, 232, 244)',
+        'high-color': isDark ? 'rgb(36, 52, 96)' : 'rgb(170, 198, 230)',
+        'horizon-blend': 0.03,
+        'space-color': isDark ? 'rgb(4, 6, 16)' : 'rgb(198, 212, 230)',
+        'star-intensity': isDark ? 0.8 : 0.0,
       });
     });
 
@@ -196,10 +198,42 @@ export default function MapComponent({
       setHoveredCompanyId(null);
     });
 
+    // Mapbox doesn't auto-resize when its container changes (right panel open/close,
+    // view switch). Observe the container and resize the canvas so the globe always
+    // fills the available area instead of clipping or leaving a blank strip.
+    let resizeRaf = 0;
+    const resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => map.resize());
+    });
+    if (mapContainerRef.current) resizeObserver.observe(mapContainerRef.current);
+
+    // Idle auto-rotate: slowly spin the globe west-to-east when the user isn't
+    // interacting and nothing is hovered/dragged. Pauses the moment the user grabs it.
+    const startSpin = () => {
+      const tick = () => {
+        if (
+          !isUserInteractingRef.current &&
+          !hoveredCompanyIdRef.current &&
+          !isMarkerDragging &&
+          map.getZoom() < 3
+        ) {
+          const c = map.getCenter();
+          map.setCenter([c.lng + 0.06, c.lat]);
+        }
+        spinRafRef.current = requestAnimationFrame(tick);
+      };
+      spinRafRef.current = requestAnimationFrame(tick);
+    };
+    map.on('load', startSpin);
+
     return () => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
       if (hoverDismissTimerRef.current) clearTimeout(hoverDismissTimerRef.current);
       if (interactionTimeoutRef.current) clearTimeout(interactionTimeoutRef.current);
+      cancelAnimationFrame(resizeRaf);
+      resizeObserver.disconnect();
+      if (spinRafRef.current) cancelAnimationFrame(spinRafRef.current);
       markersRef.current.forEach(m => m.remove());
       markersRef.current.clear();
       map.remove();
@@ -217,11 +251,11 @@ export default function MapComponent({
     map.once('style.load', () => {
       map.setProjection('globe');
       map.setFog({
-        color: isDark ? 'rgb(10, 10, 20)' : 'rgb(220, 230, 240)',
-        'high-color': isDark ? 'rgb(20, 20, 40)' : 'rgb(180, 200, 220)',
-        'horizon-blend': 0.02,
-        'space-color': isDark ? 'rgb(5, 5, 15)' : 'rgb(200, 210, 225)',
-        'star-intensity': isDark ? 0.6 : 0.0,
+        color: isDark ? 'rgb(12, 16, 32)' : 'rgb(222, 232, 244)',
+        'high-color': isDark ? 'rgb(36, 52, 96)' : 'rgb(170, 198, 230)',
+        'horizon-blend': 0.03,
+        'space-color': isDark ? 'rgb(4, 6, 16)' : 'rgb(198, 212, 230)',
+        'star-intensity': isDark ? 0.8 : 0.0,
       });
     });
   }, [isDark]);
@@ -594,8 +628,12 @@ export default function MapComponent({
         width:${diameter}px;
         height:${diameter}px;
         background-color:${fillColor};
-        opacity:${allExecsExcluded ? 0.25 : isSelected ? 0.9 : 0.5};
+        opacity:${allExecsExcluded ? 0.25 : isSelected ? 0.95 : 0.6};
         border-radius:50%;
+        border:${isSelected ? '2px' : '1px'} solid ${isSelected ? '#ffffff' : 'rgba(255,255,255,0.35)'};
+        box-shadow:${isSelected
+          ? `0 0 0 3px ${fillColor}55, 0 0 18px ${fillColor}, 0 4px 12px rgba(0,0,0,0.45)`
+          : `0 0 10px ${fillColor}66, 0 2px 6px rgba(0,0,0,0.3)`};
         transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
         cursor:grab;
         display:flex;
@@ -611,6 +649,7 @@ export default function MapComponent({
   return (
     <div className="h-full w-full bg-background relative z-0">
       <div ref={mapContainerRef} style={{ height: '100%', width: '100%' }} />
+      <MapLegend />
 
       {mapReady && mapRef.current && (
         <>

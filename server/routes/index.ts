@@ -17,11 +17,25 @@ import { registerCompanyEnrichMultipass } from "./registrations/companyEnrichMul
 import { registerSearchEnrich } from "./registrations/searchEnrich";
 import { registerImportProject } from "./registrations/importProject";
 import { registerDashboard } from "./registrations/dashboard";
+import { registerAuth, requireAuth } from "./registrations/auth";
+import { registerSettings } from "./registrations/settings";
+
+// Public API path prefixes (relative to the /api mount) that skip the auth gate.
+const PUBLIC_API = ["/health", "/auth/"];
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Auth endpoints (self-gated where needed) must register before the gate.
+  registerAuth(app);
+
+  // Gate every other /api route behind a valid Supabase session + org membership.
+  app.use("/api", (req, res, next) => {
+    if (PUBLIC_API.some((p) => req.path.startsWith(p))) return next();
+    return requireAuth(req, res, next);
+  });
+
   registerConfig(app);
   registerCompanies(app);
   registerExecutives(app, { upload });
@@ -38,5 +52,6 @@ export async function registerRoutes(
   registerSearchEnrich(app);
   registerImportProject(app);
   registerDashboard(app);
+  registerSettings(app);
   return httpServer;
 }

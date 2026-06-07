@@ -3,6 +3,7 @@ import type { Multer } from "multer";
 import { storage } from "../../storage";
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
 import { extractBriefText, BriefExtractError } from "../../services/briefExtract";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   const { pdUpload } = deps;
@@ -77,8 +78,10 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   });
 
   // ─── Enhanced Streaming Search ────────────────────────────────────────────────
-  app.get("/api/search/enhanced-stream", async (req, res) => {
+  app.get("/api/search/enhanced-stream", async (req: AuthedRequest, res) => {
     const { query, sessionId } = req.query as Record<string, string>;
+    const orgId = req.orgId!;
+    const userId = req.userId!;
 
     if (!query || !sessionId) {
       res.status(400).json({ error: "query and sessionId are required" });
@@ -126,6 +129,8 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         query,
         parsedCriteria: JSON.stringify(criteria),
         resultCount: 0,
+        orgId,
+        createdBy: userId,
       });
 
       await storage.createSearchSession({ id: sessionId, rawQuery: query, pdContent: rawPdContent });
@@ -139,6 +144,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       for await (const event of runSeedListEnhancedStream(
         query,
         searchQuery.id,
+        orgId,
         criteria.limit || 10,
         controller.signal,
         sessionId,
@@ -158,7 +164,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       }
 
       if (!controller.signal.aborted) {
-        await storage.updateSearchQueryResultCount(searchQuery.id, enrichedCompanyCount);
+        await storage.updateSearchQueryResultCount(searchQuery.id, enrichedCompanyCount, orgId);
         sendSSE("done", { searchQueryId: searchQuery.id });
       }
     } catch (err: any) {
@@ -172,8 +178,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
   });
 
   // ─── Add selected companies to project from session ───────────────────────
-  app.post("/api/search/add-to-project", async (req, res) => {
+  app.post("/api/search/add-to-project", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const { companyIds, sessionId, searchQueryId } = req.body;
       if (!companyIds || !Array.isArray(companyIds)) {
         return res.status(400).json({ error: "companyIds array is required" });
@@ -205,7 +212,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
 
       // Promote the existing draft (created at search_created with its original query
       // name) to active — keeping it the same row instead of spawning a second project.
-      const searchQuery = await storage.updateSearchQueryStatus(searchQueryId, "active", authorisedIds.length);
+      const searchQuery = await storage.updateSearchQueryStatus(searchQueryId, "active", authorisedIds.length, orgId);
 
       // Companies already carry this searchQueryId from the live stream; re-affirm the
       // association so any manually-added rows are pulled in too.
@@ -213,17 +220,18 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
         const { error: updateErr } = await supabase
           .from("hak_companies")
           .update({ search_query_id: searchQuery.id })
+          .eq("org_id", orgId)
           .in("id", authorisedIds);
         if (updateErr) throw new Error(`Company reassociation failed: ${updateErr.message}`);
       }
 
       const savedCompanies = await Promise.all(
-        authorisedIds.map(async (id: number) => storage.getCompany(id))
+        authorisedIds.map(async (id: number) => storage.getCompany(id, orgId))
       );
       const validCompanies = savedCompanies.filter(Boolean);
 
       const executives = await Promise.all(
-        validCompanies.map((c) => storage.getExecutivesByCompany(c!.id))
+        validCompanies.map((c) => storage.getExecutivesByCompany(c!.id, orgId))
       );
       const totalExecutives = executives.reduce((sum, arr) => sum + arr.length, 0);
 
@@ -240,9 +248,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.get("/api/search-history", async (req, res) => {
+  app.get("/api/search-history", async (req: AuthedRequest, res) => {
     try {
-      const history = await storage.getSearchHistoryWithResults();
+      const history = await storage.getSearchHistoryWithResults(req.orgId!);
       res.json(history.slice(0, 50));
     } catch (error) {
       console.error("Error fetching search history:", error);
@@ -250,14 +258,14 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.get("/api/search-history/:id/load", async (req, res) => {
+  app.get("/api/search-history/:id/load", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.id);
+      const searchId = parseInt(String(req.params.id));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
 
-      const data = await storage.getFullSearchResults(searchId);
+      const data = await storage.getFullSearchResults(searchId, req.orgId!);
       if (!data) {
         return res.status(404).json({ error: "Search results not found" });
       }
@@ -294,9 +302,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.put("/api/search/:id/satellite-hierarchies", async (req, res) => {
+  app.put("/api/search/:id/satellite-hierarchies", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.id);
+      const searchId = parseInt(String(req.params.id));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
@@ -304,7 +312,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       if (typeof hierarchies !== 'object' || hierarchies === null) {
         return res.status(400).json({ error: "Invalid hierarchies data" });
       }
-      await storage.saveSatelliteHierarchies(searchId, hierarchies);
+      await storage.saveSatelliteHierarchies(searchId, hierarchies, req.orgId!);
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving satellite hierarchies:", error);
@@ -312,9 +320,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.put("/api/search/:id/satellite-orders", async (req, res) => {
+  app.put("/api/search/:id/satellite-orders", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.id);
+      const searchId = parseInt(String(req.params.id));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
@@ -322,7 +330,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       if (typeof orders !== 'object' || orders === null) {
         return res.status(400).json({ error: "Invalid orders data" });
       }
-      await storage.saveSatelliteOrders(searchId, orders);
+      await storage.saveSatelliteOrders(searchId, orders, req.orgId!);
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving satellite orders:", error);
@@ -330,9 +338,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.put("/api/search/:id/map-positions", async (req, res) => {
+  app.put("/api/search/:id/map-positions", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.id);
+      const searchId = parseInt(String(req.params.id));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
@@ -340,7 +348,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       if (typeof positions !== 'object' || positions === null) {
         return res.status(400).json({ error: "Invalid positions data" });
       }
-      await storage.saveMapPositions(searchId, positions);
+      await storage.saveMapPositions(searchId, positions, req.orgId!);
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving map positions:", error);
@@ -348,9 +356,9 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.put("/api/search/:id/table-config", async (req, res) => {
+  app.put("/api/search/:id/table-config", async (req: AuthedRequest, res) => {
     try {
-      const searchId = parseInt(req.params.id);
+      const searchId = parseInt(String(req.params.id));
       if (isNaN(searchId)) {
         return res.status(400).json({ error: "Invalid search ID" });
       }
@@ -358,7 +366,7 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
       if (typeof config !== 'object' || config === null) {
         return res.status(400).json({ error: "Invalid config data" });
       }
-      await storage.saveTableConfig(searchId, config);
+      await storage.saveTableConfig(searchId, config, req.orgId!);
       res.json({ success: true });
     } catch (error) {
       console.error("Error saving table config:", error);
@@ -366,14 +374,14 @@ export function registerSearch(app: Express, deps: { pdUpload: Multer }): void {
     }
   });
 
-  app.get("/api/search-results/:id", async (req, res) => {
+  app.get("/api/search-results/:id", async (req: AuthedRequest, res) => {
     try {
-      const searchQueryId = parseInt(req.params.id);
+      const searchQueryId = parseInt(String(req.params.id));
       if (isNaN(searchQueryId)) {
         return res.status(400).json({ error: "Invalid search query ID" });
       }
 
-      const results = await storage.getFullSearchResults(searchQueryId);
+      const results = await storage.getFullSearchResults(searchQueryId, req.orgId!);
       if (!results) {
         return res.status(404).json({ error: "Search results not found" });
       }

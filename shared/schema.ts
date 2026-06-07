@@ -139,6 +139,7 @@ export const companies = pgTable("companies", {
   isUserRejected: boolean("is_user_rejected").default(false),
   geography: text("geography"),
   searchSessionId: text("search_session_id").references(() => searchSessions.id, { onDelete: "set null" }),
+  orgId: varchar("org_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -187,6 +188,7 @@ export const executives = pgTable("executives", {
   executiveConfidenceReason: text("executive_confidence_reason"),
   customFields: jsonb("custom_fields"),
   manuallyEditedFields: text("manually_edited_fields").array().default(sql`'{}'::text[]`),
+  orgId: varchar("org_id"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -204,6 +206,8 @@ export const searchQueries = pgTable("search_queries", {
   satelliteOrders: jsonb("satellite_orders").default({}),
   tableConfig: jsonb("table_config"),
   mapPositions: jsonb("map_positions").default({}),
+  orgId: varchar("org_id"),
+  createdBy: varchar("created_by"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -240,6 +244,78 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
+// ─── Auth / organizations ─────────────────────────────────────────────────────
+// Identity is Supabase auth.users; these mirror the workspace tables (see
+// db-extent/add_auth_orgs.sql). userId/createdBy hold auth.users uuids.
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  teamSize: text("team_size"),
+  region: text("region"),
+  logoUrl: text("logo_url"),
+  defaultRole: text("default_role").notNull().default("member"),
+  require2fa: boolean("require_2fa").notNull().default(false),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const orgMembers = pgTable("org_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull(),
+  email: text("email"),
+  role: text("role").notNull().default("member"),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Editable per-user profile + preferences (identity stays in Supabase auth.users).
+export const userProfiles = pgTable("user_profiles", {
+  userId: varchar("user_id").primaryKey(),
+  fullName: text("full_name"),
+  jobTitle: text("job_title"),
+  phone: text("phone"),
+  avatarUrl: text("avatar_url"),
+  timezone: text("timezone"),
+  language: text("language"),
+  preferences: jsonb("preferences").default({}),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// One row per sign-in — login activity log.
+export const loginEvents = pgTable("login_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  orgId: varchar("org_id"),
+  at: timestamp("at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  ip: text("ip"),
+  userAgent: text("user_agent"),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertOrgMemberSchema = createInsertSchema(orgMembers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertLoginEventSchema = createInsertSchema(loginEvents).omit({
+  id: true,
+  at: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -247,12 +323,14 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export const insertCompanySchema = createInsertSchema(companies).omit({
   id: true,
+  orgId: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export const insertExecutiveSchema = createInsertSchema(executives).omit({
   id: true,
+  orgId: true,
   createdAt: true,
   updatedAt: true,
 });
@@ -371,6 +449,15 @@ export const insertPipelineLogSchema = createInsertSchema(pipelineLog).omit({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type OrgMember = typeof orgMembers.$inferSelect;
+export type InsertOrgMember = z.infer<typeof insertOrgMemberSchema>;
+export type OrgRole = "owner" | "admin" | "member" | "viewer";
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type LoginEvent = typeof loginEvents.$inferSelect;
+export type InsertLoginEvent = z.infer<typeof insertLoginEventSchema>;
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Executive = typeof executives.$inferSelect;

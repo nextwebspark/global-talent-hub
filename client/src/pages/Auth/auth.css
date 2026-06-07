@@ -1,0 +1,89 @@
+/* Auth screens — ported from the ALAC ref kit (auth.jsx / kit.css), adapted to
+   this app's hsl(var(--x)) theme tokens. --success / --ink are kit-only, inlined. */
+
+.tm-auth { height: 100vh; display: flex; overflow: hidden; font-family: var(--font-sans); }
+.tm-auth__form { flex: 0 0 40%; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; background: hsl(var(--background)); }
+.tm-auth__card { width: 100%; max-width: 392px; }
+.tm-auth__brandmark { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; }
+.tm-auth__brandmark .mk { width: 30px; height: 30px; border-radius: 8px; background: #0a1020; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+.tm-auth__brandmark .wm { font-size: 14px; font-weight: 700; letter-spacing: .02em; color: hsl(var(--foreground)); }
+.tm-auth__brandmark .wm small { display: block; font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.tm-auth__title { font-size: 26px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 6px; color: hsl(var(--foreground)); }
+.tm-auth__sub { font-size: 14px; color: hsl(var(--muted-foreground)); margin: 0 0 26px; }
+.tm-auth__sub a, .tm-link-inline { color: hsl(var(--primary)); cursor: pointer; font-weight: 500; }
+.tm-auth__sub a:hover, .tm-link-inline:hover { text-decoration: underline; }
+.tm-auth__error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 13px; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+
+.tm-sso { display: flex; flex-direction: column; gap: 10px; }
+.tm-sso-btn { display: flex; align-items: center; justify-content: center; gap: 10px; height: 42px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; }
+.tm-sso-btn:hover { background: hsl(var(--muted)); }
+.tm-sso-glyph { width: 18px; height: 18px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; }
+
+.tm-or { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+.tm-or::before, .tm-or::after { content: ''; flex: 1; height: 1px; background: hsl(var(--border)); }
+.tm-or span { font-size: 11px; color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: .06em; }
+
+.tm-afield { margin-bottom: 16px; }
+.tm-alabel { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 6px; color: hsl(var(--foreground)); }
+.tm-ainput { width: 100%; height: 42px; padding: 0 12px; border: 1px solid hsl(var(--input)); border-radius: 8px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 14px; font-family: inherit; outline: none; }
+.tm-ainput:focus { border-color: hsl(var(--primary)); box-shadow: 0 0 0 1px hsl(var(--primary)); }
+.tm-ainput::placeholder { color: hsl(var(--muted-foreground)); }
+.tm-pw { position: relative; }
+.tm-pw .tm-ainput { padding-right: 40px; }
+.tm-pw__toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border: none; background: none; cursor: pointer; color: hsl(var(--muted-foreground)); display: flex; align-items: center; justify-content: center; }
+.tm-prefix { display: flex; align-items: stretch; border: 1px solid hsl(var(--input)); border-radius: 8px; overflow: hidden; background: hsl(var(--card)); }
+.tm-prefix:focus-within { border-color: hsl(var(--primary)); box-shadow: 0 0 0 1px hsl(var(--primary)); }
+.tm-prefix input { flex: 1; border: none; outline: none; background: transparent; padding: 0 12px; height: 42px; font-family: inherit; font-size: 14px; color: hsl(var(--foreground)); text-align: right; }
+.tm-prefix .sfx { display: flex; align-items: center; padding: 0 12px; font-size: 13px; color: hsl(var(--muted-foreground)); background: hsl(var(--muted)); border-left: 1px solid hsl(var(--border)); }
+.tm-auth__btn { width: 100%; height: 44px; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+.tm-auth__btn:hover:not(:disabled) { opacity: .92; }
+.tm-auth__btn:disabled { opacity: .5; cursor: not-allowed; }
+.tm-auth__btn--outline { background: hsl(var(--card)); color: hsl(var(--foreground)); border: 1px solid hsl(var(--border)); }
+.tm-auth__btn--icon { flex: 0 0 auto; width: 44px; padding: 0; }
+.tm-auth__foot { font-size: 13px; color: hsl(var(--muted-foreground)); text-align: center; margin-top: 22px; }
+.tm-auth__legal { font-size: 11px; color: hsl(var(--muted-foreground)); text-align: center; margin-top: 26px; line-height: 1.5; }
+.tm-auth__legal a { color: hsl(var(--foreground)); cursor: pointer; }
+.tm-check { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; color: hsl(var(--muted-foreground)); line-height: 1.4; cursor: pointer; }
+.tm-check__box { width: 16px; height: 16px; border-radius: 4px; border: 1px solid hsl(var(--border)); flex-shrink: 0; margin-top: 1px; display: flex; align-items: center; justify-content: center; }
+.tm-check.on .tm-check__box { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff; }
+
+.tm-steps { display: flex; align-items: center; gap: 6px; margin-bottom: 26px; }
+.tm-step { display: flex; align-items: center; gap: 8px; }
+.tm-step__n { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); }
+.tm-step.is-on .tm-step__n { background: hsl(var(--foreground)); color: hsl(var(--background)); border-color: hsl(var(--foreground)); }
+.tm-step.is-done .tm-step__n { background: #16a34a; color: #fff; border-color: #16a34a; }
+.tm-step__l { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.tm-step.is-on .tm-step__l { color: hsl(var(--foreground)); font-weight: 600; }
+.tm-step__bar { width: 22px; height: 1px; background: hsl(var(--border)); }
+.tm-step-row { display: flex; gap: 10px; }
+
+.tm-auth__brand { width: 60%; flex-shrink: 0; position: relative; overflow: hidden; background: #0a1020; padding: 40px; display: flex; flex-direction: column; justify-content: center; }
+.tm-auth__brandmid { position: absolute; z-index: 2; top: 50%; left: 40px; right: 40px; transform: translateY(-50%); display: flex; flex-direction: column; gap: 22px; }
+.tm-auth__brand .tm-auth__quote { position: absolute; left: 40px; right: 40px; bottom: 40px; }
+.tm-auth__brand .wmk { display: flex; align-items: center; gap: 10px; position: relative; z-index: 2; }
+.tm-auth__brand .wmk .mk { width: 30px; height: 30px; border-radius: 8px; background: #fff; color: #0a1020; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.tm-auth__brand .wmk .wm { color: #fff; font-size: 14px; font-weight: 700; letter-spacing: .02em; }
+.tm-auth__brand .wmk .wm small { display: block; font-size: 10px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.5); }
+.tm-auth__copy { position: relative; z-index: 2; }
+.tm-auth__copy h2 { color: #fff; font-size: 26px; font-weight: 700; line-height: 1.2; letter-spacing: -.01em; margin: 0 0 10px; max-width: 360px; }
+.tm-auth__copy p { color: rgba(255,255,255,.6); font-size: 14px; line-height: 1.55; margin: 0; max-width: 360px; }
+.tm-auth__quote { position: relative; z-index: 2; border-top: 1px solid rgba(255,255,255,.12); padding-top: 18px; }
+.tm-auth__quote p { color: rgba(255,255,255,.82); font-size: 13.5px; line-height: 1.5; margin: 0 0 10px; }
+.tm-auth__quote .who { display: flex; align-items: center; gap: 10px; }
+.tm-auth__quote .who .av { width: 30px; height: 30px; border-radius: 50%; background: hsl(35 92% 50%); color: #2a1a02; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.tm-auth__quote .who .nm { color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2; }
+.tm-auth__quote .who .ti { color: rgba(255,255,255,.5); font-size: 11px; }
+
+/* Interactive cobe globe — large, sits in the background of the brand panel.
+   z-index 0; copy/brandmark/quote overlay at z-index 2. */
+.tm-authglobe { position: absolute; z-index: 0; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 120%; max-width: 1100px; aspect-ratio: 1 / 1; height: auto; }
+.tm-authglobe canvas { outline: none; }
+
+/* Company pins anchored to lat/lng — react-globe.gl rotates + backface-hides them. */
+.tm-globepin { transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tm-globepin__dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(35 92% 50%); box-shadow: 0 0 8px hsl(35 92% 50% / .8); flex-shrink: 0; }
+.tm-globepin__card { background: rgba(15,22,40,.92); border: 1px solid rgba(245,156,11,.45); border-radius: 8px; padding: 4px 9px; backdrop-filter: blur(4px); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+.tm-globepin__card .nm { color: #fff; font-size: 11px; font-weight: 600; line-height: 1.2; }
+.tm-globepin__card .meta { color: rgba(255,255,255,.55); font-size: 9.5px; line-height: 1.2; }
+
+@media (max-width: 900px) { .tm-auth__brand { display: none; } }

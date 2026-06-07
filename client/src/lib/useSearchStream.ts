@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { getAccessToken } from './supabase';
 import { useAppStore } from './store';
 import type { ActivityEvent } from '@shared/schema';
 import type { StreamCompany } from './store';
@@ -104,7 +105,7 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     }
   }, [addSearchActivity, setSearchQueryId, setSearchIntent, addPendingCompanyName, addSearchCompany, addExecutiveToCompany, clearPendingCompanyNames, setIsSearchStreaming, setSearchPhase, queryClient]);
 
-  const startSearch = useCallback((query: string, sessionId: string) => {
+  const startSearch = useCallback(async (query: string, sessionId: string) => {
     if (esRef.current) { esRef.current.close(); esRef.current = null; }
 
     resetSearchSession();
@@ -112,7 +113,10 @@ export function useSearchStream(_sessionId?: string): UseSearchStreamReturn {
     setSearchPhase('streaming');
     setIsSearchStreaming(true);
 
+    // EventSource can't set an Authorization header, so the JWT rides in the query string.
+    const token = await getAccessToken();
     const params = new URLSearchParams({ query, sessionId });
+    if (token) params.set('access_token', token);
     const es = new EventSource(`/api/search/enhanced-stream?${params}`);
     esRef.current = es;
 

@@ -32,7 +32,8 @@ import { fetchClockworkExecutives } from "./people";
  */
 export async function orchestrateEnrichmentMatching(
   searchId: number,
-  clockworkProjectId: string
+  clockworkProjectId: string,
+  orgId: string
 ): Promise<EnrichmentMatchResult> {
   // Generate unique run ID for observability
   const enrichmentRunId = randomUUID().substring(0, 8);
@@ -43,7 +44,7 @@ export async function orchestrateEnrichmentMatching(
   console.log(`[Enrichment:${enrichmentRunId}] INFO - search_id=${searchId}, clockwork_project_id=${clockworkProjectId}, firm_slug=${firmSlug}`);
 
   // Step 1: Fetch all companies and executives for this search from our database
-  const companies = await storage.getCompaniesBySearchQuery(searchId);
+  const companies = await storage.getCompaniesBySearchQuery(searchId, orgId);
   const localExecutives: Array<{
     id: number;
     name: string;
@@ -53,7 +54,7 @@ export async function orchestrateEnrichmentMatching(
   }> = [];
 
   for (const company of companies) {
-    const executives = await storage.getExecutivesByCompany(company.id);
+    const executives = await storage.getExecutivesByCompany(company.id, orgId);
     for (const exec of executives) {
       localExecutives.push({
         id: exec.id,

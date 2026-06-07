@@ -86,6 +86,7 @@ function emit(type: string, message: string, data?: any): EnhancedEvent {
 export async function* runSeedListEnhancedStream(
   query: string,
   searchQueryId: number,
+  orgId: string,
   limit: number = 10,
   signal?: AbortSignal,
   sessionId?: string,
@@ -157,6 +158,7 @@ export async function* runSeedListEnhancedStream(
       const { company, isNew } = await storage.upsertCompanyNonDestructive(
         companyData,
         searchQueryId,
+        orgId,
         { country: 7, sector: 7 },
       );
       persistedCount++;
@@ -186,7 +188,7 @@ export async function* runSeedListEnhancedStream(
     }
   }
 
-  await storage.updateSearchQueryResultCount(searchQueryId, persistedCount);
+  await storage.updateSearchQueryResultCount(searchQueryId, persistedCount, orgId);
 
   yield emit("search_complete", "Search complete", {
     totalCompanies: persistedCount,

@@ -3,14 +3,16 @@ import { storage } from "../../storage";
 import { insertCompanySchema } from "@shared/schema";
 import { applyCoordinateFallback } from "../../services/coordinateFallback";
 import { inferSectorsBatch, normalizeOrInferSector, getCategoryForSector } from "../../services/sectorInference";
+import type { AuthedRequest } from "../../auth/middleware";
 
 export function registerCompanies(app: Express): void {
-  app.get("/api/companies", async (req, res) => {
+  app.get("/api/companies", async (req: AuthedRequest, res) => {
     try {
-      const companies = await storage.getAllCompanies();
+      const orgId = req.orgId!;
+      const companies = await storage.getAllCompanies(orgId);
       const companiesWithExecs = await Promise.all(
         companies.map(async (company) => {
-          const executives = await storage.getExecutivesByCompany(company.id);
+          const executives = await storage.getExecutivesByCompany(company.id, orgId);
           return { ...company, executives };
         })
       );
@@ -21,11 +23,11 @@ export function registerCompanies(app: Express): void {
     }
   });
 
-  app.get("/api/companies/search", async (req, res) => {
+  app.get("/api/companies/search", async (req: AuthedRequest, res) => {
     try {
       const name = String(req.query.name || '').trim();
       if (name.length < 2) return res.json([]);
-      const results = await storage.searchCompaniesByName(name);
+      const results = await storage.searchCompaniesByName(name, req.orgId!);
       res.json(results);
     } catch (error) {
       console.error("Error searching companies:", error);
@@ -33,14 +35,15 @@ export function registerCompanies(app: Express): void {
     }
   });
 
-  app.get("/api/companies/:id", async (req, res) => {
+  app.get("/api/companies/:id", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
-      const company = await storage.getCompany(id);
+      const company = await storage.getCompany(id, orgId);
       if (!company) {
         return res.status(404).json({ error: "Company not found" });
       }
-      const executives = await storage.getExecutivesByCompany(id);
+      const executives = await storage.getExecutivesByCompany(id, orgId);
       res.json({ ...company, executives });
     } catch (error) {
       console.error("Error fetching company:", error);
@@ -49,8 +52,9 @@ export function registerCompanies(app: Express): void {
   });
 
   // UI/MANUAL LAYER: User-initiated company creation
-  app.post("/api/companies", async (req, res) => {
+  app.post("/api/companies", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       let data = { ...req.body };
       if ((!data.latitude || data.latitude === '0') && (!data.longitude || data.longitude === '0')) {
         const fallback = applyCoordinateFallback({
@@ -65,12 +69,17 @@ export function registerCompanies(app: Express): void {
         }
       }
       const validated = insertCompanySchema.parse(data);
+      // If filed under a project, it must be one the caller's org owns.
+      if (validated.searchQueryId) {
+        const sq = await storage.getSearchQuery(validated.searchQueryId, orgId);
+        if (!sq) return res.status(404).json({ error: "Search query not found" });
+      }
       const { sector: normalizedSector, category: normalizedCategory } = await normalizeOrInferSector(validated.name || '', validated.sector);
       const company = await storage.createCompanyManual({
         ...validated,
         sector: normalizedSector || validated.sector,
         sectorCategory: normalizedCategory || null,
-      });
+      }, orgId);
       res.status(201).json(company);
     } catch (error) {
       console.error("Error creating company:", error);
@@ -79,14 +88,16 @@ export function registerCompanies(app: Express): void {
   });
 
   // UI/MANUAL LAYER: User-initiated company edits always override imported data
-  app.patch("/api/companies/:id", async (req, res) => {
+  app.patch("/api/companies/:id", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
       let patchData = { ...req.body };
       if (patchData.sector !== undefined) {
         patchData.sectorCategory = getCategoryForSector(patchData.sector) || null;
       }
-      const existingCompany = await storage.getCompany(id);
+      const existingCompany = await storage.getCompany(id, orgId);
+      if (!existingCompany) return res.status(404).json({ error: "Company not found" });
       const hasNoCoords = !existingCompany?.latitude && !existingCompany?.longitude;
       const countryChanged = patchData.country && patchData.country !== existingCompany?.country;
       const hasExplicitCoords = patchData.latitude && patchData.longitude;
@@ -102,7 +113,7 @@ export function registerCompanies(app: Express): void {
           patchData.longitude = String(fallback.longitude);
         }
       }
-      const company = await storage.updateCompanyManual(id, patchData);
+      const company = await storage.updateCompanyManual(id, patchData, orgId);
       res.json(company);
     } catch (error) {
       console.error("Error updating company:", error);
@@ -110,15 +121,19 @@ export function registerCompanies(app: Express): void {
     }
   });
 
-  app.post("/api/companies/infer-sectors", async (req, res) => {
+  app.post("/api/companies/infer-sectors", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const { companies } = req.body as { companies: { id: number; name: string }[] };
       if (!Array.isArray(companies) || companies.length === 0) {
         return res.json({ results: [] });
       }
       const results = await inferSectorsBatch(companies);
       for (const r of results) {
-        await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category });
+        // Skip ids outside the caller's org (a no-row update would otherwise throw).
+        const owned = await storage.getCompany(r.id, orgId);
+        if (!owned) continue;
+        await storage.updateCompanyManual(r.id, { sector: r.sector, sectorCategory: r.category }, orgId);
       }
       res.json({ results });
     } catch (error) {
@@ -127,10 +142,13 @@ export function registerCompanies(app: Express): void {
     }
   });
 
-  app.delete("/api/companies/:id", async (req, res) => {
+  app.delete("/api/companies/:id", async (req: AuthedRequest, res) => {
     try {
+      const orgId = req.orgId!;
       const id = parseInt(String(req.params.id));
-      await storage.deleteCompany(id);
+      const existing = await storage.getCompany(id, orgId);
+      if (!existing) return res.status(404).json({ error: "Company not found" });
+      await storage.deleteCompany(id, orgId);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting company:", error);

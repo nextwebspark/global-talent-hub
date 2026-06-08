@@ -1,3 +1,4 @@
+import type { MatchBreakdown } from "../services/pipeline/companyScore";
 import type {
   User,
   InsertUser,
@@ -55,6 +56,9 @@ export interface EnrichedCompanyRow {
   revenueEstimateUsd: number | null;
   isListed: boolean | null;
   hqCity: string | null;
+  // 0-1 data-QUALITY of the enrichment record (used only as a sort tie-breaker).
+  // Distinct from companies.confidence (1-10), which is derived from the query
+  // matchScore — do not conflate the two despite the shared field name.
   confidence: number;
   website: string | null;
   phone: string | null;
@@ -74,10 +78,14 @@ export interface EnrichedCompanyQuery {
   isListed: boolean | null;
 }
 
-// A row tagged with how it matched the query (Direct = primary-sector match,
-// Adjacent = matched only via an adjacent sector).
+// A row tagged with how it matched the query and scored 0..100 on how many of
+// the query's dimensions it satisfied. relevanceType: Direct = primary-sector
+// match, Adjacent = matched via an adjacent sector, AI Inferred = surfaced by a
+// sub-tag match with no sector hit. breakdown records which dimensions matched.
 export type EnrichedCompanyMatch = EnrichedCompanyRow & {
-  relevanceType: "Direct" | "Adjacent";
+  relevanceType: "Direct" | "Adjacent" | "AI Inferred";
+  matchScore: number; // 0..100
+  breakdown: MatchBreakdown;
 };
 
 export interface IStorage {

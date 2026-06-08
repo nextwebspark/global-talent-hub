@@ -32,6 +32,7 @@ import type {
 } from "@shared/schema";
 import { keysToCamel, keysToSnake, toSnakeKey } from "./internal/case";
 import { nowIso, sb, sbOpt } from "./internal/sb";
+import { scoreCompany } from "../services/pipeline/companyScore";
 import type {
   EnrichedCompanyRow,
   EnrichedCompanyQuery,
@@ -782,10 +783,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Query the enriched company universe with a vocabulary-validated filter.
-  // Returns Direct matches (primary_sector ∈ primarySectors) first, ordered by
-  // confidence; if under `limit`, fills with Adjacent matches (primary_sector ∈
-  // adjacentSectors). All filtering uses the Supabase query builder
-  // (parameterized) — no string interpolation reaches the query.
+  // Flexible scored retrieval. A row is a candidate if it matches any *crucial*
+  // signal (primary sector, adjacent sector, or sub-tag overlap) — these are
+  // OR-combined in the WHERE clause. Soft signals (country, revenue/employee band,
+  // listing status) are NOT filtered on; they only feed scoreCompany, which scores
+  // each candidate 0..100 on how many query dimensions it satisfied. Results are
+  // ordered by that match score (data-quality confidence breaks ties) and sliced
+  // to `limit`. This is what lets an over-narrow band stop zeroing out results.
+  //
+  // Injection: every value placed into the .or() string is vocabulary-validated
+  // upstream (primary/adjacent sectors ∈ SECTORS; sub_tags ∈ SUB_TAGS) — all
+  // kebab-case tokens with no commas or special chars — so nothing user-derived
+  // reaches the query string.
   async queryEnrichedCompanies(
     filter: EnrichedCompanyQuery,
     limit: number,
@@ -793,67 +802,37 @@ export class DatabaseStorage implements IStorage {
     const columns =
       "id,company_id,company_name,slug,country,primary_sector,sector_tags,sub_tags,keywords,tagline,business_description,employee_band,employee_count_estimate,revenue_band,revenue_estimate_usd,is_listed,hq_city,confidence,website,phone,email,address";
 
-    // Build a base query with the shared (non-sector) filters applied.
-    const applyShared = <T extends ReturnType<typeof supabase.from> | any>(q: T): T => {
-      let query: any = q;
-      if (filter.countries.length > 0) query = query.in("country", filter.countries);
-      if (filter.subTags.length > 0) query = query.overlaps("sub_tags", filter.subTags);
-      if (filter.revenueBands.length > 0) query = query.in("revenue_band", filter.revenueBands);
-      if (filter.employeeBands.length > 0) query = query.in("employee_band", filter.employeeBands);
-      if (filter.isListed !== null) query = query.eq("is_listed", filter.isListed);
-      return query;
-    };
+    const sectorAll = [...filter.primarySectors, ...filter.adjacentSectors];
+    const orTerms: string[] = [];
+    if (sectorAll.length > 0) orTerms.push(`primary_sector.in.(${sectorAll.join(",")})`);
+    if (filter.subTags.length > 0) orTerms.push(`sub_tags.ov.{${filter.subTags.join(",")}}`);
+    // No crucial signal at all → nothing meaningful to match. Return empty rather
+    // than dumping a full-table confidence sample at score 0. (The isUnmappedFilter
+    // gate upstream only fires when the rationale is ALSO the fallback string, so a
+    // custom-rationale-but-zero-vocab filter can still reach here.) The caller's
+    // rows.length === 0 path then emits search_complete with no results.
+    if (orTerms.length === 0) return [];
 
-    const runSectorQuery = async (
-      sectors: string[],
-      take: number,
-      excludeIds: number[],
-    ): Promise<EnrichedCompanyRow[]> => {
-      if (sectors.length === 0 || take <= 0) return [];
-      let query: any = supabase.from("company_enrichment").select(columns);
-      query = applyShared(query);
-      query = query.in("primary_sector", sectors);
-      if (excludeIds.length > 0) query = query.not("id", "in", `(${excludeIds.join(",")})`);
-      query = query.order("confidence", { ascending: false }).limit(take);
-      const { data, error } = await query;
-      if (error) throw new Error(`[Storage:queryEnrichedCompanies] ${error.message}`);
-      return keysToCamel<EnrichedCompanyRow[]>(data ?? []);
-    };
+    // Bounded, quality-biased candidate pool — never scans the whole table.
+    const candidatePool = Math.min(500, Math.max(limit * 5, 100));
 
-    // No sector at all → fall back to a confidence-ranked sample under the
-    // shared filters so the user still gets relevant results.
-    if (filter.primarySectors.length === 0 && filter.adjacentSectors.length === 0) {
-      let query: any = supabase.from("company_enrichment").select(columns);
-      query = applyShared(query);
-      query = query.order("confidence", { ascending: false }).limit(limit);
-      const { data, error } = await query;
-      if (error) throw new Error(`[Storage:queryEnrichedCompanies] ${error.message}`);
-      return keysToCamel<EnrichedCompanyRow[]>(data ?? []).map((row) => ({
-        ...row,
-        relevanceType: "Direct" as const,
-      }));
-    }
+    const query: any = supabase
+      .from("company_enrichment")
+      .select(columns)
+      .or(orTerms.join(","))
+      .order("confidence", { ascending: false })
+      .limit(candidatePool);
+    const { data, error } = await query;
+    if (error) throw new Error(`[Storage:queryEnrichedCompanies] ${error.message}`);
 
-    const direct = await runSectorQuery(filter.primarySectors, limit, []);
-    const directMatches: EnrichedCompanyMatch[] = direct.map((row) => ({
-      ...row,
-      relevanceType: "Direct" as const,
-    }));
-
-    const remaining = limit - directMatches.length;
-    if (remaining <= 0 || filter.adjacentSectors.length === 0) return directMatches;
-
-    const adjacent = await runSectorQuery(
-      filter.adjacentSectors,
-      remaining,
-      direct.map((r) => r.id),
-    );
-    const adjacentMatches: EnrichedCompanyMatch[] = adjacent.map((row) => ({
-      ...row,
-      relevanceType: "Adjacent" as const,
-    }));
-
-    return [...directMatches, ...adjacentMatches];
+    const rows = keysToCamel<EnrichedCompanyRow[]>(data ?? []);
+    return rows
+      .map((row): EnrichedCompanyMatch => {
+        const scored = scoreCompany(row, filter);
+        return { ...row, ...scored };
+      })
+      .sort((a, b) => b.matchScore - a.matchScore || b.confidence - a.confidence)
+      .slice(0, limit);
   }
 
   async getSearchHistoryWithResults(orgId: string): Promise<Array<SearchQuery & { companyCount: number }>> {

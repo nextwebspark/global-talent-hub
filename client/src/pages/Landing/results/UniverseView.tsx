@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import type { StreamCompany } from '@/lib/useSearchStream';
 import type { ActivityEvent, InferredIntent } from '@shared/schema';
 
-// Confidence in StreamCompany is 0-1; display as a whole percent.
+// Match score in StreamCompany is a 0-100 percentage. Legacy drafts may carry a
+// 0-1 value; tolerate both.
 function confidencePct(score: number): number {
   return Math.round(score <= 1 ? score * 100 : score);
 }

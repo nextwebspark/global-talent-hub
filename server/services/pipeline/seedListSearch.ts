@@ -10,7 +10,7 @@ function revenueValue(row: EnrichedCompanyMatch): string | null {
   return row.revenueBand ?? null;
 }
 
-function enrichedRowToInsertCompany(row: EnrichedCompanyMatch): InsertCompany {
+function enrichedRowToInsertCompany(row: EnrichedCompanyMatch, filter: EnrichmentFilter): InsertCompany {
   const fallback = applyCoordinateFallback({ city: row.hqCity ?? undefined, country: row.country });
   return {
     name: row.companyName,
@@ -30,8 +30,13 @@ function enrichedRowToInsertCompany(row: EnrichedCompanyMatch): InsertCompany {
     companySize: row.employeeBand ?? null,
     website: row.website ?? null,
     summary: row.businessDescription ?? row.tagline ?? null,
-    // company_enrichment.confidence is 0-1; companies.confidence is a 1-10 scale.
-    confidence: Math.max(1, Math.round(row.confidence * 10)),
+    // matchScore is the 0-100 query-match strength. Persist it raw on
+    // confidence_score (the % bar's source on draft reload) and derive the 1-10
+    // companies.confidence shown as "/10" on the dashboard.
+    confidenceScore: row.matchScore,
+    confidence: Math.max(1, Math.min(10, Math.round(row.matchScore / 10))),
+    relevanceType: row.relevanceType,
+    relevanceRationale: relevanceRationale(row, filter),
   };
 }
 
@@ -60,10 +65,24 @@ function isUnmappedFilter(filter: EnrichmentFilter, query: string): boolean {
 }
 
 function relevanceRationale(row: EnrichedCompanyMatch, filter: EnrichmentFilter): string {
-  if (row.relevanceType === "Adjacent") {
-    return `Adjacent sector (${row.primarySector}) to the target. ${filter.searchRationale}`;
+  const b = row.breakdown;
+  let lead: string;
+  if (row.relevanceType === "Direct") {
+    lead = `Primary sector match (${row.primarySector})`;
+  } else if (row.relevanceType === "Adjacent") {
+    lead = `Adjacent sector (${row.primarySector}) to the target`;
+  } else {
+    lead = "Matched on specialism tags";
   }
-  return filter.searchRationale;
+
+  const soft: string[] = [];
+  if (b.country) soft.push("in target geography");
+  if (b.employeeBand) soft.push("matching size band");
+  if (b.revenueBand) soft.push("matching revenue band");
+  if (b.isListed) soft.push("listing status matches");
+  const softStr = soft.length > 0 ? `, ${soft.join(", ")}` : "";
+
+  return `${lead}${softStr}. ${filter.searchRationale}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +172,7 @@ export async function* runSeedListEnhancedStream(
   for (const row of rows) {
     if (signal?.aborted) return;
     try {
-      const rowData = enrichedRowToInsertCompany(row);
+      const rowData = enrichedRowToInsertCompany(row, filter);
       const companyData = { ...rowData, searchSessionId: sessionId ?? null };
       const { company, isNew } = await storage.upsertCompanyNonDestructive(
         companyData,
@@ -175,8 +194,8 @@ export async function* runSeedListEnhancedStream(
         latitude: company.latitude ?? rowData.latitude,
         longitude: company.longitude ?? rowData.longitude,
         relevanceType: row.relevanceType,
-        relevanceRationale: relevanceRationale(row, filter),
-        confidenceScore: row.confidence,
+        relevanceRationale: rowData.relevanceRationale,
+        confidenceScore: row.matchScore,
         isUserAccepted: false,
         isUserRejected: false,
         executives: [] as Array<{ name: string; title: string }>,

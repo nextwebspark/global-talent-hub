@@ -168,11 +168,14 @@ export function RolesSection() {
         {PERMS.map(([label, cells]) => (
           <div className="tm-perm-row" key={label}>
             <span style={{ fontWeight: 500 }}>{label}</span>
-            {cells.map((c, i) => (
-              <span className="cell" key={i}>
-                {c ? <Check size={16} color="#15803d" /> : <span style={{ width: 12, height: 2, borderRadius: 2, background: "hsl(var(--border))" }} />}
-              </span>
-            ))}
+            <div className="tm-perm-cells">
+              {cells.map((c, i) => (
+                <span className="cell" key={i}>
+                  {c ? <Check size={16} color="#15803d" /> : <span style={{ width: 12, height: 2, borderRadius: 2, background: "hsl(var(--border))" }} />}
+                  <span className="tm-perm-cell-label">{["Owner", "Admin", "Member", "Viewer"][i]}</span>
+                </span>
+              ))}
+            </div>
           </div>
         ))}
       </SetCard>

@@ -17,6 +17,8 @@ import { useLocation } from 'wouter';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
@@ -30,6 +32,8 @@ export default function Dashboard() {
   const [rightPanelWidth, setRightPanelWidth] = useState(384);
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [showMatchReview, setShowMatchReview] = useState(false);
@@ -386,6 +390,8 @@ export default function Dashboard() {
         onProjects={() => setShowProjectsPanel(prev => !prev)}
         isProjectsOpen={showProjectsPanel}
         projectOpen={!!currentProject}
+        mobileOpen={mobileNavOpen}
+        onMobileOpenChange={setMobileNavOpen}
       />
 
       {showProjectsPanel && (
@@ -402,6 +408,7 @@ export default function Dashboard() {
           onAddCompany={() => { setImportModalMode('add'); setShowImportModal(true); }}
           onHome={() => setLocation('/')}
           isEnriching={isEnriching}
+          onMobileNav={() => setMobileNavOpen(true)}
         />
 
         <div className="flex-1 flex min-h-0 relative">
@@ -434,10 +441,10 @@ export default function Dashboard() {
             </div>
           )}
 
-          {hasSelection && activeView === 'map' && (
+          {hasSelection && activeView === 'map' && !isMobile && (
             <>
               <div
-                className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0 z-30"
+                className="w-1 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors relative shrink-0 z-30 hidden md:block"
                 onMouseDown={() => setIsResizingRight(true)}
               >
                 <div className="absolute inset-y-0 -left-1 -right-1" />
@@ -453,6 +460,19 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Mobile: selection detail as a bottom sheet */}
+      <Sheet
+        open={isMobile && hasSelection && activeView === 'map'}
+        onOpenChange={(open) => { if (!open) selectCompany(null); }}
+      >
+        <SheetContent side="bottom" className="h-[85vh] p-0">
+          <SheetTitle className="sr-only">Selection details</SheetTitle>
+          <div className="h-full overflow-hidden">
+            <RightPanel width={typeof window !== 'undefined' ? window.innerWidth : 384} isOpen={true} onToggle={() => selectCompany(null)} />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <ImportModal
         isOpen={showImportModal}

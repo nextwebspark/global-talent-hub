@@ -27,6 +27,7 @@ export default function Universe() {
   const [isSavingProject, setIsSavingProject] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [showProjectsPanel, setShowProjectsPanel] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Hydrate from the persisted draft on refresh / deep-link. Skip when a live stream
   // (or a just-completed one) is already populating this same id in the store. The
@@ -147,6 +148,8 @@ export default function Universe() {
         projectOpen={false}
         isDark={isDark}
         onToggleTheme={toggleTheme}
+        mobileOpen={mobileNavOpen}
+        onMobileOpenChange={setMobileNavOpen}
       />
 
       {showProjectsPanel && (
@@ -174,6 +177,7 @@ export default function Universe() {
         onSaveDraft={() => handleSaveDraft()}
         onSaveProject={handleSaveProject}
         onGoToDashboard={handleGoToDashboard}
+        onMobileNav={() => setMobileNavOpen(true)}
       />
     </div>
   );

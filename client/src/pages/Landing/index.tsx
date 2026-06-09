@@ -16,7 +16,7 @@ import { useBriefUpload } from './hooks/useBriefUpload';
 import { useBriefMode } from './hooks/useBriefMode';
 import { useImportMode } from './hooks/useImportMode';
 import { SAMPLE_RETAIL_COMPANIES } from '@/lib/sampleData';
-import { Globe } from 'lucide-react';
+import { Globe, Menu } from 'lucide-react';
 import type { LandingMode } from './types';
 
 export default function Landing() {
@@ -33,6 +33,7 @@ export default function Landing() {
   const [input, setInput] = useState('');
   const [showProjectsPanel, setShowProjectsPanel] = useState(false);
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sessionId] = useState(() => crypto.randomUUID());
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -84,6 +85,8 @@ export default function Landing() {
         projectOpen={false}
         isDark={isDark}
         onToggleTheme={toggleTheme}
+        mobileOpen={mobileNavOpen}
+        onMobileOpenChange={setMobileNavOpen}
       />
 
       {showProjectsPanel && (
@@ -99,8 +102,16 @@ export default function Landing() {
           <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary via-background to-background" />
         </div>
 
-        <div className="z-10 w-full max-w-3xl mx-auto px-6 pt-12 pb-16 flex flex-col items-center">
+        <div className="z-10 w-full max-w-3xl mx-auto px-4 md:px-6 pt-12 pb-16 flex flex-col items-center">
           <div className="flex items-center gap-2 mb-3.5 self-start">
+            <button
+              onClick={() => setMobileNavOpen(true)}
+              className="md:hidden p-2 -ml-2 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              aria-label="Open navigation"
+              data-testid="landing-hamburger"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
             <span className="w-7 h-7 rounded-lg bg-foreground text-background flex items-center justify-center text-[11px] font-bold tracking-wide">GT</span>
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Global Talent Map</span>
           </div>

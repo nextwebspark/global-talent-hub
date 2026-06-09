@@ -92,6 +92,8 @@
 
 /* roles matrix */
 .tm-perm-head, .tm-perm-row { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); align-items: center; gap: 8px; }
+.tm-perm-cells { display: contents; }
+.tm-perm-cell-label { display: none; }
 .tm-perm-head { padding: 0 0 10px; }
 .tm-perm-head .role { text-align: center; font-size: 12px; font-weight: 600; color: hsl(var(--foreground)); }
 .tm-perm-row { padding: 12px 0; border-top: 1px solid color-mix(in srgb, hsl(var(--border)) 60%, transparent); font-size: 13px; color: hsl(var(--foreground)); }
@@ -111,4 +113,27 @@
 .tm-link { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500; color: hsl(var(--primary)); background: none; border: none; cursor: pointer; padding: 0; }
 .tm-link:hover { text-decoration: underline; }
 
-@media (max-width: 760px) { .tm-set-nav { width: 180px; } .tm-frow { grid-template-columns: 1fr; } }
+/* Mobile settings header — hidden on desktop, shown when the sub-nav collapses */
+.tm-set-mobilebar { display: none; }
+.tm-set-burger { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 36px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--card)); color: hsl(var(--foreground)); cursor: pointer; flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .tm-set-nav { display: none; }
+  .tm-set-mobilebar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid hsl(var(--border)); position: sticky; top: 0; background: hsl(var(--background)); z-index: 10; }
+  .tm-set-inner { padding: 20px 16px 48px; max-width: 100%; }
+  .tm-frow { grid-template-columns: 1fr; gap: 8px; }
+  .tm-set-select, .tm-set-input { max-width: none; }
+
+  /* Wide grids → stacked rows */
+  .tm-mtable__head, .tm-notif-head { display: none; }
+  .tm-mrow { grid-template-columns: 1fr; height: auto; gap: 8px; padding: 14px 4px; }
+  .tm-notif-row { grid-template-columns: 1fr auto auto; }
+
+  /* Roles matrix: stack as permission label + a grid of labeled checks */
+  .tm-perm-head { display: none; }
+  .tm-perm-row { display: block; padding: 14px 0; }
+  .tm-perm-row > span:first-child { display: block; margin-bottom: 8px; }
+  .tm-perm-row .cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tm-perm-cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .tm-perm-cell-label { display: block; font-size: 10px; color: hsl(var(--muted-foreground)); }
+}

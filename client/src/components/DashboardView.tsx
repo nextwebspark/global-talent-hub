@@ -363,7 +363,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
   const hasStepUp = activeStepUp.length >= 2;
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6 overflow-y-auto" data-testid="dashboard-view">
+    <div className="p-3 md:p-6 max-w-[1400px] mx-auto space-y-6 overflow-y-auto" data-testid="dashboard-view">
       <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-border rounded-xl p-6" data-testid="executive-summary-banner">
         <div className="mb-3">
           <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Talent Mapping Report</p>
@@ -413,7 +413,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-card border border-border rounded-lg p-5" data-testid="section-mapping-completion">
           <SectionHeader title="Mapping Completion" icon={Building2} />
           <div className="flex gap-6">
@@ -587,7 +587,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
       </div>
 
       {data.diversity && (
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-card border border-border rounded-lg p-5" data-testid="section-gender-diversity">
             <SectionHeader title="Gender Distribution" icon={Sparkles} />
             {(() => {
@@ -774,7 +774,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {(['fixedFees', 'allowances', 'variableBonus', 'ltip', 'totalPackage'] as const).map(cat => {
                 const stats = overallCats[cat];
                 const info = CATEGORY_LABELS[cat];
@@ -891,7 +891,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
                     </button>
                   </div>
                 </div>
-                <div className="h-[280px]">
+                <div className="h-[220px] md:h-[280px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={activeLineData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
@@ -951,7 +951,7 @@ export default function DashboardView({ searchId }: { searchId?: string }) {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-6 border-t border-border pt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-border pt-4">
               <CollapsibleSection title={`By Level (${remLevels.length})`}>
                 <div className="max-h-[200px] overflow-y-auto pr-1 space-y-1">
                   {remLevels.map(([level, stats]) => (

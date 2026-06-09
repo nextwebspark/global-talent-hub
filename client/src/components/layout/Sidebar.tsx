@@ -1,6 +1,7 @@
 import { Map, Table2, Search, Home, LayoutDashboard, FolderOpen, Sun, Moon, LogOut, Settings } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth';
 
@@ -18,9 +19,12 @@ interface SidebarProps {
   /** Optional theme control. When omitted, the theme button renders inert. */
   isDark?: boolean;
   onToggleTheme?: () => void;
+  /** Controlled open state for the mobile drawer (Sheet). Desktop rail ignores it. */
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }
 
-export default function Sidebar({ activeView, onViewChange, onHome, onProjects, isProjectsOpen, projectOpen = true, isDark, onToggleTheme }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, onHome, onProjects, isProjectsOpen, projectOpen = true, isDark, onToggleTheme, mobileOpen = false, onMobileOpenChange }: SidebarProps) {
   const setCommandPaletteOpen = useAppStore(s => s.setCommandPaletteOpen);
   const { signOut, profile, session } = useAuth();
   const [, navigate] = useLocation();
@@ -32,14 +36,18 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
     { id: 'dashboard' as const, icon: LayoutDashboard, label: 'Dashboard', shortcut: '3' },
   ];
 
-  return (
-    <div className="h-full w-12 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-2 shrink-0" data-testid="sidebar">
+  const closeMobile = () => onMobileOpenChange?.(false);
+
+  // Rail body — shared between the desktop rail and the mobile Sheet drawer.
+  // `mobile` widens tap targets to >=44px without affecting the 32px desktop icons.
+  const railBody = (mobile: boolean) => (
+    <>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={onHome}
-              className="w-8 h-8 rounded-lg flex items-center justify-center mb-4 hover:bg-sidebar-accent transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground"
+              onClick={() => { onHome(); closeMobile(); }}
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center mb-4 hover:bg-sidebar-accent transition-colors text-sidebar-foreground/60 hover:text-sidebar-foreground`}
               data-testid="sidebar-home"
             >
               <Home className="w-4 h-4" />
@@ -51,8 +59,8 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => setCommandPaletteOpen(true)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center mb-1 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              onClick={() => { setCommandPaletteOpen(true); closeMobile(); }}
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center mb-1 text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors`}
               data-testid="sidebar-search"
             >
               <Search className="w-4 h-4" />
@@ -66,8 +74,8 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={onProjects}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center mb-3 transition-colors ${
+              onClick={() => { onProjects?.(); closeMobile(); }}
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center mb-3 transition-colors ${
                 isProjectsOpen
                   ? 'bg-sidebar-accent text-sidebar-foreground shadow-sm'
                   : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'
@@ -88,9 +96,9 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
                 <button
-                  onClick={() => projectOpen && onViewChange(item.id)}
+                  onClick={() => { if (projectOpen) { onViewChange(item.id); closeMobile(); } }}
                   disabled={!projectOpen}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1 transition-all ${
+                  className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center mb-1 transition-all ${
                     !projectOpen
                       ? 'text-sidebar-foreground/30 cursor-default'
                       : isActive
@@ -119,8 +127,8 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => navigate('/settings')}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold bg-sidebar-accent text-sidebar-foreground mb-2 hover:ring-2 hover:ring-sidebar-accent transition"
+              onClick={() => { navigate('/settings'); closeMobile(); }}
+              className={`${mobile ? 'w-10 h-10' : 'w-7 h-7'} rounded-full flex items-center justify-center text-[10px] font-semibold bg-sidebar-accent text-sidebar-foreground mb-2 hover:ring-2 hover:ring-sidebar-accent transition`}
               data-testid="sidebar-settings"
             >
               {initials}
@@ -132,8 +140,8 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => navigate('/settings')}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              onClick={() => { navigate('/settings'); closeMobile(); }}
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors`}
               data-testid="sidebar-settings-gear"
             >
               <Settings className="w-4 h-4" />
@@ -147,7 +155,7 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
             <button
               onClick={onToggleTheme}
               disabled={!onToggleTheme}
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center transition-colors ${
                 onToggleTheme
                   ? 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent'
                   : 'text-sidebar-foreground/40 cursor-default'
@@ -165,8 +173,8 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => signOut()}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              onClick={() => { signOut(); closeMobile(); }}
+              className={`${mobile ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors`}
               data-testid="sidebar-signout"
             >
               <LogOut className="w-4 h-4" />
@@ -175,6 +183,25 @@ export default function Sidebar({ activeView, onViewChange, onHome, onProjects, 
           <TooltipContent side="right" className="text-xs">Sign out</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile drawer */}
+      <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+        <SheetContent side="left" className="w-16 p-0 md:hidden">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <div className="h-full bg-sidebar flex flex-col items-center py-2 pt-10">
+            {railBody(true)}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop rail */}
+      <div className="h-full w-12 bg-sidebar border-r border-sidebar-border hidden md:flex flex-col items-center py-2 shrink-0" data-testid="sidebar">
+        {railBody(false)}
+      </div>
+    </>
   );
 }

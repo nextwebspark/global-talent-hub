@@ -30,9 +30,10 @@ import {
 import {
   Columns3, Group, ChevronRight, ChevronDown,
   Rows3, Maximize2, Minimize2,
-  Minus, Trash2, X, Building2, Wand2,
+  Minus, Trash2, X, Building2, Wand2, SlidersHorizontal,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { toast } from 'sonner';
 
 import type { TableRowData, DataTableProps } from './types';
@@ -54,6 +55,7 @@ import { CompanyAutocompleteCell } from './cells/CompanyAutocompleteCell';
 import { EditableCell } from './cells/EditableCell';
 import { ResizableHeader, densityPadding, type DensityMode } from './cells/ResizableHeader';
 import { AddCompanyDialog } from './AddCompanyDialog';
+import { MobileCardView } from './MobileCardView';
 
 export type { TableRowData } from './types';
 
@@ -61,6 +63,7 @@ const columnHelper = createColumnHelper<TableRowData>();
 
 export default function DataTable({ data, selectedCompanyId, selectedExecutiveId, onRowClick }: DataTableProps) {
   const { deleteCompany, deleteExecutive, updateCompany, updateExecutive, executives: allExecutives, currentProject, companies, tableConfig, setTableConfig } = useAppStore();
+  const isMobile = useIsMobile();
 
   const defaultVisibility: VisibilityState = {
     sector: false,
@@ -779,6 +782,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
   return (
     <div className="flex flex-col h-full relative">
       <div className="flex items-center gap-1 p-2 border-b border-border bg-muted/20 flex-wrap shrink-0">
+        {/* Secondary controls — collapsed on mobile (card view doesn't use grouping/columns/density) */}
+        <div className="hidden md:contents">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-group-by">
@@ -895,6 +900,23 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           <Wand2 className="h-3 w-3 mr-1" />
           {fillingSectors ? 'Filling…' : 'Fill Sectors'}
         </Button>
+        </div>
+
+        {/* Mobile overflow: grouping/columns/density don't apply to card view, but Fill Sectors does */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-7 text-xs md:hidden" data-testid="button-table-more">
+              <SlidersHorizontal className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={handleFillSectors} disabled={fillingSectors}>
+              <Wand2 className="h-4 w-4" />
+              {fillingSectors ? 'Filling…' : 'Fill Sectors'}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <Button
           variant="outline"
           size="sm"
@@ -905,7 +927,8 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
           data-testid="button-add-company"
         >
           <Building2 className="h-3 w-3 mr-1" />
-          New Company
+          <span className="hidden sm:inline">New Company</span>
+          <span className="sm:hidden">New</span>
         </Button>
 
         <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
@@ -919,9 +942,20 @@ export default function DataTable({ data, selectedCompanyId, selectedExecutiveId
         columnVisibility={columnVisibility}
       />
 
+      {isMobile && (
+        <MobileCardView
+          data={data}
+          selectedCompanyId={selectedCompanyId}
+          selectedExecutiveId={selectedExecutiveId}
+          onRowClick={onRowClick}
+          onDeleteCompany={deleteCompany}
+          onDeleteExecutive={deleteExecutive}
+        />
+      )}
+
       <div
         ref={tableContainerRef}
-        className="flex-1 overflow-auto relative"
+        className={`flex-1 overflow-auto relative ${isMobile ? 'hidden' : ''}`}
         style={{ userSelect: isDragSelecting ? 'none' : 'auto' }}
       >
         <table

@@ -31,7 +31,7 @@ export function SearchPanel({
       className="w-full"
     >
       <div className="relative bg-muted/40 border border-border rounded-2xl overflow-hidden" data-testid="search-panel">
-        <div className="flex items-center gap-3 px-5 py-3 border-b border-border/40 bg-card/40">
+        <div className="flex items-center gap-3 px-4 sm:px-5 py-3 border-b border-border/40 bg-card/40">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/5 border border-primary/20">
             <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
             <span className="text-xs font-medium text-primary">AI Intelligence</span>
@@ -39,7 +39,7 @@ export function SearchPanel({
           <div className="flex-1" />
         </div>
 
-        <div className="p-5">
+        <div className="p-4 sm:p-5">
           {!input && (
             <div className="flex flex-wrap gap-1.5 mb-3" data-testid="example-prompt-chips">
               {EXAMPLE_CHIPS.map(chip => (

@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import {
   User, ShieldCheck, Bell, SlidersHorizontal, Building2, Users, KeyRound,
-  CreditCard, LogOut, ArrowLeft,
+  CreditCard, LogOut, ArrowLeft, Menu,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import Sidebar from "@/components/layout/Sidebar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar } from "./primitives";
 import { ProfileSection, SecuritySection, NotificationsSection, PreferencesSection } from "./AccountSections";
 import { OrgGeneralSection, MembersSection, RolesSection, BillingSection } from "./OrgSections";
@@ -34,6 +35,7 @@ export default function Settings() {
   const { session, org, role, profile, signOut } = useAuth();
   const isAdmin = role === "owner" || role === "admin";
   const [section, setSection] = useState<Section>("profile");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Non-admins can't view org sections.
   useEffect(() => {
@@ -59,6 +61,12 @@ export default function Settings() {
     );
   };
 
+  // Flat section list for the mobile dropdown (account + org when admin).
+  const mobileSections: { id: Section; label: string }[] = [
+    ...ACCOUNT.map((s) => ({ id: s.id as Section, label: s.label })),
+    ...(isAdmin ? ORG.map((s) => ({ id: s.id as Section, label: s.label })) : []),
+  ];
+
   return (
     <div className="h-screen w-screen flex bg-background overflow-hidden">
       <Sidebar
@@ -66,6 +74,8 @@ export default function Settings() {
         onViewChange={() => {}}
         onHome={() => navigate("/")}
         projectOpen={false}
+        mobileOpen={mobileNavOpen}
+        onMobileOpenChange={setMobileNavOpen}
       />
       <div className="tm-settings" style={{ flex: 1, minWidth: 0 }}>
       <div className="tm-set-nav">
@@ -88,6 +98,20 @@ export default function Settings() {
       </div>
 
       <div className="tm-set-main">
+        {/* Mobile header — hamburger opens the app nav; dropdown switches settings section */}
+        <div className="tm-set-mobilebar">
+          <button className="tm-set-burger" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+            <Menu size={18} />
+          </button>
+          <Select value={section} onValueChange={(v) => setSection(v as Section)}>
+            <SelectTrigger className="flex-1 h-9 font-semibold">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {mobileSections.map((s) => <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         {section === "profile" && <ProfileSection />}
         {section === "security" && <SecuritySection />}
         {section === "notifications" && <NotificationsSection />}

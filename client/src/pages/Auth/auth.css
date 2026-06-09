@@ -1,7 +1,7 @@
 /* Auth screens — ported from the ALAC ref kit (auth.jsx / kit.css), adapted to
    this app's hsl(var(--x)) theme tokens. --success / --ink are kit-only, inlined. */
 
-.tm-auth { height: 100vh; display: flex; overflow: hidden; font-family: var(--font-sans); }
+.tm-auth { height: 100vh; height: 100dvh; display: flex; overflow: hidden; font-family: var(--font-sans); }
 .tm-auth__form { flex: 0 0 40%; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; background: hsl(var(--background)); }
 .tm-auth__card { width: 100%; max-width: 392px; }
 .tm-auth__brandmark { display: flex; align-items: center; gap: 10px; margin-bottom: 30px; }
@@ -86,4 +86,7 @@
 .tm-globepin__card .nm { color: #fff; font-size: 11px; font-weight: 600; line-height: 1.2; }
 .tm-globepin__card .meta { color: rgba(255,255,255,.55); font-size: 9.5px; line-height: 1.2; }
 
-@media (max-width: 900px) { .tm-auth__brand { display: none; } }
+@media (max-width: 900px) {
+  .tm-auth__brand { display: none; }
+  .tm-auth__form { flex: 1 1 100%; padding: 32px 18px; }
+}
